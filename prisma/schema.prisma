@@ -1,0 +1,669 @@
+// =============================================================================
+// AI Admin Platform - Database Schema
+// =============================================================================
+// [Patent Technology] Intelligent Administrative Agent System
+// - Dynamic Document Generation with AI Context Awareness
+// - Government Site RPA Task Management
+// - Public Data API Integration Logging
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Use "postgresql" for production (Supabase), "sqlite" for local development
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Authentication Models (NextAuth.js)
+// =============================================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// =============================================================================
+// User Model (Extended for Credit System)
+// =============================================================================
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String?    @unique
+  emailVerified DateTime?
+  image         String?
+  phone         String?    // 연락처
+
+  // [Patent Feature] User Credit System for AI Services
+  credits       Int        @default(0)  // No free credits - must subscribe
+  plan          String     @default("none") // none, basic, pro, enterprise
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  documents     Document[]
+  chats         Chat[]
+  documentLogs  DocumentLog[]
+  rpaTasks      RpaTask[]
+  apiLogs       ApiLog[]
+
+  // New Relations
+  subscriptions        Subscription[]
+  payments             Payment[]
+  creditTransactions   CreditTransaction[]
+  powersOfAttorney     PowerOfAttorney[]
+  civilServiceSubmissions CivilServiceSubmission[]
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+// =============================================================================
+// Document Models
+// =============================================================================
+
+model Document {
+  id        String   @id @default(cuid())
+  title     String
+  type      String   // business_plan, petition, appeal, official_letter, etc.
+  content   String
+  inputData String?  // JSON string of user inputs
+  fileUrl   String?  // S3 URL for generated files
+  status    String   @default("draft") // draft, completed, submitted
+  version   Int      @default(1)
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  logs      DocumentLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =============================================================================
+// [Patent Feature] Document Generation Log
+// AI Context-Aware Document Generation Tracking
+// =============================================================================
+
+model DocumentLog {
+  id            String   @id @default(cuid())
+
+  // Document Information
+  documentId    String?
+  document      Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  // Generation Details
+  documentType  String   // DOCX, PDF, HWP
+  templateUsed  String?  // Template identifier used
+  aiModel       String?  // gemini-pro, gpt-4, etc.
+
+  // [Patent] Context-Aware Generation Metadata
+  inputContext  String?  // JSON: User inputs and conversation context
+  aiPrompt      String?  // System prompt used for generation
+  aiResponse    String?  // AI-generated content (truncated)
+
+  // Generation Metrics
+  generationTime Int?    // milliseconds
+  tokenCount    Int?     // AI tokens used
+  fileSize      Int?     // bytes
+
+  // Status
+  status        String   @default("success") // success, failed, partial
+  errorMessage  String?
+
+  // User Relation
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+}
+
+// =============================================================================
+// [Patent Feature] RPA Task Management
+// Dynamic Web Form Injection System
+// =============================================================================
+
+model RpaTask {
+  id            String   @id @default(cuid())
+
+  // Task Identification
+  taskType      String   // form_fill, search, submit, scrape
+  targetSite    String   // venture_in, gov24, hometax, etc.
+  targetUrl     String?
+
+  // [Patent] Dynamic Form Injection Data
+  formData      String   // JSON: Field mappings and values
+  fieldMappings String?  // JSON: CSS selectors and field types
+
+  // Execution Status
+  status        String   @default("pending") // pending, running, success, failed, cancelled
+  progress      Int      @default(0) // 0-100 percentage
+
+  // Execution Results
+  startedAt     DateTime?
+  completedAt   DateTime?
+  executionLog  String?  // JSON array of execution steps
+  screenshotUrl String?  // S3 URL for failure screenshot
+  errorMessage  String?
+
+  // Retry Logic
+  retryCount    Int      @default(0)
+  maxRetries    Int      @default(3)
+
+  // User Relation
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// =============================================================================
+// [Patent Feature] Public Data API Log
+// Government API Integration Tracking
+// =============================================================================
+
+model ApiLog {
+  id            String   @id @default(cuid())
+
+  // API Information
+  apiName       String   // gov_benefit, civil_service, law_search, land_use
+  endpoint      String
+  method        String   @default("GET")
+
+  // Request Details
+  requestParams String?  // JSON
+
+  // Response Details
+  responseCode  Int?
+  responseData  String?  // JSON (truncated for large responses)
+  dataCount     Int?     // Number of items returned
+
+  // Performance Metrics
+  latency       Int?     // milliseconds
+
+  // Status
+  status        String   @default("success") // success, failed, timeout
+  errorMessage  String?
+
+  // User Relation (optional - some API calls may be system-initiated)
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt     DateTime @default(now())
+}
+
+// =============================================================================
+// Chat Models
+// =============================================================================
+
+model Chat {
+  id        String    @id @default(cuid())
+  title     String?
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  role      String   // user, assistant, system
+  content   String
+
+  // [Patent] Message Metadata for Context-Aware Responses
+  metadata  String?  // JSON: extracted entities, intent, etc.
+
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+// =============================================================================
+// Review Request Model
+// =============================================================================
+
+model ReviewRequest {
+  id             String   @id @default(cuid())
+  fileName       String
+  fileUrl        String
+  fileType       String
+  analysisResult String?
+  suggestions    String?
+  status         String   @default("pending") // pending, analyzing, completed, failed
+  userId         String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// =============================================================================
+// [Patent Feature] Power of Attorney (전자위임장) System
+// Electronic delegation for civil service submission
+// =============================================================================
+
+model PowerOfAttorney {
+  id              String   @id @default(cuid())
+
+  // Delegator Information (위임자 정보)
+  delegatorName   String   // 위임자 이름
+  delegatorBirth  String   // 생년월일 (YYYYMMDD)
+  delegatorPhone  String   // 연락처
+  delegatorIdHash String   // 주민번호 해시 (복호화 불가, SHA-256)
+  delegatorAddress String? // 주소
+
+  // Delegation Scope (위임 범위)
+  serviceType     String   // gov24, hometax, wetax, etc.
+  serviceName     String   // 민원명 (예: 주민등록등본 발급)
+  serviceCode     String?  // 민원 코드
+  delegationScope String?  // JSON: 위임 범위 상세
+
+  // Electronic Signature (전자서명)
+  signatureData   String   // Base64 encoded signature image
+  signatureHash   String   // 서명 데이터 해시 (무결성 검증용)
+  signedAt        DateTime // 서명 일시
+
+  // Validity Period (유효기간)
+  validFrom       DateTime
+  validTo         DateTime
+
+  // Status
+  status          String   @default("active") // active, used, expired, revoked
+  revokedAt       DateTime?
+  revokedReason   String?
+
+  // User Relation (대리인 - 행정사)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Related Submissions
+  submissions     CivilServiceSubmission[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([validTo])
+}
+
+// =============================================================================
+// [Patent Feature] Civil Service Submission (민원 자동 접수)
+// Automated government service application submission
+// =============================================================================
+
+model CivilServiceSubmission {
+  id                  String   @id @default(cuid())
+
+  // Service Information
+  serviceName         String   // 민원명
+  serviceCode         String?  // 민원 코드
+  targetSite          String   // gov24, hometax, wetax, etc.
+  targetUrl           String?  // 대상 URL
+
+  // Application Data
+  applicationData     String   // JSON: 신청서 데이터
+  applicantName       String   // 신청인 이름
+  applicantBirth      String?  // 생년월일
+  applicantPhone      String?  // 연락처
+
+  // Power of Attorney (위임장 연결)
+  powerOfAttorneyId   String?
+  powerOfAttorney     PowerOfAttorney? @relation(fields: [powerOfAttorneyId], references: [id], onDelete: SetNull)
+
+  // Submission Status
+  status              String   @default("draft") // draft, pending, submitted, processing, completed, failed, cancelled
+  progress            Int      @default(0) // 0-100 percentage
+
+  // Results
+  applicationNumber   String?  // 접수번호
+  receiptUrl          String?  // 접수증 URL (S3)
+  resultData          String?  // JSON: 처리 결과 데이터
+  completedAt         DateTime?
+
+  // Error Handling
+  errorMessage        String?
+  retryCount          Int      @default(0)
+  maxRetries          Int      @default(3)
+
+  // User Relation
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Tracking Logs
+  trackingLogs        SubmissionTrackingLog[]
+
+  // Credit Usage
+  creditsUsed         Int      @default(0)
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([applicationNumber])
+}
+
+// =============================================================================
+// [Patent Feature] Submission Tracking Log (제출 추적 로그)
+// Real-time progress tracking for civil service submissions
+// =============================================================================
+
+model SubmissionTrackingLog {
+  id            String   @id @default(cuid())
+
+  // Submission Reference
+  submissionId  String
+  submission    CivilServiceSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  // Step Information
+  step          String   // login, navigate, fill_form, verify, submit, confirm
+  stepOrder     Int      // 순서 번호
+
+  // Status
+  status        String   // pending, in_progress, success, failed, skipped
+  message       String?  // 상세 메시지
+
+  // Evidence
+  screenshotUrl String?  // S3 URL for screenshot
+  htmlSnapshot  String?  // DOM snapshot (debugging용)
+
+  // Timing
+  startedAt     DateTime?
+  completedAt   DateTime?
+  duration      Int?     // milliseconds
+
+  createdAt     DateTime @default(now())
+
+  @@index([submissionId])
+  @@index([step])
+}
+
+// =============================================================================
+// Subscription & Payment Models (결제 시스템 - 추후 구현)
+// =============================================================================
+
+model SubscriptionPlan {
+  id          String   @id @default(cuid())
+  name        String   @unique // basic, pro, enterprise (no free plan)
+  displayName String   // 표시명 (일반, 프로, 기업)
+  price       Int      // 월 요금 (원) - basic: 99000, pro: 150000
+  credits     Int      // 월 제공 크레딧
+  features    String   // JSON: 기능 목록
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  // Overage Pricing (크레딧 초과 요금)
+  overageEnabled    Boolean @default(true)
+  overagePricePerCredit Int @default(100)  // 크레딧당 초과 요금 (원)
+
+  subscriptions Subscription[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Subscription {
+  id          String   @id @default(cuid())
+
+  // User & Plan
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      String
+  plan        SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  // Status
+  status      String   @default("active") // active, cancelled, expired, past_due
+
+  // Period
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  cancelledAt DateTime?
+
+  // Billing
+  billingCycle String  @default("monthly") // monthly, yearly
+  nextBillingDate DateTime?
+
+  // Related Payments
+  payments    Payment[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+
+  // User
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Subscription (optional)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  // Payment Details
+  orderId       String   @unique // 주문번호
+  paymentKey    String?  // 토스페이먼츠 결제키
+  amount        Int      // 결제 금액
+
+  // Item Information
+  itemType      String   // subscription, credits
+  itemName      String   // 상품명
+  itemQuantity  Int      @default(1)
+
+  // Status
+  status        String   @default("pending") // pending, completed, failed, cancelled, refunded
+
+  // Payment Method
+  method        String?  // card, transfer, kakao, naver, etc.
+
+  // Timestamps
+  requestedAt   DateTime @default(now())
+  approvedAt    DateTime?
+  cancelledAt   DateTime?
+
+  // Error Handling
+  failReason    String?
+
+  // Metadata
+  metadata      String?  // JSON: 추가 정보
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+}
+
+model CreditTransaction {
+  id          String   @id @default(cuid())
+
+  // User
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Transaction Details
+  amount      Int      // + 충전, - 사용
+  balance     Int      // 거래 후 잔액
+
+  // Type
+  type        String   // charge, use, refund, bonus, expire, overage
+
+  // Description
+  description String?  // 사용 내역 설명
+
+  // Reference
+  referenceType String? // document, chat, rpa, submission
+  referenceId   String? // 관련 항목 ID
+
+  // Overage Tracking (초과 사용 추적)
+  isOverage     Boolean @default(false)
+  overageAmount Int?    // 초과 사용량
+  overageCharge Int?    // 초과 요금 (원)
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([isOverage])
+}
+
+// =============================================================================
+// Overage Charge Model (API 토큰 초과 요금)
+// =============================================================================
+
+model OverageCharge {
+  id          String   @id @default(cuid())
+
+  // User
+  userId      String
+
+  // Billing Period
+  billingMonth String  // YYYY-MM format
+
+  // Usage
+  includedCredits   Int  // 플랜 포함 크레딧
+  usedCredits       Int  // 실제 사용 크레딧
+  overageCredits    Int  // 초과 사용 크레딧
+  pricePerCredit    Int  // 크레딧당 요금
+
+  // Charge Amount
+  totalCharge Int  // 총 초과 요금 (원)
+
+  // Status
+  status      String   @default("pending") // pending, invoiced, paid, waived
+
+  // Payment Reference
+  paymentId   String?  // 결제 완료 시 Payment ID
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, billingMonth])
+  @@index([userId])
+  @@index([status])
+}
+
+// =============================================================================
+// Submission Request Model (접수대행/대리의뢰 신청)
+// =============================================================================
+
+model SubmissionRequest {
+  id              String   @id @default(cuid())
+
+  // Request Type
+  type            String   // proxy (접수대행), delegate (대리의뢰)
+
+  // Applicant Information
+  name            String   // 신청자 이름
+  phone           String   // 연락처
+  email           String   // 이메일
+
+  // Request Details
+  documentType    String   // 민원 종류
+  description     String?  // 상세 내용
+  attachmentUrls  String?  // JSON: 첨부파일 URL 목록
+
+  // Status
+  status          String   @default("pending") // pending, contacted, in_progress, completed, cancelled
+  adminNote       String?  // 관리자 메모
+
+  // Notification Status
+  emailSent       Boolean  @default(false)
+  smsSent         Boolean  @default(false)
+  kakaoSent       Boolean  @default(false)
+
+  // User Relation (optional - 비회원도 신청 가능)
+  userId          String?
+
+  // Processing
+  assignedTo      String?  // 담당자
+  processedAt     DateTime?
+  completedAt     DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// =============================================================================
+// Notification Models (알림 시스템)
+// =============================================================================
+
+model Notification {
+  id          String   @id @default(cuid())
+
+  // User
+  userId      String
+
+  // Notification Content
+  type        String   // submission_complete, payment_success, credit_low, etc.
+  title       String
+  message     String
+
+  // Delivery
+  channel     String   // email, kakao, push, in_app
+  status      String   @default("pending") // pending, sent, failed
+  sentAt      DateTime?
+
+  // Read Status
+  isRead      Boolean  @default(false)
+  readAt      DateTime?
+
+  // Reference
+  referenceType String?
+  referenceId   String?
+
+  // Error
+  errorMessage String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+  @@index([isRead])
+}

@@ -1,0 +1,49 @@
+# Dependencies
+node_modules
+npm-debug.log
+
+# Build outputs
+.next
+out
+dist
+build
+
+# Environment files (should be passed as env vars)
+.env
+.env.local
+.env.development
+.env.production
+.env*.local
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Testing
+coverage
+.nyc_output
+
+# Misc
+*.md
+LICENSE
+.editorconfig
+.prettierrc
+.eslintrc*
+
+# Prisma migrations (generate fresh)
+prisma/migrations
