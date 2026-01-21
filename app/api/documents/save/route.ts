@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
         title: title || getDefaultTitle(type),
         type: type || "application",
         content,
-        inputData: {
+        inputData: JSON.stringify({
           applicantName,
           applicantId,
           applicantAddress,
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
           purpose,
           reason,
           additionalInfo,
-        },
+        }),
         status: "completed",
         userId: session.user.id,
       },
