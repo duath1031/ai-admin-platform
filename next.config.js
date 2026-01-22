@@ -1,8 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Enable standalone output for Docker
-  output: 'standalone',
-
   experimental: {
     serverComponentsExternalPackages: ["@react-pdf/renderer", "playwright"],
   },
