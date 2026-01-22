@@ -25,41 +25,41 @@ const PROXY_UNAVAILABLE = [
   { category: "수수료 납부 필요", items: ["인지대, 수입증지 등 수수료 납부가 필요한 민원"] },
 ];
 
-// 정부24 주요 민원 서비스 (2024년 검증 링크)
+// 정부24 주요 민원 서비스 (2025년 검증 링크)
 const GOV24_SERVICES = [
   {
     category: "사업자/세무",
     services: [
-      { name: "사업자등록증명 발급", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050205" },
-      { name: "휴폐업사실증명 발급", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050203" },
-      { name: "국세 납세증명", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050194" },
-      { name: "지방세 납세증명", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050419" },
+      { name: "사업자등록증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000016" },
+      { name: "휴폐업사실증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000019" },
+      { name: "국세 납세증명 (홈택스)", url: "https://www.hometax.go.kr" },
+      { name: "지방세 납세증명", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000056" },
     ],
   },
   {
     category: "부동산",
     services: [
-      { name: "건축물대장 발급", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050232" },
-      { name: "토지대장 발급", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050230" },
-      { name: "토지이용계획확인서", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050231" },
-      { name: "개별공시지가확인서", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050229" },
+      { name: "건축물대장 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000098" },
+      { name: "토지대장 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000026" },
+      { name: "토지이용계획확인서", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000013" },
+      { name: "개별공시지가확인서", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000012" },
     ],
   },
   {
     category: "가족/신분",
     services: [
-      { name: "주민등록등본 발급", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050160" },
-      { name: "주민등록초본 발급", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050159" },
+      { name: "주민등록등·초본 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000015" },
       { name: "가족관계증명서", url: "https://efamily.scourt.go.kr" },
       { name: "기본증명서", url: "https://efamily.scourt.go.kr" },
+      { name: "혼인관계증명서", url: "https://efamily.scourt.go.kr" },
     ],
   },
   {
     category: "인허가/영업",
     services: [
-      { name: "건설업 등록현황", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050459" },
-      { name: "전기공사업 등록확인", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050541" },
-      { name: "소방시설업 등록현황", url: "https://www.gov.kr/portal/service/serviceInfo/PTR000050664" },
+      { name: "건설업 등록현황 (KISCON)", url: "https://www.kiscon.net" },
+      { name: "전기공사업 등록확인", url: "https://www.ecqs.or.kr" },
+      { name: "소방시설업 등록현황", url: "https://www.fipa.or.kr" },
     ],
   },
 ];
