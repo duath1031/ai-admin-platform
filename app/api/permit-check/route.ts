@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { searchLandUse } from "@/lib/landUseApi";
 
 // 용도지역별 허용 업종 매핑
 const ZONE_BUSINESS_MATRIX: Record<string, Record<string, { allowed: boolean; conditions?: string }>> = {
@@ -559,24 +560,6 @@ const BUSINESS_LAWS: Record<string, { law: string; article: string; summary: str
   ],
 };
 
-// 주소에서 용도지역 추정 (실제로는 토지이용계획 API 연동 필요)
-function estimateZone(address: string): string {
-  // 간단한 키워드 기반 추정 (실제 서비스에서는 정부 API 연동)
-  if (address.includes("상업") || address.includes("로") || address.includes("대로")) {
-    const zones = ["일반상업지역", "근린상업지역", "준주거지역"];
-    return zones[Math.floor(Math.random() * zones.length)];
-  }
-  if (address.includes("공단") || address.includes("산업")) {
-    return "준공업지역";
-  }
-  if (address.includes("아파트") || address.includes("주공") || address.includes("마을")) {
-    return "제2종일반주거지역";
-  }
-  // 기본값
-  const defaultZones = ["제2종일반주거지역", "제3종일반주거지역", "근린상업지역"];
-  return defaultZones[Math.floor(Math.random() * defaultZones.length)];
-}
-
 // 용도지역 제한이 적용되지 않는 업종 (사무실 기반)
 const OFFICE_BASED_BUSINESSES = ['construction', 'realestate', 'transport', 'passenger', 'recycling'];
 
@@ -833,8 +816,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 용도지역 추정 (실제로는 토지이용계획 API 연동)
-    const zone = estimateZone(address);
+    // V-World API로 실제 용도지역 조회
+    const landUseResult = await searchLandUse(address);
+    let zone = "제2종일반주거지역"; // 기본값 (조회 실패 시)
+    let zoneSource = "추정";
+
+    if (landUseResult.success && landUseResult.zoneInfo && landUseResult.zoneInfo.length > 0) {
+      // 실제 V-World API 조회 성공
+      zone = landUseResult.zoneInfo[0].name;
+      zoneSource = "V-World API";
+      console.log(`[Permit-Check] 용도지역 조회 성공: ${zone}`);
+    } else {
+      console.warn(`[Permit-Check] 용도지역 조회 실패, 기본값 사용: ${landUseResult.error || "알 수 없는 오류"}`);
+    }
+
     const limits = ZONE_LIMITS[zone] || { buildingCoverage: 60, floorAreaRatio: 200 };
 
     // 진단 수행
@@ -845,8 +840,10 @@ export async function POST(request: NextRequest) {
       grade,
       zoneInfo: {
         zone,
+        zoneSource, // "V-World API" 또는 "추정"
         buildingCoverage: limits.buildingCoverage,
         floorAreaRatio: limits.floorAreaRatio,
+        allZones: landUseResult.zoneInfo || [], // V-World에서 조회된 모든 용도지역
       },
       analysis,
       recommendations,
