@@ -15,6 +15,14 @@
 - 회원 관리 대시보드
 - 결제 여부에 따른 기능 활성화
 
+## 완료된 작업
+
+### 인허가 자가진단 V-World API 연동 (2025-01-22)
+- ✅ `app/api/permit-check/route.ts`에서 estimateZone 키워드 기반 추정 함수 제거
+- ✅ `lib/landUseApi.ts`의 searchLandUse 함수로 실제 V-World API 조회 연동
+- ✅ zoneSource 필드 추가로 데이터 출처 표시 ("V-World API" 또는 "추정")
+- ✅ V-World 도메인 설정: aiadminplatform.vercel.app 등록 완료
+
 ---
 
 ## 현재 설정 정보
