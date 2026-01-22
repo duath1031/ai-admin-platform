@@ -76,8 +76,10 @@ export async function chatWithGemini(
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
 
+  // systemInstruction을 사용하여 Google AI Studio "나의 지침"과 동일한 효과
   const model = genAI.getGenerativeModel({
     model: config.modelName,
+    systemInstruction: enhancedPrompt,
     generationConfig: {
       temperature: config.temperature,
       topK: 40,
@@ -86,17 +88,19 @@ export async function chatWithGemini(
     }
   });
 
-  // 시스템 프롬프트와 대화 내역 구성
-  let fullPrompt = `[시스템 지침]\n${enhancedPrompt}\n\n[대화 내역]\n`;
+  // 대화 내역을 Gemini 형식으로 변환
+  const chatHistory = messages.slice(0, -1).map(msg => ({
+    role: msg.role === "assistant" ? "model" : "user",
+    parts: [{ text: msg.content }]
+  }));
 
-  for (const msg of messages) {
-    const role = msg.role === "assistant" ? "AI" : "사용자";
-    fullPrompt += `${role}: ${msg.content}\n\n`;
-  }
+  const chat = model.startChat({
+    history: chatHistory,
+  });
 
-  fullPrompt += "AI: ";
-
-  const result = await model.generateContent(fullPrompt);
+  // 마지막 사용자 메시지 전송
+  const lastMessage = messages[messages.length - 1];
+  const result = await chat.sendMessage(lastMessage.content);
   const response = result.response;
 
   return response.text();
