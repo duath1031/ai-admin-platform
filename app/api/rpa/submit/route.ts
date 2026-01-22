@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     const input = validationResult.data;
-    const options = input.options || {};
+    const options = input.options ?? { headless: true, timeout: 60000, autoSubmit: false, maxRetries: 3 };
 
     const manualGuide = generateManualInputGuide(input);
     const clipboardText = generateClipboardText(manualGuide);
