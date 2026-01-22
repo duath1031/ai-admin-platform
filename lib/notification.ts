@@ -24,7 +24,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: "행정사합동사무소 정의 <noreply@jungeui.com>",
+          from: "행정사합동사무소 정의 <onboarding@resend.dev>",
           to: [options.to],
           subject: options.subject,
           html: options.html,
