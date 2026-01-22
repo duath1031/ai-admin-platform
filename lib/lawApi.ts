@@ -8,7 +8,7 @@ interface LawSearchResult {
   score?: number;
 }
 
-interface FormSearchResult {
+export interface FormSearchResult {
   formName: string;
   formUrl: string;
   lawName: string;
@@ -63,13 +63,14 @@ export async function searchLaw(query: string): Promise<{
         lawId,
         lawName,
         lawType: "법령",
-        lawUrl: `https://www.law.go.kr/법령/${encodeURIComponent(lawName)}`,
+        // 한글 URL 대신 검색 URL 사용 (인코딩 문제 방지)
+        lawUrl: `https://www.law.go.kr/LSW/lsSc.do?menuId=1&query=${encodeURIComponent(lawName)}`,
       });
     }
 
-    // 결과가 없으면 직접 링크 제공
+    // 결과가 없으면 검색 링크 제공
     if (laws.length === 0) {
-      const directLink = `https://www.law.go.kr/법령/${encodeURIComponent(cleanQuery)}`;
+      const directLink = `https://www.law.go.kr/LSW/lsSc.do?menuId=1&query=${encodeURIComponent(cleanQuery)}`;
       laws.push({
         lawId: "",
         lawName: cleanQuery,

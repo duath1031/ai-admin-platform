@@ -17,6 +17,8 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
     const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
     if (RESEND_API_KEY) {
+      // Resend 무료 플랜: onboarding@resend.dev 사용 시 본인 이메일로만 발송 가능
+      // 다른 수신자에게 보내려면 도메인 인증 필요 (resend.com/domains)
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
@@ -32,12 +34,18 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
       });
 
       if (response.ok) {
-        console.log("[Email] Resend 발송 성공");
+        console.log(`[Email] Resend 발송 성공: ${options.to}`);
         return { success: true };
       } else {
-        const error = await response.text();
-        console.error("[Email] Resend 발송 실패:", error);
-        return { success: false, error };
+        const errorText = await response.text();
+        console.error(`[Email] Resend 발송 실패 (${options.to}):`, errorText);
+
+        // Resend 무료 플랜 제한 에러 체크
+        if (errorText.includes("testing emails to your own email")) {
+          console.warn("[Email] ⚠️ Resend 무료 플랜 제한: 도메인 인증 없이는 본인 이메일로만 발송 가능");
+        }
+
+        return { success: false, error: errorText };
       }
     }
 

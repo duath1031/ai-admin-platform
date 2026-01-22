@@ -7,6 +7,9 @@ import prisma from "@/lib/prisma";
 import { searchForm, formatFormInfo, COMMON_FORMS } from "@/lib/lawApi";
 import { searchLandUse, formatLandUseResult } from "@/lib/landUseApi";
 import { searchBusinessTypes } from "@/lib/formDatabase";
+// RAG 시스템 (맥락 인식형 법령 검색)
+import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawService";
+import { quickClassify } from "@/lib/rag/intentClassifier";
 
 // 사용자 메시지에서 의도 파악
 function detectIntent(message: string): {
@@ -129,6 +132,26 @@ export async function POST(req: NextRequest) {
             }
           }
         }
+      }
+    }
+
+    // 맥락 인식형 법령 검색 (RAG)
+    // 절차/요건 질문: 법령+서식만, 분쟁/구제 질문: 판례+재결례 포함
+    const quickIntent = quickClassify(lastUserMessage);
+    if (quickIntent.procedureScore > 0 || quickIntent.disputeScore > 0) {
+      try {
+        console.log(`[Chat] RAG 검색 시작: ${quickIntent.likelyMode}`);
+        const legalResult = await searchLegalInfo(lastUserMessage);
+        if (legalResult.success) {
+          additionalContext += formatLegalResultForPrompt(legalResult);
+        }
+        // API 오류 시 안내 메시지 추가
+        if (legalResult.systemMessage) {
+          additionalContext += `\n\n[시스템 안내]\n${legalResult.systemMessage}\n`;
+        }
+      } catch (error) {
+        console.error("[Chat] 법령 검색 오류:", error);
+        additionalContext += `\n\n[시스템 안내]\n죄송합니다. 현재 정부 시스템 연결이 불안정하여 일부 법령 정보를 가져오지 못했습니다.\n`;
       }
     }
 
