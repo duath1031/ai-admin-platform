@@ -70,12 +70,12 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto h-[calc(100vh-8rem)] flex flex-col">
+    <div className="max-w-4xl mx-auto h-[calc(100vh-7rem)] md:h-[calc(100vh-8rem)] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-2 md:mb-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">AI 상담</h1>
-          <p className="text-sm text-gray-600">
+          <h1 className="text-lg md:text-xl font-bold text-gray-900">AI 상담</h1>
+          <p className="text-xs md:text-sm text-gray-600 hidden sm:block">
             행정 절차, 인허가 요건 등 궁금한 사항을 질문하세요
           </p>
         </div>
@@ -91,7 +91,7 @@ export default function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-gray-200 p-4 mb-4">
+      <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-gray-200 p-3 md:p-4 mb-2 md:mb-4">
         {messages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-gray-500">
             <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mb-4">
@@ -115,7 +115,7 @@ export default function ChatPage() {
                 }`}
               >
                 <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                  className={`max-w-[90%] md:max-w-[80%] rounded-2xl px-3 md:px-4 py-2 md:py-3 ${
                     message.role === "user"
                       ? "bg-primary-600 text-white"
                       : "bg-gray-100 text-gray-900"
@@ -157,19 +157,19 @@ export default function ChatPage() {
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="flex gap-3">
+      <form onSubmit={handleSubmit} className="flex gap-2 md:gap-3">
         <div className="flex-1 relative">
           <Textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="질문을 입력하세요... (Shift+Enter로 줄바꿈)"
-            className="min-h-[48px] max-h-[200px] pr-12 resize-none"
+            placeholder="질문을 입력하세요..."
+            className="min-h-[44px] md:min-h-[48px] max-h-[150px] md:max-h-[200px] pr-2 resize-none text-sm md:text-base"
             rows={1}
           />
         </div>
-        <Button type="submit" disabled={!input.trim() || isLoading}>
+        <Button type="submit" disabled={!input.trim() || isLoading} className="px-3 md:px-4">
           {isLoading ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (

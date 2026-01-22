@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useUIStore } from "@/lib/store";
+import { useEffect } from "react";
 
 const menuItems = [
   {
@@ -143,37 +143,71 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { sidebarOpen } = useUIStore();
+  const { sidebarOpen, setSidebarOpen } = useUIStore();
+
+  // 화면 크기 변경 시 모바일에서 사이드바 자동 닫기
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768 && sidebarOpen) {
+        setSidebarOpen(false);
+      }
+    };
+
+    // 초기 로드 시 모바일이면 사이드바 닫기
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // 모바일에서 메뉴 클릭 시 사이드바 닫기
+  const handleMenuClick = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+  };
 
   if (!sidebarOpen) return null;
 
   return (
-    <aside className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white border-r border-gray-200 z-40">
-      <nav className="p-4 space-y-2">
-        {menuItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+    <>
+      {/* 모바일 백드롭 */}
+      <div
+        className="fixed inset-0 bg-black/50 z-30 md:hidden"
+        onClick={() => setSidebarOpen(false)}
+      />
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`
-                flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
-                ${
-                  isActive
-                    ? "bg-primary-50 text-primary-700 font-medium"
-                    : "text-gray-600 hover:bg-gray-50"
-                }
-              `}
-            >
-              {item.icon}
-              <span>{item.name}</span>
-            </Link>
-          );
-        })}
-      </nav>
-    </aside>
+      {/* 사이드바 */}
+      <aside className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white border-r border-gray-200 z-40 overflow-y-auto">
+        <nav className="p-4 space-y-2">
+          {menuItems.map((item) => {
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/" && pathname.startsWith(item.href));
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={handleMenuClick}
+                className={`
+                  flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                  ${
+                    isActive
+                      ? "bg-primary-50 text-primary-700 font-medium"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }
+                `}
+              >
+                {item.icon}
+                <span>{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+    </>
   );
 }

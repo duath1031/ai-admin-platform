@@ -196,56 +196,56 @@ export default function SubmissionPage() {
   return (
     <div className="max-w-4xl mx-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">민원 접수</h1>
-        <p className="text-gray-600">정부24에서 직접 접수하거나, 행정사합동사무소 정의에 대행을 맡기세요.</p>
+      <div className="mb-4 md:mb-8">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-1 md:mb-2">민원 접수</h1>
+        <p className="text-sm md:text-base text-gray-600">정부24에서 직접 접수하거나, 행정사에 대행을 맡기세요.</p>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex border-b border-gray-200 mb-6">
+      {/* Tab Navigation - 모바일에서 스크롤 가능 */}
+      <div className="flex overflow-x-auto border-b border-gray-200 mb-4 md:mb-6 -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
         <button
           onClick={() => setActiveTab("gov24")}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+          className={`px-3 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "gov24"
               ? "border-blue-600 text-blue-600"
               : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-1 md:gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
-            정부24 직접 접수
+            <span className="hidden sm:inline">정부24</span> 직접접수
           </span>
         </button>
         <button
           onClick={() => { setActiveTab("proxy"); setForm({ ...form, type: "proxy" }); }}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+          className={`px-3 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "proxy"
               ? "border-teal-600 text-teal-600"
               : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-1 md:gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            접수대행 (문서24)
+            접수대행
           </span>
         </button>
         <button
           onClick={() => { setActiveTab("delegate"); setForm({ ...form, type: "delegate" }); }}
-          className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+          className={`px-3 md:px-6 py-2 md:py-3 text-xs md:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
             activeTab === "delegate"
               ? "border-indigo-600 text-indigo-600"
               : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-1 md:gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
-            대리 의뢰
+            대리의뢰
           </span>
         </button>
       </div>

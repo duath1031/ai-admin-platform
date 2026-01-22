@@ -32,10 +32,10 @@ export default function DashboardLayout({
       <Sidebar />
       <main
         className={`pt-16 transition-all duration-300 ${
-          sidebarOpen ? "ml-64" : "ml-0"
+          sidebarOpen ? "md:ml-64" : "ml-0"
         }`}
       >
-        <div className="p-6">{children}</div>
+        <div className="p-4 md:p-6">{children}</div>
       </main>
     </div>
   );
