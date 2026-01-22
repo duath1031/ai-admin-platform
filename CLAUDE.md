@@ -20,6 +20,15 @@
 
 ## 완료된 작업
 
+### Google AI Studio "나의 지침" 연동 (2026-01-22)
+- ✅ `lib/gemini.ts` - systemInstruction 파라미터 사용으로 변경
+- ✅ Gemini Chat API를 startChat 방식으로 변경 (대화 히스토리 지원)
+- ✅ `lib/systemPrompts.ts` - Google AI Studio 지침과 기존 RAG 지침 통합
+- ✅ 2026년 정책자금(중진공/소진공), 관광기금, 식품위생 등 상세 지침 추가
+- ⚠️ 참고: Google AI Studio 웹에서 설정한 "나의 지침"은 API에 자동 연동되지 않음
+  - 동일한 API 키를 사용해도 별도로 systemInstruction 파라미터로 전달해야 함
+  - 현재 코드에서는 systemPrompts.ts의 내용을 systemInstruction으로 전달
+
 ### 맥락 인식형 RAG 시스템 (2025-01-22)
 - ✅ `lib/rag/intentClassifier.ts` - 질문 의도 분류기 (절차/분쟁 구분)
 - ✅ `lib/rag/lawService.ts` - Intent 기반 법령 검색 (판례는 분쟁 질문에서만)
