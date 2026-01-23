@@ -107,32 +107,32 @@ export async function POST(req: NextRequest) {
     // 업종 정보 검색
     const businessTypes = searchBusinessTypes(lastUserMessage);
     if (businessTypes.length > 0) {
-      additionalContext += `\n\n[관련 업종 정보]\n`;
+      additionalContext += `\n\n[관련 업종 정보 - 반드시 아래 링크를 답변에 포함할 것]\n`;
       for (const bt of businessTypes.slice(0, 2)) {
-        additionalContext += `- ${bt.name} (${bt.category})\n`;
-        additionalContext += `  서식: ${bt.formName}\n`;
-        additionalContext += `  다운로드: ${bt.formUrl}\n`;
-        additionalContext += `  관계법령: ${bt.lawPage}\n`;
+        additionalContext += `\n### ${bt.name} (${bt.category})\n`;
+        additionalContext += `📋 **신청 서식**: [${bt.formName}](${bt.formUrl})\n`;
+        additionalContext += `📚 **관계법령**: [${bt.category} 서식 페이지](${bt.lawPage})\n`;
 
         // 정부24 신청 정보 추가
         if (bt.gov24Url) {
-          additionalContext += `\n[정부24 신청 정보]\n`;
+          additionalContext += `\n📱 **정부24 온라인 신청**\n`;
           additionalContext += `- 서비스명: ${bt.gov24ServiceName}\n`;
-          additionalContext += `- 바로가기: ${bt.gov24Url}\n`;
+          additionalContext += `- 바로가기: [정부24 신청 바로가기](${bt.gov24Url})\n`;
           if (bt.applicationSteps) {
-            additionalContext += `- 신청절차:\n${bt.applicationSteps.join('\n')}\n`;
+            additionalContext += `\n📝 **신청 절차**\n${bt.applicationSteps.join('\n')}\n`;
           }
           if (bt.gov24InputFields) {
-            additionalContext += `- 입력항목: ${bt.gov24InputFields.join(', ')}\n`;
+            additionalContext += `\n📋 **입력 항목**: ${bt.gov24InputFields.join(', ')}\n`;
           }
           if (bt.gov24UploadDocs) {
-            additionalContext += `- 업로드서류:\n`;
+            additionalContext += `\n📎 **첨부 서류 및 준비 방법**\n`;
             for (const doc of bt.gov24UploadDocs) {
-              additionalContext += `  • ${doc}\n`;
+              additionalContext += `- ${doc}\n`;
             }
           }
         }
       }
+      additionalContext += `\n⚠️ 위 링크를 마크다운 형식으로 답변에 반드시 포함하세요.\n`;
     }
 
     // 맥락 인식형 법령 검색 (RAG)
