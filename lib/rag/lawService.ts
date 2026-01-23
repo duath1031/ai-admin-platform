@@ -8,7 +8,7 @@ import {
   SearchMode,
   describeScopeForLog,
 } from './intentClassifier';
-import { searchForm, COMMON_FORMS, FormSearchResult } from '../lawApi';
+import { searchForm, COMMON_FORMS, FormSearchResult, searchFormFromApi } from '../lawApi';
 import { validateLink, generateFallbackLink, LinkValidationResult } from '../utils/linkValidator';
 
 // =============================================================================
@@ -258,30 +258,54 @@ async function searchLocalLaws(query: string): Promise<LocalLawResult[]> {
 
 /**
  * 서식 검색 및 검증
+ * 1. COMMON_FORMS에서 키워드 매칭 시 해당 법령의 서식을 API로 조회
+ * 2. API 조회 실패 시 검색 페이지 URL 제공
  */
 async function searchAndValidateForms(query: string): Promise<FormResult[]> {
   const results: FormResult[] = [];
+  const processedLaws = new Set<string>(); // 중복 법령 조회 방지
 
-  // COMMON_FORMS에서 관련 서식 검색
-  for (const [keyword, form] of Object.entries(COMMON_FORMS)) {
-    if (query.includes(keyword)) {
-      // 링크 유효성 검증
-      const validation = await validateLink(form.formUrl);
+  // COMMON_FORMS에서 관련 키워드 매칭
+  for (const [keyword, formInfo] of Object.entries(COMMON_FORMS)) {
+    if (query.includes(keyword) && !processedLaws.has(formInfo.lawName)) {
+      processedLaws.add(formInfo.lawName);
 
-      const formResult: FormResult = {
-        formName: form.formName,
-        formUrl: form.formUrl,
-        lawName: form.lawName,
-        lawPage: form.lawPage,
-        isValidated: validation.isValid,
-      };
+      try {
+        // API를 통해 최신 서식 정보 조회
+        const apiResult = await searchFormFromApi(formInfo.lawName, keyword);
 
-      if (!validation.isValid) {
-        formResult.validationError = validation.error;
-        formResult.fallbackUrl = generateFallbackLink(form.lawName, 'form');
+        if (apiResult.success && apiResult.forms.length > 0) {
+          for (const form of apiResult.forms.slice(0, 3)) { // 최대 3개
+            const formResult: FormResult = {
+              formName: form.formName,
+              formUrl: form.formUrl,
+              lawName: form.lawName,
+              lawPage: form.lawPage,
+              isValidated: true, // API에서 가져온 최신 정보
+            };
+            results.push(formResult);
+          }
+        } else {
+          // API 실패 시 검색 페이지 URL 제공
+          results.push({
+            formName: formInfo.formName,
+            formUrl: formInfo.formUrl, // 이미 검색 URL로 설정됨
+            lawName: formInfo.lawName,
+            lawPage: formInfo.lawPage,
+            isValidated: true,
+          });
+        }
+      } catch (error) {
+        console.error(`[LawService] 서식 API 조회 실패 (${formInfo.lawName}):`, error);
+        // 에러 시에도 검색 URL 제공
+        results.push({
+          formName: formInfo.formName,
+          formUrl: formInfo.formUrl,
+          lawName: formInfo.lawName,
+          lawPage: formInfo.lawPage,
+          isValidated: true,
+        });
       }
-
-      results.push(formResult);
     }
   }
 

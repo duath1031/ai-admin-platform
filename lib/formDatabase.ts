@@ -33,6 +33,26 @@ export interface BusinessType {
   gov24UploadDocs?: string[];  // 정부24 업로드 서류 및 준비 방법
 }
 
+// =============================================================================
+// URL 생성 헬퍼 함수 (안정적인 검색 페이지 사용)
+// =============================================================================
+
+// 정부24 민원 검색 URL 생성
+function getGov24SearchUrl(serviceName: string): string {
+  return `https://www.gov.kr/portal/service/serviceList?searchNm=${encodeURIComponent(serviceName)}`;
+}
+
+// 국가법령정보센터 서식 검색 URL 생성
+function getLawFormSearchUrl(lawName: string, formKeyword: string = ""): string {
+  const searchQuery = formKeyword ? `${lawName} ${formKeyword}` : lawName;
+  return `https://www.law.go.kr/LSW/lsBylSc.do?menuId=8&query=${encodeURIComponent(searchQuery)}`;
+}
+
+// 국가법령정보센터 법령 서식 페이지 URL 생성
+function getLawFormPageUrl(lawName: string): string {
+  return `https://www.law.go.kr/LSW/lsSc.do?menuId=1&subMenuId=15&query=${encodeURIComponent(lawName)}#liBylSc`;
+}
+
 // 식품위생법 업종 분류
 export const FOOD_BUSINESS_TYPES: Record<string, BusinessType> = {
   general_restaurant: {
@@ -41,8 +61,8 @@ export const FOOD_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "음식류를 조리/판매하며 음주 허용 (식당, 한식집, 중식집 등)",
     category: "식품위생법",
     formName: "영업신고서 (별지 제37호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=31137355",
-    lawPage: "https://www.law.go.kr/법령서식/식품위생법시행규칙",
+    formUrl: getLawFormSearchUrl("식품위생법시행규칙", "영업신고서"),
+    lawPage: getLawFormPageUrl("식품위생법시행규칙"),
     requiredDocs: [
       "위생교육 이수증 (식품위생교육 6시간)",
       "건강진단결과서 (보건증)",
@@ -59,7 +79,7 @@ export const FOOD_BUSINESS_TYPES: Record<string, BusinessType> = {
     ],
     tips: "일반음식점은 주류 판매가 가능하며, 영업 시작 전 위생교육을 반드시 이수해야 합니다.",
     // 정부24 신청 정보
-    gov24Url: "https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=13100000021",
+    gov24Url: getGov24SearchUrl("영업신고 일반음식점"),
     gov24ServiceName: "식품위생법에 따른 영업신고(일반음식점)",
     applicationSteps: [
       "1. 정부24 접속 후 로그인 (공동인증서/간편인증)",
@@ -89,8 +109,8 @@ export const FOOD_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "음식류를 조리/판매하나 음주 불가 (카페, 분식점, 베이커리 등)",
     category: "식품위생법",
     formName: "영업신고서 (별지 제37호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=31137355",
-    lawPage: "https://www.law.go.kr/법령서식/식품위생법시행규칙",
+    formUrl: getLawFormSearchUrl("식품위생법시행규칙", "영업신고서"),
+    lawPage: getLawFormPageUrl("식품위생법시행규칙"),
     requiredDocs: [
       "위생교육 이수증 (식품위생교육 6시간)",
       "건강진단결과서 (보건증)",
@@ -107,7 +127,7 @@ export const FOOD_BUSINESS_TYPES: Record<string, BusinessType> = {
     ],
     tips: "휴게음식점은 주류 판매가 불가능합니다. 카페, 제과점, 분식점 등이 해당됩니다.",
     // 정부24 신청 정보
-    gov24Url: "https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=13100000021",
+    gov24Url: getGov24SearchUrl("영업신고 휴게음식점"),
     gov24ServiceName: "식품위생법에 따른 영업신고(휴게음식점)",
     applicationSteps: [
       "1. 정부24 접속 후 로그인 (공동인증서/간편인증)",
@@ -137,8 +157,8 @@ export const FOOD_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "빵, 케이크, 과자류를 제조/판매 (베이커리, 제과점)",
     category: "식품위생법",
     formName: "영업신고서 (별지 제37호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=31137355",
-    lawPage: "https://www.law.go.kr/법령서식/식품위생법시행규칙",
+    formUrl: getLawFormSearchUrl("식품위생법시행규칙", "영업신고서"),
+    lawPage: getLawFormPageUrl("식품위생법시행규칙"),
     requiredDocs: [
       "위생교육 이수증",
       "건강진단결과서 (보건증)",
@@ -155,7 +175,7 @@ export const FOOD_BUSINESS_TYPES: Record<string, BusinessType> = {
     ],
     tips: "제과점은 현장 제조 시설이 필요하며, 시설기준을 충족해야 합니다.",
     // 정부24 신청 정보
-    gov24Url: "https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=13100000021",
+    gov24Url: getGov24SearchUrl("영업신고 제과점"),
     gov24ServiceName: "식품위생법에 따른 영업신고(제과점영업)",
     applicationSteps: [
       "1. 정부24 접속 후 로그인 (공동인증서/간편인증)",
@@ -190,8 +210,8 @@ export const TOURISM_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "관광객 숙박시설 (호텔, 리조트) - 관광진흥법",
     category: "관광진흥법",
     formName: "관광사업 등록신청서",
-    formUrl: "https://www.law.go.kr/법령서식/관광진흥법시행규칙",
-    lawPage: "https://www.law.go.kr/법령서식/관광진흥법시행규칙",
+    formUrl: getLawFormSearchUrl("관광진흥법시행규칙", "등록신청서"),
+    lawPage: getLawFormPageUrl("관광진흥법시행규칙"),
     law: "관광진흥법",
     requiredDocs: [
       "사업계획서",
@@ -207,6 +227,7 @@ export const TOURISM_BUSINESS_TYPES: Record<string, BusinessType> = {
       { key: "total_area", label: "연면적 (m2)", example: "3000" },
     ],
     tips: "관광호텔업은 등록 전 시설 및 설비 기준 충족 필요. 용도지역 확인 필수.",
+    gov24Url: getGov24SearchUrl("관광사업 등록"),
   },
   hostel: {
     id: "hostel",
@@ -214,8 +235,8 @@ export const TOURISM_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "배낭여행객 등을 위한 저가 숙박시설 - 관광진흥법",
     category: "관광진흥법",
     formName: "관광사업 등록신청서",
-    formUrl: "https://www.law.go.kr/법령서식/관광진흥법시행규칙",
-    lawPage: "https://www.law.go.kr/법령서식/관광진흥법시행규칙",
+    formUrl: getLawFormSearchUrl("관광진흥법시행규칙", "등록신청서"),
+    lawPage: getLawFormPageUrl("관광진흥법시행규칙"),
     law: "관광진흥법",
     requiredDocs: [
       "사업계획서",
@@ -231,6 +252,7 @@ export const TOURISM_BUSINESS_TYPES: Record<string, BusinessType> = {
       { key: "total_area", label: "연면적 (m2)", example: "300" },
     ],
     tips: "호스텔업은 객실당 침대 수 등 시설기준 확인 필요.",
+    gov24Url: getGov24SearchUrl("관광사업 등록 호스텔"),
   },
 };
 
@@ -242,8 +264,8 @@ export const PUBLIC_HEALTH_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "호텔, 여관, 여인숙 등 일반 숙박시설 - 공중위생관리법",
     category: "공중위생관리법",
     formName: "숙박업 신고서",
-    formUrl: "https://www.law.go.kr/법령서식/공중위생관리법시행규칙",
-    lawPage: "https://www.law.go.kr/법령서식/공중위생관리법시행규칙",
+    formUrl: getLawFormSearchUrl("공중위생관리법시행규칙", "숙박업"),
+    lawPage: getLawFormPageUrl("공중위생관리법시행규칙"),
     law: "공중위생관리법",
     permitType: "신고",
     authority: "시/군/구청 위생과",
@@ -275,7 +297,7 @@ export const PUBLIC_HEALTH_BUSINESS_TYPES: Record<string, BusinessType> = {
 4. 주차: 지자체 조례에 따른 주차장 확보
 5. 객실기준: 객실별 욕실, 환기시설 등 시설기준 충족`,
     // 정부24 신청 정보
-    gov24Url: "https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=15100000048",
+    gov24Url: getGov24SearchUrl("숙박업 신고"),
     gov24ServiceName: "공중위생관리법에 따른 숙박업 신고",
     applicationSteps: [
       "1. 정부24 접속 후 로그인 (공동인증서/간편인증)",
@@ -308,8 +330,8 @@ export const PUBLIC_HEALTH_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "에어비앤비, 공유숙박 등 - 공중위생관리법",
     category: "공중위생관리법",
     formName: "숙박업 신고서",
-    formUrl: "https://www.law.go.kr/법령서식/공중위생관리법시행규칙",
-    lawPage: "https://www.law.go.kr/법령서식/공중위생관리법시행규칙",
+    formUrl: getLawFormSearchUrl("공중위생관리법시행규칙", "숙박업"),
+    lawPage: getLawFormPageUrl("공중위생관리법시행규칙"),
     law: "공중위생관리법",
     permitType: "신고",
     authority: "시/군/구청 위생과",
@@ -327,7 +349,7 @@ export const PUBLIC_HEALTH_BUSINESS_TYPES: Record<string, BusinessType> = {
     ],
     tips: "생활숙박업은 주거지역에서도 가능하나, 아파트 등 공동주택은 관리규약 확인 필요.",
     // 정부24 신청 정보
-    gov24Url: "https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=15100000048",
+    gov24Url: getGov24SearchUrl("숙박업 신고 생활숙박"),
     gov24ServiceName: "공중위생관리법에 따른 숙박업 신고(생활숙박업)",
     applicationSteps: [
       "1. 정부24 접속 후 로그인 (공동인증서/간편인증)",
@@ -430,8 +452,8 @@ export const FACTORY_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "제조업을 영위하기 위한 공장 설립 및 등록 (산업집적활성화법)",
     category: "산업집적활성화법",
     formName: "공장설립등의 완료신고서 (별지 제7호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=47178000",
-    lawPage: "https://www.law.go.kr/법령/산업집적활성화및공장설립에관한법률시행규칙",
+    formUrl: getLawFormSearchUrl("산업집적활성화및공장설립에관한법률시행규칙", "완료신고"),
+    lawPage: getLawFormPageUrl("산업집적활성화및공장설립에관한법률시행규칙"),
     law: "산업집적활성화 및 공장설립에 관한 법률",
     permitType: "등록/신고",
     authority: "시/군/구청 또는 한국산업단지공단",
@@ -462,7 +484,7 @@ export const FACTORY_BUSINESS_TYPES: Record<string, BusinessType> = {
 3. 환경규제: 대기/수질/소음 관련 배출시설 설치 시 별도 허가 필요
 4. 산업단지: 산업단지 입주 시 입주계약 절차 별도 진행
 5. 개별입지: 비도시지역 개별입지 시 공장설립승인 필요 (500m² 미만 제외)`,
-    gov24Url: "https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=12600000055",
+    gov24Url: getGov24SearchUrl("공장설립 완료신고"),
     gov24ServiceName: "공장설립등의 완료신고",
     applicationSteps: [
       "1. 정부24 접속 후 로그인 (공동인증서/간편인증)",
@@ -478,8 +500,8 @@ export const FACTORY_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "비도시지역에서 일정 규모 이상 공장 설립 시 필요한 승인",
     category: "산업집적활성화법",
     formName: "공장설립등의 완료신고서 (별지 제7호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=47178000",
-    lawPage: "https://www.law.go.kr/법령/산업집적활성화및공장설립에관한법률시행규칙",
+    formUrl: getLawFormSearchUrl("산업집적활성화및공장설립에관한법률시행규칙", "승인신청"),
+    lawPage: getLawFormPageUrl("산업집적활성화및공장설립에관한법률시행규칙"),
     law: "산업집적활성화 및 공장설립에 관한 법률",
     permitType: "승인",
     authority: "시/군/구청",
@@ -507,6 +529,7 @@ export const FACTORY_BUSINESS_TYPES: Record<string, BusinessType> = {
 2. 승인기간: 약 20~40일 (환경영향평가 대상 시 연장)
 3. 농지전용: 농지 위 설립 시 농지전용허가 선행 필요
 4. 산지전용: 산지 위 설립 시 산지전용허가 선행 필요`,
+    gov24Url: getGov24SearchUrl("공장설립 승인"),
   },
   warehouse: {
     id: "warehouse",
@@ -514,8 +537,8 @@ export const FACTORY_BUSINESS_TYPES: Record<string, BusinessType> = {
     description: "타인의 물품을 보관하는 창고업 등록 (물류정책기본법)",
     category: "물류정책기본법",
     formName: "창고업 등록신청서",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=89565951",
-    lawPage: "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=255538&ancYnChk=0#AJAX",
+    formUrl: getLawFormSearchUrl("물류정책기본법시행규칙", "창고업"),
+    lawPage: getLawFormPageUrl("물류정책기본법시행규칙"),
     law: "물류정책기본법",
     permitType: "등록",
     authority: "시/도지사",
@@ -542,10 +565,14 @@ export const FACTORY_BUSINESS_TYPES: Record<string, BusinessType> = {
 2. 안전기준: 소방시설, 환기시설, 방수시설 등
 3. 보험가입: 화재보험, 적하보험 등 필수
 4. 자가창고: 자사 물품만 보관 시 등록 불요`,
+    gov24Url: getGov24SearchUrl("창고업 등록"),
   },
 };
 
 // 출입국관리법 - 비자/체류 관련
+// 비자 서식은 하이코리아 공식 서식 다운로드 페이지로 연결
+const HIKOREA_FORM_URL = "https://www.hikorea.go.kr/board/BoardDownloadList.pt";
+
 export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
   f4_visa: {
     id: "f4_visa",
@@ -553,8 +580,8 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
     description: "대한민국 국적을 보유했던 자 또는 그 직계비속으로서 외국 국적을 취득한 재외동포를 위한 체류자격",
     category: "출입국관리법",
     formName: "사증발급신청서 (별지 제17호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=78206341",
-    lawPage: "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=259424&ancYnChk=0#AJAX",
+    formUrl: HIKOREA_FORM_URL,
+    lawPage: getLawFormPageUrl("출입국관리법시행규칙"),
     law: "출입국관리법",
     permitType: "사증발급",
     authority: "재외공관 (대사관/총영사관)",
@@ -581,6 +608,7 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
 3. 유효기간: 최대 5년 복수사증 발급 가능
 4. 체류활동: 취업활동 가능 (단순노무직 제외)
 5. 국내 체류기간: 1회 입국 시 최대 2년 체류 가능`,
+    gov24Url: "https://www.hikorea.go.kr/Main.pt",  // 하이코리아 메인
   },
   f5_visa: {
     id: "f5_visa",
@@ -588,8 +616,8 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
     description: "대한민국에 영주할 수 있는 체류자격 (영주권)",
     category: "출입국관리법",
     formName: "체류자격변경허가신청서 (별지 제34호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=78206355",
-    lawPage: "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=259424&ancYnChk=0#AJAX",
+    formUrl: HIKOREA_FORM_URL,
+    lawPage: getLawFormPageUrl("출입국관리법시행규칙"),
     law: "출입국관리법",
     permitType: "체류자격변경",
     authority: "출입국·외국인청",
@@ -612,6 +640,7 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
 2. 소득요건: 전년도 1인당 GNI 이상 소득 또는 자산
 3. 기본소양: 사회통합프로그램 5단계 이수 또는 영주용 종합평가 합격
 4. 품행단정: 범죄경력 없어야 함`,
+    gov24Url: "https://www.hikorea.go.kr/Main.pt",
   },
   d10_visa: {
     id: "d10_visa",
@@ -619,8 +648,8 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
     description: "국내 대학 졸업자 또는 해외 우수인재의 구직활동을 위한 체류자격",
     category: "출입국관리법",
     formName: "사증발급신청서 (별지 제17호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=78206341",
-    lawPage: "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=259424&ancYnChk=0#AJAX",
+    formUrl: HIKOREA_FORM_URL,
+    lawPage: getLawFormPageUrl("출입국관리법시행규칙"),
     law: "출입국관리법",
     permitType: "사증발급",
     authority: "재외공관 / 출입국·외국인청",
@@ -643,6 +672,7 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
 2. 체류기간: 최대 2년 (6개월 단위 연장)
 3. 활동범위: 구직활동, 연수, 시간제 취업(주 20시간 이내)
 4. 취업 시: E-7 등 취업자격으로 변경 필요`,
+    gov24Url: "https://www.hikorea.go.kr/Main.pt",
   },
   e7_visa: {
     id: "e7_visa",
@@ -650,8 +680,8 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
     description: "전문인력으로서 국내 기업에 취업하기 위한 체류자격",
     category: "출입국관리법",
     formName: "사증발급인정신청서 (별지 제21호서식)",
-    formUrl: "https://www.law.go.kr/LSW/flDownload.do?flSeq=134343385",
-    lawPage: "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=259424&ancYnChk=0#AJAX",
+    formUrl: HIKOREA_FORM_URL,
+    lawPage: getLawFormPageUrl("출입국관리법시행규칙"),
     law: "출입국관리법",
     permitType: "사증발급인정",
     authority: "출입국·외국인청",
@@ -674,6 +704,7 @@ export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
 2. 임금요건: 내국인 근로자 평균임금 이상
 3. 고용업체: 세금체납 없어야 함
 4. 사증발급인정서: 국내 업체가 먼저 신청 후, 본인이 재외공관에서 비자 발급`,
+    gov24Url: "https://www.hikorea.go.kr/Main.pt",
   },
 };
 
