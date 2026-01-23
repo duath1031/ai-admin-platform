@@ -27,7 +27,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '통합신청서',
     nameEn: 'Unified Application Form',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=65&dcSeq=1',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '체류자격 변경, 연장, 외국인등록 등 통합 신청서',
     keywords: ['통합신청서', '체류자격', '변경', '연장', '외국인등록'],
     visaTypes: ['모든 비자'],
@@ -40,7 +40,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '사증발급인정신청서',
     nameEn: 'Application for Confirmation of Visa Issuance',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=65&dcSeq=2',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '해외에서 비자 발급을 위한 인정서 신청',
     keywords: ['사증발급인정', '비자인정서', '초청장', 'VIC'],
     visaTypes: ['D-8', 'E-7', 'F-2', 'F-4', 'F-5', 'F-6'],
@@ -53,7 +53,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '특정활동(E-7) 고용추천서',
     nameEn: 'Employment Recommendation for E-7',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=67&dcSeq=1',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: 'E-7 특정활동 비자 신청을 위한 고용추천서',
     keywords: ['고용추천서', 'E-7', 'E7', '특정활동', '전문인력'],
     visaTypes: ['E-7'],
@@ -66,7 +66,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '재외동포(F-4) 체류자격 신청서',
     nameEn: 'Application for F-4 Status',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=66&dcSeq=1',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '재외동포 F-4 비자 신청/변경/연장',
     keywords: ['재외동포', 'F-4', 'F4', '동포비자', '교포'],
     visaTypes: ['F-4'],
@@ -79,7 +79,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '영주(F-5) 체류자격 신청서',
     nameEn: 'Application for Permanent Residence F-5',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=66&dcSeq=2',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '영주권 F-5 비자 신청',
     keywords: ['영주권', 'F-5', 'F5', '영주비자', 'permanent'],
     visaTypes: ['F-5'],
@@ -92,7 +92,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '결혼이민(F-6) 체류자격 신청서',
     nameEn: 'Application for F-6 Marriage Immigrant',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=66&dcSeq=3',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '결혼이민자 F-6 비자 신청',
     keywords: ['결혼이민', 'F-6', 'F6', '배우자비자', '국제결혼'],
     visaTypes: ['F-6'],
@@ -105,7 +105,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '거소신고서',
     nameEn: 'Residence Report Form',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=65&dcSeq=3',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '재외국민 및 외국국적동포 거소신고',
     keywords: ['거소신고', '거소이전', '국내거소'],
     visaTypes: ['F-4'],
@@ -118,7 +118,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '체류지(거소) 변경신고서',
     nameEn: 'Address Change Report',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=65&dcSeq=4',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '외국인 체류지 변경 신고',
     keywords: ['체류지변경', '주소변경', '거소변경', '이사'],
     visaTypes: ['모든 비자'],
@@ -131,7 +131,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '근무처 변경/추가 허가 신청서',
     nameEn: 'Workplace Change Application',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=65&dcSeq=5',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '취업비자 소지자 근무처 변경/추가',
     keywords: ['근무처변경', '직장변경', '이직', '추가근무'],
     visaTypes: ['E-1', 'E-2', 'E-3', 'E-4', 'E-5', 'E-6', 'E-7', 'E-9', 'H-2'],
@@ -144,7 +144,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '재입국허가 신청서',
     nameEn: 'Re-entry Permit Application',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=65&dcSeq=6',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '재입국허가 신청 (단수/복수)',
     keywords: ['재입국허가', '재입국', '출국'],
     visaTypes: ['모든 비자'],
@@ -157,7 +157,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
     name: '체류자격외 활동허가 신청서',
     nameEn: 'Extra Activity Permit Application',
     url: 'https://www.hikorea.go.kr/board/BoardDownloadFile.pt?bbsSeq=1&bcIdx=65&dcSeq=7',
-    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    fallbackUrl: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     description: '체류자격 외 활동(아르바이트 등) 허가',
     keywords: ['체류자격외', '아르바이트', '시간제취업', '부업'],
     visaTypes: ['D-2', 'D-4', 'F-1'],
@@ -169,7 +169,7 @@ export const HIKOREA_LINKS: Record<string, HikoreaFormLink> = {
   default: {
     name: '하이코리아 서식 목록',
     nameEn: 'Hi Korea Form List',
-    url: 'https://www.hikorea.go.kr/board/BoardDownloadList.pt',
+    url: 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt',
     fallbackUrl: 'https://www.hikorea.go.kr',
     description: '하이코리아 공식 서식 다운로드 페이지',
     keywords: ['하이코리아', '출입국', '서식', '양식'],
@@ -255,7 +255,7 @@ ${form.description}
 
 ${form.visaTypes ? `📌 **관련 비자**: ${form.visaTypes.join(', ')}` : ''}
 
-⚠️ 링크가 작동하지 않을 경우 [하이코리아 서식 페이지](https://www.hikorea.go.kr/board/BoardDownloadList.pt)에서 직접 검색하세요.
+⚠️ 링크가 작동하지 않을 경우 [하이코리아 서식 페이지](https://www.hikorea.go.kr/board/BoardApplicationListR.pt)에서 직접 검색하세요.
 `;
 }
 
@@ -276,7 +276,7 @@ export function generateVisaFormGuide(visaType: string): string {
     guide += `  [다운로드](${form.url})\n\n`;
   }
 
-  guide += `\n🔗 [하이코리아 서식 전체 목록](https://www.hikorea.go.kr/board/BoardDownloadList.pt)`;
+  guide += `\n🔗 [하이코리아 서식 전체 목록](https://www.hikorea.go.kr/board/BoardApplicationListR.pt)`;
 
   return guide;
 }

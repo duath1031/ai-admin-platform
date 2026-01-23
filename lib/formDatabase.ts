@@ -34,15 +34,40 @@ export interface BusinessType {
 }
 
 // =============================================================================
-// URL 생성 헬퍼 함수 (안정적인 검색 페이지 사용)
+// URL 생성 헬퍼 함수 (검색 결과 페이지 사용)
 // =============================================================================
 
-// 정부24 민원 검색 URL 생성
+// 주요 민원의 정부24 직접 링크 (CappBizCD 기반)
+const GOV24_DIRECT_LINKS: Record<string, string> = {
+  // 식품위생법
+  "영업신고": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000039",
+  "영업신고 일반음식점": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000039",
+  "영업신고 휴게음식점": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000039",
+  "영업신고 제과점": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000039",
+  // 공중위생관리법
+  "숙박업 신고": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15100000048",
+  "숙박업 신고 생활숙박": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15100000048",
+  // 관광진흥법
+  "관광사업 등록": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12400000091",
+  "관광사업 등록 호스텔": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12400000091",
+  // 산업집적활성화법
+  "공장설립 완료신고": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12600000055",
+  "공장설립 승인": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12600000056",
+  // 물류정책기본법
+  "창고업 등록": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12700000066",
+};
+
+// 정부24 민원 URL 생성 (직접 링크 또는 검색 페이지)
 function getGov24SearchUrl(serviceName: string): string {
-  return `https://www.gov.kr/portal/service/serviceList?searchNm=${encodeURIComponent(serviceName)}`;
+  // 직접 링크가 있으면 사용
+  if (GOV24_DIRECT_LINKS[serviceName]) {
+    return GOV24_DIRECT_LINKS[serviceName];
+  }
+  // 없으면 검색 페이지로 연결
+  return `https://www.gov.kr/portal/search/searchMain?searchGb=service&query=${encodeURIComponent(serviceName)}`;
 }
 
-// 국가법령정보센터 서식 검색 URL 생성
+// 국가법령정보센터 서식 검색 URL 생성 (검색 결과 페이지)
 function getLawFormSearchUrl(lawName: string, formKeyword: string = ""): string {
   const searchQuery = formKeyword ? `${lawName} ${formKeyword}` : lawName;
   return `https://www.law.go.kr/LSW/lsBylSc.do?menuId=8&query=${encodeURIComponent(searchQuery)}`;
@@ -570,8 +595,8 @@ export const FACTORY_BUSINESS_TYPES: Record<string, BusinessType> = {
 };
 
 // 출입국관리법 - 비자/체류 관련
-// 비자 서식은 하이코리아 공식 서식 다운로드 페이지로 연결
-const HIKOREA_FORM_URL = "https://www.hikorea.go.kr/board/BoardDownloadList.pt";
+// 비자 서식은 하이코리아 공식 민원서식 페이지로 연결
+const HIKOREA_FORM_URL = "https://www.hikorea.go.kr/board/BoardApplicationListR.pt";
 
 export const IMMIGRATION_VISA_TYPES: Record<string, BusinessType> = {
   f4_visa: {

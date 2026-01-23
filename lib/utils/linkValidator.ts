@@ -211,7 +211,7 @@ function findHikoreaFallback(originalUrl: string): string | null {
   }
 
   // 기본 하이코리아 서식 페이지
-  return HIKOREA_LINKS.default?.url || 'https://www.hikorea.go.kr/board/BoardDownloadList.pt';
+  return HIKOREA_LINKS.default?.url || 'https://www.hikorea.go.kr/board/BoardApplicationListR.pt';
 }
 
 // =============================================================================

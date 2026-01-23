@@ -320,24 +320,20 @@ function SubmissionButtons({ content }: { content: string }) {
           서류 작성이 완료되셨나요? 접수를 도와드립니다.
         </p>
         <div className="flex flex-wrap gap-2">
-          {canUseProxy ? (
-            <button
-              onClick={() => setShowProxyModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              접수대행 신청
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-500 text-sm rounded-lg">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              접수대행 불가 (유선 상담 필요)
-            </div>
-          )}
+          {/* 접수대행 버튼 - 불가 시에도 버튼 유지하고 클릭 시 안내 모달 */}
+          <button
+            onClick={() => setShowProxyModal(true)}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              canUseProxy
+                ? "bg-teal-600 hover:bg-teal-700 text-white"
+                : "bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300"
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            {canUseProxy ? "접수대행 신청" : "접수대행 안내"}
+          </button>
           <button
             onClick={() => setShowDelegateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors"
