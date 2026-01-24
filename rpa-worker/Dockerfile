@@ -2,7 +2,7 @@
 # RPA Worker Server - Playwright 기반 정부24 자동화
 # =============================================================================
 # Base: Microsoft Playwright 공식 이미지 (브라우저 내장)
-FROM mcr.microsoft.com/playwright:v1.41.0-jammy
+FROM mcr.microsoft.com/playwright:v1.50.0-noble
 
 # 작업 디렉토리 설정
 WORKDIR /app

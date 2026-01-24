@@ -41,11 +41,40 @@
 - 다른 이메일로 발송하려면 도메인 인증 필요 (Wix에서 어려움)
 - 임시 해결: ADMIN_EMAIL을 Gmail로 설정
 
+## 🚨 다음 작업 (2026-01-24 중단 지점)
+
+### 즉시 해야 할 일: Playwright 버전 수정 후 재배포
+1. **Dockerfile 수정 완료** - `v1.41.0` → `v1.50.0-noble`로 변경함
+2. **커밋 & 푸시 필요**:
+   ```bash
+   cd "E:\염현수행정사\주식회사어드미니\ai-admin-platform"
+   git add rpa-worker/Dockerfile
+   git commit -m "fix: Playwright Docker 이미지 버전 업데이트 (v1.50.0)"
+   git push origin main
+   ```
+3. **Railway 재배포**:
+   ```bash
+   cd rpa-worker && railway up
+   ```
+4. **테스트**:
+   ```bash
+   curl -X POST https://admini-rpa-worker-production.up.railway.app/gov24/auth/request \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: admini-rpa-worker-2024-secure-key" \
+     -d '{"name":"본인이름","birthDate":"YYYYMMDD","phoneNumber":"010XXXXXXXX","carrier":"SKT"}'
+   ```
+
+### 현재 에러
+- Playwright 버전 불일치: Docker 이미지 v1.41.0 vs npm 설치 v1.58.0
+- 브라우저 실행 파일 없음 에러
+
+---
+
 ## 추후 작업
 - 결제 시스템 (토스페이먼츠)
 - 결제 여부에 따른 기능 활성화 (Guest/VIP 분기)
 - Resend 도메인 인증 (별도 도메인 필요)
-- ~~RPA Worker Railway 배포 및 연동 테스트~~ ✅ 완료 (2026-01-24)
+- ~~RPA Worker Railway 배포 및 연동 테스트~~ ⚠️ 배포 완료, 버전 수정 필요
 
 ---
 
