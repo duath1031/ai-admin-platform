@@ -45,7 +45,34 @@
 - 결제 시스템 (토스페이먼츠)
 - 결제 여부에 따른 기능 활성화 (Guest/VIP 분기)
 - Resend 도메인 인증 (별도 도메인 필요)
-- RPA Worker Railway 배포 및 연동 테스트
+- ~~RPA Worker Railway 배포 및 연동 테스트~~ ✅ 완료 (2026-01-24)
+
+---
+
+## 완료된 작업 - RPA Worker Railway 배포 (2026-01-24)
+
+### 배포 정보
+- **Railway URL**: https://admini-rpa-worker-production.up.railway.app
+- **Railway 프로젝트**: admini-rpa-worker
+- **API Key**: admini-rpa-worker-2024-secure-key
+
+### Vercel 환경변수 (설정 필요)
+```
+RPA_WORKER_URL=https://admini-rpa-worker-production.up.railway.app
+RPA_WORKER_API_KEY=admini-rpa-worker-2024-secure-key
+```
+
+### RPA Worker 엔드포인트
+- `GET /health` - 헬스체크
+- `POST /gov24/auth/request` - 간편인증 요청
+- `POST /gov24/auth/confirm` - 간편인증 확인
+- `POST /gov24/submit` - 민원 제출
+
+### 현재 구현 상태
+| 기능 | 상태 |
+|------|------|
+| 간편인증 요청/확인 | ✅ 구현 완료 (테스트 필요) |
+| 민원 제출 | ⚠️ 기본 프레임만 (실제 정부24 테스트 필요) |
 
 ---
 
