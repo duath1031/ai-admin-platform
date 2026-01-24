@@ -5,13 +5,17 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const ADMIN_EMAILS = ["Lawyeom@naver.com"];
+// ADMIN_EMAILS를 소문자로 정규화하여 비교
+const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "Lawyeom@naver.com,duath1031@gmail.com")
+  .split(",")
+  .map(email => email.toLowerCase().trim());
 
 const adminMenuItems = [
   { name: "대시보드", href: "/admin", icon: "📊" },
   { name: "신청 관리", href: "/admin/submissions", icon: "📋" },
   { name: "사용자 관리", href: "/admin/users", icon: "👥" },
-  { name: "설정", href: "/admin/settings", icon: "⚙️" },
+  { name: "AI 프롬프트", href: "/admin/prompts", icon: "🤖" },
+  { name: "사이트 설정", href: "/admin/settings", icon: "⚙️" },
 ];
 
 export default function AdminLayout({
@@ -30,7 +34,7 @@ export default function AdminLayout({
     );
   }
 
-  if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
+  if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
     redirect("/");
   }
 

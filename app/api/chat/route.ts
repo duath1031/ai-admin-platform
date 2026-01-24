@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { chatWithGemini } from "@/lib/gemini";
-import { ADMINI_SYSTEM_PROMPT } from "@/lib/systemPrompts";
+import { getActiveSystemPrompt } from "@/lib/systemPromptService";
 import prisma from "@/lib/prisma";
 import { searchForm, formatFormInfo, COMMON_FORMS } from "@/lib/lawApi";
 import { searchLandUse, formatLandUseResult } from "@/lib/landUseApi";
@@ -165,8 +165,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // DB에서 시스템 프롬프트 가져오기 (없으면 기본 프롬프트 사용)
+    const baseSystemPrompt = await getActiveSystemPrompt();
+
     // 시스템 프롬프트에 추가 컨텍스트 포함
-    const enhancedPrompt = ADMINI_SYSTEM_PROMPT + additionalContext;
+    const enhancedPrompt = baseSystemPrompt + additionalContext;
 
     const assistantMessage = await chatWithGemini(messages, enhancedPrompt);
 

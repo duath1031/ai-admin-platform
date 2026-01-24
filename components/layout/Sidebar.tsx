@@ -4,6 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUIStore } from "@/lib/store";
 import { useEffect } from "react";
+import { useSession } from "next-auth/react";
+
+// ADMIN_EMAILS를 소문자로 정규화하여 비교
+const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "Lawyeom@naver.com,duath1031@gmail.com")
+  .split(",")
+  .map(email => email.toLowerCase().trim());
 
 const menuItems = [
   {
@@ -141,9 +147,39 @@ const menuItems = [
   },
 ];
 
+const adminMenuItem = {
+  name: "관리자",
+  href: "/admin",
+  icon: (
+    <svg
+      className="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+      />
+    </svg>
+  ),
+};
+
 export default function Sidebar() {
   const pathname = usePathname();
   const { sidebarOpen, setSidebarOpen } = useUIStore();
+  const { data: session } = useSession();
+
+  // 관리자 여부 체크 (대소문자 무시)
+  const isAdmin = session?.user?.email && ADMIN_EMAILS.includes(session.user.email.toLowerCase());
 
   // 화면 크기 변경 시 모바일에서 사이드바 자동 닫기
   useEffect(() => {
@@ -206,6 +242,28 @@ export default function Sidebar() {
               </Link>
             );
           })}
+
+          {/* 관리자 메뉴 - 관리자만 표시 */}
+          {isAdmin && (
+            <>
+              <div className="border-t border-gray-200 my-2" />
+              <Link
+                href={adminMenuItem.href}
+                onClick={handleMenuClick}
+                className={`
+                  flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                  ${
+                    pathname.startsWith("/admin")
+                      ? "bg-purple-50 text-purple-700 font-medium"
+                      : "text-purple-600 hover:bg-purple-50"
+                  }
+                `}
+              >
+                {adminMenuItem.icon}
+                <span>{adminMenuItem.name}</span>
+              </Link>
+            </>
+          )}
         </nav>
       </aside>
     </>

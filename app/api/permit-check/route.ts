@@ -666,8 +666,16 @@ function calculateScore(zone: string, businessType: string): {
     hasDiscretion = true; // 불허 시 용도변경 등 재량적 판단 필요
   }
 
-  // 2. 건축물 요건 (20점)
-  const buildingScore = 15 + Math.floor(Math.random() * 6);
+  // 2. 건축물 요건 (20점) - 용도지역 기반 결정적 점수
+  // 상업/준공업 지역은 건축물 용도 유연성이 높음
+  const flexibleZones = ['일반상업지역', '근린상업지역', '중심상업지역', '준공업지역', '준주거지역'];
+  const moderateZones = ['제2종일반주거지역', '제3종일반주거지역'];
+  let buildingScore = 15;
+  if (flexibleZones.some(z => zone.includes(z))) {
+    buildingScore = 20;
+  } else if (moderateZones.some(z => zone.includes(z))) {
+    buildingScore = 17;
+  }
   score += buildingScore;
   if (buildingScore >= 18) {
     analysis.push({
@@ -688,9 +696,6 @@ function calculateScore(zone: string, businessType: string): {
   }
 
   // 3. 인허가 요건 (20점) - 업종별 맞춤 분석
-  const permitScore = 10 + Math.floor(Math.random() * 11);
-  score += permitScore;
-
   // 업종별 인허가 유형 설명
   const permitTypeDescriptions: Record<string, { type: string; authority: string; difficulty: string }> = {
     restaurant: { type: "영업신고", authority: "시·군·구청", difficulty: "보통" },
@@ -716,6 +721,15 @@ function calculateScore(zone: string, businessType: string): {
   };
 
   const permitInfo = permitTypeDescriptions[businessType] || { type: "인허가", authority: "관할 행정청", difficulty: "보통" };
+
+  // 인허가 난이도에 따라 확정적으로 점수 결정
+  const permitDifficultyScores: Record<string, number> = {
+    "쉬움": 19,
+    "보통": 15,
+    "어려움": 12
+  };
+  const permitScore = permitDifficultyScores[permitInfo.difficulty] || 15;
+  score += permitScore;
 
   if (permitScore >= 17 || permitInfo.difficulty === "쉬움") {
     analysis.push({
@@ -744,8 +758,22 @@ function calculateScore(zone: string, businessType: string): {
     hasDiscretion = true;
   }
 
-  // 4. 주변 환경 (20점)
-  const envScore = 12 + Math.floor(Math.random() * 9);
+  // 4. 주변 환경 (20점) - 업종별 환경 민감도에 따라 확정적으로 점수 결정
+  // 학교보건법, 청소년보호법 등 이격거리 규정이 엄격한 업종
+  const highEnvRestrictionTypes = ['lodging', 'sports', 'manufacturing', 'recycling'];
+  // 환경 규제가 보통인 업종
+  const mediumEnvRestrictionTypes = ['restaurant', 'cafe', 'medical', 'petshop'];
+  // 환경 규제가 적은 업종
+  const lowEnvRestrictionTypes = ['office', 'retail', 'education', 'realestate', 'beauty'];
+
+  let envScore = 16; // 기본 점수
+  if (lowEnvRestrictionTypes.includes(businessType)) {
+    envScore = 19;
+  } else if (mediumEnvRestrictionTypes.includes(businessType)) {
+    envScore = 16;
+  } else if (highEnvRestrictionTypes.includes(businessType)) {
+    envScore = 13;
+  }
   score += envScore;
   if (envScore >= 18) {
     analysis.push({

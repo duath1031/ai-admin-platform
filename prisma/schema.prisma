@@ -162,13 +162,17 @@ model RpaTask {
   id            String   @id @default(cuid())
 
   // Task Identification
-  taskType      String   // form_fill, search, submit, scrape
+  taskType      String   // form_fill, search, submit, scrape, gov24_auth_request, gov24_auth_confirm, gov24_submit
   targetSite    String   // venture_in, gov24, hometax, etc.
   targetUrl     String?
 
   // [Patent] Dynamic Form Injection Data
   formData      String   // JSON: Field mappings and values
   fieldMappings String?  // JSON: CSS selectors and field types
+
+  // Worker Server Integration (하이브리드 아키텍처)
+  workerId      String?  // Worker 서버 ID (Railway 인스턴스)
+  workerTaskId  String?  // Worker 서버 내부 작업 ID
 
   // Execution Status
   status        String   @default("pending") // pending, running, success, failed, cancelled
@@ -181,6 +185,10 @@ model RpaTask {
   screenshotUrl String?  // S3 URL for failure screenshot
   errorMessage  String?
 
+  // Session Data (간편인증 시 세션 유지)
+  sessionCookies String?  // JSON: 로그인 세션 쿠키
+  authPhase      String?  // waiting, confirmed, expired
+
   // Retry Logic
   retryCount    Int      @default(0)
   maxRetries    Int      @default(3)
@@ -191,6 +199,11 @@ model RpaTask {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([taskType])
+  @@index([workerId])
 }
 
 // =============================================================================
@@ -666,4 +679,61 @@ model Notification {
   @@index([userId])
   @@index([status])
   @@index([isRead])
+}
+
+// =============================================================================
+// Admin Settings Models (관리자 설정)
+// =============================================================================
+
+model SystemPrompt {
+  id          String   @id @default(cuid())
+
+  // Prompt Identification
+  name        String   @unique  // 고유 식별자 (예: main, immigration, permit)
+  displayName String             // 표시명 (예: 메인 AI 프롬프트, 출입국 전문 프롬프트)
+  description String?            // 설명
+
+  // Prompt Content
+  content     String             // 시스템 프롬프트 내용 (마크다운 지원)
+
+  // Status
+  isActive    Boolean  @default(true)   // 활성화 여부
+  isDefault   Boolean  @default(false)  // 기본 프롬프트 여부
+
+  // Versioning
+  version     Int      @default(1)      // 버전 번호
+
+  // Audit
+  createdBy   String?            // 생성자 이메일
+  updatedBy   String?            // 수정자 이메일
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([isDefault])
+}
+
+model SiteSettings {
+  id          String   @id @default(cuid())
+
+  // Setting Identification
+  key         String   @unique  // 설정 키 (예: site_name, logo_url, primary_color)
+  category    String             // 카테고리 (general, appearance, footer, menu)
+
+  // Setting Value
+  value       String             // 설정 값 (JSON 문자열 가능)
+  valueType   String   @default("string")  // string, number, boolean, json
+
+  // Metadata
+  displayName String             // 표시명
+  description String?            // 설명
+
+  // Audit
+  updatedBy   String?            // 수정자 이메일
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
 }
