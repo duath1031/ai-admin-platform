@@ -6,6 +6,7 @@ import { getActiveSystemPrompt } from "@/lib/systemPromptService";
 import prisma from "@/lib/prisma";
 import { searchForm, formatFormInfo, COMMON_FORMS } from "@/lib/lawApi";
 import { searchLandUse, formatLandUseResult } from "@/lib/landUseApi";
+import { searchBuilding, formatBuildingResult } from "@/lib/buildingApi";
 import { searchBusinessTypes } from "@/lib/formDatabase";
 // RAG 시스템 (맥락 인식형 법령 검색)
 import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawService";
@@ -15,8 +16,10 @@ import { quickClassify } from "@/lib/rag/intentClassifier";
 function detectIntent(message: string): {
   needsFormInfo: boolean;
   needsLandUse: boolean;
+  needsBuildingInfo: boolean;  // 건축물대장 조회 필요 여부
   formKeyword?: string;
   address?: string;
+  targetBusiness?: string;     // 목표 업종 (숙박, 음식점 등)
 } {
   const lowerMsg = message.toLowerCase();
 
@@ -43,6 +46,8 @@ function detectIntent(message: string): {
     /([가-힣]+(?:구|군)\s*[가-힣0-9]+(?:동|로|길)\s*[\d-]+)/,
     // 읍면동 + 번지
     /([가-힣]+(?:읍|면|동|리)\s*[\d-]+(?:번지)?)/,
+    // 간단한 도로명주소: 한글+로/길 + 번호 (예: 용종로123, 세종대로 100)
+    /([가-힣]+(?:로|길)\s*[\d-]+(?:번지)?)/,
   ];
 
   let addressMatch: RegExpMatchArray | null = null;
@@ -54,6 +59,39 @@ function detectIntent(message: string): {
   // 주소가 있으면 토지이용계획 조회 필요 (인허가 관련 질문일 가능성 높음)
   const hasLandKeyword = landKeywords.some(k => message.includes(k));
   const needsLandUse = addressMatch !== null && hasLandKeyword;
+
+  // 건축물대장 조회가 필요한 키워드 (허가/용도변경 관련)
+  const buildingKeywords = [
+    "허가", "가능", "용도변경", "건축물대장", "위반건축물", "사용승인",
+    "층수", "용적률", "건폐율", "연면적", "건축면적",
+    "숙박", "호텔", "모텔", "호스텔", "민박", "게스트하우스",
+    "음식점", "카페", "식당", "공장", "창고", "사무실", "상가"
+  ];
+  const hasBuildingKeyword = buildingKeywords.some(k => message.includes(k));
+  const needsBuildingInfo = addressMatch !== null && hasBuildingKeyword;
+
+  // 목표 업종 추출
+  const businessTypes: Record<string, string[]> = {
+    "숙박시설": ["숙박", "호텔", "모텔", "호스텔", "민박", "게스트하우스", "펜션", "리조트"],
+    "음식점": ["음식점", "식당", "레스토랑", "카페", "커피숍", "베이커리"],
+    "공장": ["공장", "제조시설", "제조업", "생산시설"],
+    "창고": ["창고", "물류", "물류센터", "보관시설"],
+    "판매시설": ["상가", "마트", "슈퍼", "편의점", "소매점"],
+    "사무소": ["사무실", "오피스", "사무소"],
+  };
+
+  let targetBusiness: string | undefined;
+  for (const [category, keywords] of Object.entries(businessTypes)) {
+    if (keywords.some(k => message.includes(k))) {
+      targetBusiness = category;
+      break;
+    }
+  }
+
+  // 디버그 로그
+  console.log(`[Intent] 메시지: "${message.substring(0, 50)}..."`);
+  console.log(`[Intent] 주소 감지: ${addressMatch ? addressMatch[1] : "없음"}, 토지키워드: ${hasLandKeyword}, 건물키워드: ${hasBuildingKeyword}`);
+  console.log(`[Intent] 조회필요 - 토지: ${needsLandUse}, 건물: ${needsBuildingInfo}, 목표업종: ${targetBusiness || "없음"}`);
 
   // 서식 키워드 추출
   let formKeyword: string | undefined;
@@ -67,8 +105,10 @@ function detectIntent(message: string): {
   return {
     needsFormInfo,
     needsLandUse,
+    needsBuildingInfo,
     formKeyword,
     address: addressMatch ? addressMatch[1] : undefined,
+    targetBusiness,
   };
 }
 
@@ -155,14 +195,49 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 토지이용계획 조회
-    if (intent.needsLandUse && intent.address) {
-      try {
-        const landResult = await searchLandUse(intent.address);
+    // 토지이용계획 + 건축물대장 조회 (병렬 실행)
+    if (intent.address && (intent.needsLandUse || intent.needsBuildingInfo)) {
+      console.log(`[Chat] 부동산 정보 조회 시작: "${intent.address}" (토지: ${intent.needsLandUse}, 건물: ${intent.needsBuildingInfo})`);
+
+      // 병렬로 API 호출
+      const [landResult, buildingResult] = await Promise.all([
+        intent.needsLandUse ? searchLandUse(intent.address).catch(err => {
+          console.error("[Chat] 토지이용계획 조회 오류:", err);
+          return null;
+        }) : Promise.resolve(null),
+        intent.needsBuildingInfo ? searchBuilding(intent.address).catch(err => {
+          console.error("[Chat] 건축물대장 조회 오류:", err);
+          return null;
+        }) : Promise.resolve(null),
+      ]);
+
+      // 토지이용계획 결과
+      if (landResult) {
+        console.log(`[Chat] 토지이용계획 조회 결과: success=${landResult.success}, zones=${landResult.zoneInfo?.map(z => z.name).join(', ') || 'none'}`);
         additionalContext += `\n\n[토지이용계획 조회 결과]\n${formatLandUseResult(landResult)}`;
-      } catch (error) {
-        console.error("토지이용계획 조회 오류:", error);
+      } else if (intent.needsLandUse) {
+        additionalContext += `\n\n[토지이용계획 조회]\n⚠️ 주소 "${intent.address}"의 토지이용계획 조회 중 오류가 발생했습니다. 토지이음(eum.go.kr)에서 직접 확인해주세요.`;
       }
+
+      // 건축물대장 결과
+      if (buildingResult) {
+        console.log(`[Chat] 건축물대장 조회 결과: success=${buildingResult.success}, 용도=${buildingResult.mainPurpose || 'none'}`);
+        additionalContext += `\n\n[건축물대장 조회 결과]\n${formatBuildingResult(buildingResult)}`;
+
+        // 목표 업종이 있으면 용도변경 가능성 분석 추가
+        if (intent.targetBusiness && buildingResult.success && buildingResult.mainPurpose) {
+          const { checkPurposeChangeability } = await import("@/lib/buildingApi");
+          const changeability = checkPurposeChangeability(buildingResult.mainPurpose, intent.targetBusiness);
+          additionalContext += `\n\n[용도변경 분석]\n`;
+          additionalContext += `- 현재 용도: ${buildingResult.mainPurpose}\n`;
+          additionalContext += `- 목표 용도: ${intent.targetBusiness}\n`;
+          additionalContext += `- 분석: ${changeability.note}\n`;
+        }
+      } else if (intent.needsBuildingInfo) {
+        additionalContext += `\n\n[건축물대장 조회]\n⚠️ 주소 "${intent.address}"의 건축물대장 조회 중 오류가 발생했습니다. 세움터(cloud.eais.go.kr)에서 직접 확인해주세요.`;
+      }
+    } else if (intent.address) {
+      console.log(`[Chat] 주소 감지됨 ("${intent.address}") 하지만 관련 키워드 없음`);
     }
 
     // DB에서 시스템 프롬프트 가져오기 (없으면 기본 프롬프트 사용)

@@ -24,14 +24,15 @@
    - 인기 질문 유형
    - 민원 접수 현황
 
-### 구현 계획
-- [ ] Prisma 스키마에 SystemPrompt, SiteSettings 테이블 추가
-- [ ] `/admin` 라우트 생성 (관리자 전용)
-- [ ] 관리자 권한 체크 미들웨어
-- [ ] 시스템 프롬프트 CRUD API
-- [ ] 시스템 프롬프트 편집 UI (마크다운 에디터)
-- [ ] UI 설정 관리 페이지
-- [ ] gemini.ts에서 DB의 시스템 프롬프트 조회하도록 수정
+### 구현 계획 (완료됨 - 2026-01-24)
+- [x] Prisma 스키마에 SystemPrompt, SiteSettings 테이블 추가
+- [x] `/admin` 라우트 생성 (관리자 전용)
+- [x] 관리자 권한 체크 미들웨어
+- [x] 시스템 프롬프트 CRUD API (`/api/admin/prompts`)
+- [x] 시스템 프롬프트 편집 UI (`/admin/prompts`)
+- [x] 사용자 관리 페이지 (`/admin/users`)
+- [x] 사이트 설정 관리 페이지 (`/admin/settings`)
+- [x] gemini.ts에서 DB의 시스템 프롬프트 조회하도록 수정 (`lib/systemPromptService.ts`)
 
 ---
 
@@ -40,10 +41,76 @@
 - 다른 이메일로 발송하려면 도메인 인증 필요 (Wix에서 어려움)
 - 임시 해결: ADMIN_EMAIL을 Gmail로 설정
 
-## 추후 작업 (관리자 페이지 이후)
+## 추후 작업
 - 결제 시스템 (토스페이먼츠)
 - 결제 여부에 따른 기능 활성화 (Guest/VIP 분기)
 - Resend 도메인 인증 (별도 도메인 필요)
+- RPA Worker Railway 배포 및 연동 테스트
+
+---
+
+## 완료된 작업 - 부동산 정보 자동 조회 (2026-01-24)
+
+### 주소 기반 자동 조회 기능
+- 사용자가 주소와 함께 허가/인허가 질문 시 자동으로 조회
+- 예: "용종로123 호스텔 허가 가능하니?" → 토지이용계획 + 건축물대장 자동 조회
+
+### 생성/수정 파일
+- `lib/buildingApi.ts` - 공공데이터포털 건축물대장 API 연동 (신규)
+- `app/api/chat/route.ts` - 주소 패턴 매칭 강화 + 건축물대장 조회 통합
+
+### 기능 상세
+1. **주소 패턴 매칭 강화**
+   - 간단한 도로명 주소 인식: "용종로123", "세종대로 100" 등
+   - 기존 패턴 + 새 패턴 추가
+
+2. **토지이용계획 조회** (V-World API)
+   - 용도지역/지구 정보
+   - 허용/제한 업종 정보
+
+3. **건축물대장 조회** (공공데이터포털 API)
+   - 주용도, 세부용도
+   - 구조, 층수
+   - 면적 (대지/건축/연면적)
+   - 건폐율, 용적률
+   - 사용승인일
+   - 위반건축물 여부
+   - 주차대수
+
+4. **용도변경 가능성 분석**
+   - 현재 용도 → 목표 업종 변경 가능성 간이 분석
+   - 허가/신고 여부 안내
+
+### 환경변수
+- `VWORLD_KEY` - V-World API 키 (토지이용계획)
+- `PUBLIC_DATA_KEY` - 공공데이터포털 API 키 (건축물대장)
+
+---
+
+## 완료된 작업 - RPA Worker 서버 (2026-01-24)
+
+### 하이브리드 마이크로서비스 아키텍처
+- Main Server (Vercel/Next.js): UI, DB, AI 채팅, 문서 생성
+- Worker Server (Railway/Express): Playwright RPA (정부24 자동화)
+
+### 생성된 파일
+- `rpa-worker/Dockerfile` - Playwright 및 한글 폰트 설정
+- `rpa-worker/server.js` - Express API 서버
+- `rpa-worker/gov24Logic.js` - 정부24 간편인증 및 민원 제출 로직
+- `rpa-worker/package.json` - 의존성 정의
+- `rpa-worker/.env.example` - 환경변수 템플릿
+- `app/api/rpa/delegate/route.ts` - Vercel→Railway 작업 위임 API
+
+### RpaTask 스키마 확장
+- `workerId` - Worker 서버 ID
+- `workerTaskId` - Worker 내부 작업 ID
+- `sessionCookies` - 로그인 세션 쿠키
+- `authPhase` - 인증 단계 (waiting/confirmed/expired)
+
+### 배포 가이드
+1. Railway에서 rpa-worker 폴더 배포
+2. 환경변수 설정: `WORKER_API_KEY`, `ALLOWED_ORIGINS`
+3. Vercel에서 `RPA_WORKER_URL`, `RPA_WORKER_API_KEY` 설정
 
 ## 완료된 작업
 
