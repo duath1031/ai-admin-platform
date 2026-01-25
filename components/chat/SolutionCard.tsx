@@ -56,29 +56,45 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
         }),
       });
 
-      if (!response.ok) {
+      // Content-Type 확인하여 JSON 에러 응답 처리
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
         const errorData = await response.json();
         throw new Error(errorData.error || "문서 생성 실패");
       }
 
-      // 파일 다운로드
-      const blob = await response.blob();
+      if (!response.ok) {
+        throw new Error("문서 생성 실패 (서버 오류)");
+      }
 
-      // 파일명 생성 (브라우저 호환성을 위해 영문+숫자만 사용)
+      // ArrayBuffer로 받아서 Blob으로 변환 (더 안정적인 바이너리 처리)
+      const arrayBuffer = await response.arrayBuffer();
+      const blob = new Blob([arrayBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      });
+
+      // 파일명 생성 (영문+숫자만 사용)
       const today = new Date();
       const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const timeStr = `${String(today.getHours()).padStart(2, "0")}${String(today.getMinutes()).padStart(2, "0")}`;
       const fileName = `document_${dateStr}_${timeStr}.docx`;
 
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      // 다운로드 링크 생성 및 클릭
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = fileName;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+
+      // 정리
+      setTimeout(() => {
+        window.URL.revokeObjectURL(downloadUrl);
+        document.body.removeChild(link);
+      }, 100);
     } catch (err) {
+      console.error("Document generation error:", err);
       setError(err instanceof Error ? err.message : "문서 생성 중 오류가 발생했습니다.");
     } finally {
       setIsGenerating(false);
