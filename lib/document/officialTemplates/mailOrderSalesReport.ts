@@ -172,21 +172,22 @@ function createEmptyParagraph(spacing: number): Paragraph {
 
 function createReceiptInfoTable(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 9500, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    alignment: AlignmentType.CENTER,
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("접수번호", 20),
-          createDataCell("", 30),
-          createHeaderCell("접수일", 20),
-          createDataCell("", 30),
+          createHeaderCell("접수번호", 1900),
+          createDataCell("", 2850),
+          createHeaderCell("접수일", 1900),
+          createDataCell("", 2850),
         ],
       }),
       new TableRow({
         children: [
-          createHeaderCell("처리기간", 20),
-          createMergedDataCell("3일", 80, 3),
+          createHeaderCell("처리기간", 1900),
+          createMergedDataCell("3일", 7600, 3),
         ],
       }),
     ],
@@ -194,79 +195,81 @@ function createReceiptInfoTable(): Table {
 }
 
 function createApplicantInfoTable(data: MailOrderSalesData): Table {
+  // 총 너비 9500 DXA 기준: 15%=1425, 25%=2375, 30%=2850
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 9500, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    alignment: AlignmentType.CENTER,
     rows: [
       // 신고인 헤더
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("신 고 인", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: 1425, type: WidthType.DXA },
             rowSpan: 6,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("법인명(상호)", 15),
-          createDataCell(data.companyName || "", 25),
-          createHeaderCell("법인등록번호", 15),
-          createDataCell(data.corporateNumber || "", 30),
+          createHeaderCell("법인명(상호)", 1425),
+          createDataCell(data.companyName || "", 2375),
+          createHeaderCell("법인등록번호", 1425),
+          createDataCell(data.corporateNumber || "", 2850),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("소재지", 15),
-          createMergedDataCell(data.companyAddress || "", 70, 3),
+          createHeaderCell("소재지", 1425),
+          createMergedDataCell(data.companyAddress || "", 6650, 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("전화번호", 15),
-          createMergedDataCell(data.companyPhone || "", 70, 3),
+          createHeaderCell("전화번호", 1425),
+          createMergedDataCell(data.companyPhone || "", 6650, 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("대표자 성명", 15),
-          createDataCell(data.representativeName || "", 25),
-          createHeaderCell("주민등록번호", 15),
-          createDataCell(data.residentNumber ? `${data.residentNumber}-*******` : "", 30),
+          createHeaderCell("대표자 성명", 1425),
+          createDataCell(data.representativeName || "", 2375),
+          createHeaderCell("주민등록번호", 1425),
+          createDataCell(data.residentNumber ? `${data.residentNumber}-*******` : "", 2850),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("주소", 15),
-          createMergedDataCell(data.representativeAddress || "", 70, 3),
+          createHeaderCell("주소", 1425),
+          createMergedDataCell(data.representativeAddress || "", 6650, 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("전자우편주소", 15),
-          createDataCell(data.email || "", 25),
-          createHeaderCell("사업자등록번호", 15),
-          createDataCell(formatBusinessNumber(data.businessNumber || ""), 30),
+          createHeaderCell("전자우편주소", 1425),
+          createDataCell(data.email || "", 2375),
+          createHeaderCell("사업자등록번호", 1425),
+          createDataCell(formatBusinessNumber(data.businessNumber || ""), 2850),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       // 인터넷 도메인 정보
       new TableRow({
         children: [
-          createHeaderCell("인터넷 도메인 이름", 30, 2),
-          createMergedDataCell(data.domainName || "", 70, 3),
+          createHeaderCell("인터넷 도메인 이름", 2850, 2),
+          createMergedDataCell(data.domainName || "", 6650, 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("호스트서버 소재지", 30, 2),
-          createMergedDataCell(data.hostServer || "국내", 70, 3),
+          createHeaderCell("호스트서버 소재지", 2850, 2),
+          createMergedDataCell(data.hostServer || "국내", 6650, 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -278,12 +281,13 @@ function createSalesMethodTable(data: MailOrderSalesData): Table {
   const checkbox = (checked?: boolean) => checked ? CHECKBOX_CHECKED : CHECKBOX_UNCHECKED;
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 9500, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    alignment: AlignmentType.CENTER,
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("판 매 방 식", 20),
+          createHeaderCell("판 매 방 식", 1900),
           new TableCell({
             children: [
               new Paragraph({
@@ -297,7 +301,7 @@ function createSalesMethodTable(data: MailOrderSalesData): Table {
                 alignment: AlignmentType.LEFT,
               }),
             ],
-            width: { size: 80, type: WidthType.PERCENTAGE },
+            width: { size: 7600, type: WidthType.DXA },
             verticalAlign: VerticalAlign.CENTER,
             borders: borderStyle,
           }),
@@ -312,14 +316,15 @@ function createProductCategoryTable(data: MailOrderSalesData): Table {
   const checkbox = (checked?: boolean) => checked ? CHECKBOX_CHECKED : CHECKBOX_UNCHECKED;
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 9500, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    alignment: AlignmentType.CENTER,
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("취 급 품 목", true)],
-            width: { size: 20, type: WidthType.PERCENTAGE },
+            width: { size: 1900, type: WidthType.DXA },
             rowSpan: 2,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
@@ -347,7 +352,7 @@ function createProductCategoryTable(data: MailOrderSalesData): Table {
                 spacing: { before: 100 },
               }),
             ],
-            width: { size: 80, type: WidthType.PERCENTAGE },
+            width: { size: 7600, type: WidthType.DXA },
             verticalAlign: VerticalAlign.CENTER,
             borders: borderStyle,
           }),
@@ -368,7 +373,7 @@ function createProductCategoryTable(data: MailOrderSalesData): Table {
                 alignment: AlignmentType.LEFT,
               }),
             ],
-            width: { size: 80, type: WidthType.PERCENTAGE },
+            width: { size: 7600, type: WidthType.DXA },
             verticalAlign: VerticalAlign.CENTER,
             borders: borderStyle,
           }),
@@ -434,8 +439,9 @@ function createRecipient(): Paragraph {
 
 function createNotice(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: 9500, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
+    alignment: AlignmentType.CENTER,
     rows: [
       new TableRow({
         children: [
@@ -478,6 +484,7 @@ function createNotice(): Table {
                 ],
               }),
             ],
+            width: { size: 9500, type: WidthType.DXA },
             borders: borderStyle,
             shading: { fill: "FFFDE7" },
           }),
@@ -487,11 +494,11 @@ function createNotice(): Table {
   });
 }
 
-// 헬퍼 함수들
+// 헬퍼 함수들 - DXA 단위 사용 (1 inch = 1440 DXA, A4 너비 약 9500 DXA)
 function createHeaderCell(text: string, width: number, colSpan?: number): TableCell {
   return new TableCell({
     children: [createCellParagraph(text, true)],
-    width: { size: width, type: WidthType.PERCENTAGE },
+    width: { size: width, type: WidthType.DXA },
     verticalAlign: VerticalAlign.CENTER,
     columnSpan: colSpan,
     ...headerCellStyle,
@@ -502,7 +509,7 @@ function createHeaderCell(text: string, width: number, colSpan?: number): TableC
 function createDataCell(text: string, width: number): TableCell {
   return new TableCell({
     children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
+    width: { size: width, type: WidthType.DXA },
     verticalAlign: VerticalAlign.CENTER,
     borders: borderStyle,
   });
@@ -511,7 +518,7 @@ function createDataCell(text: string, width: number): TableCell {
 function createMergedDataCell(text: string, width: number, colSpan: number): TableCell {
   return new TableCell({
     children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
+    width: { size: width, type: WidthType.DXA },
     columnSpan: colSpan,
     verticalAlign: VerticalAlign.CENTER,
     borders: borderStyle,

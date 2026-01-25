@@ -38,8 +38,8 @@ export function getGov24DirectUrl(cappBizCD?: string): string {
 const CAPP_BIZ_CODES: Record<string, string> = {
   // 사업자/세무
   "사업자등록증명발급": "12100000016",
-  "휴폐업사실증명": "12100000033",
-  "납세증명서": "12100000014",
+  "휴폐업사실증명": "12100000019",
+  "납세증명서": "12100000011",
   "소득금액증명": "12100000021",
 
   // 부동산

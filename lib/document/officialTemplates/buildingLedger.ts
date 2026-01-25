@@ -15,12 +15,22 @@ import {
   TableCell,
   WidthType,
   AlignmentType,
-  BorderStyle,
   VerticalAlign,
   HeightRule,
   convertInchesToTwip,
-  TableLayoutType,
 } from "docx";
+
+import {
+  borderStyle,
+  headerCellStyle,
+  getTableOptions,
+  percentToDxa,
+  createCellParagraph,
+  createHeaderCell,
+  createDataCell,
+  createMergedDataCell,
+  formatPhone,
+} from "./tableHelpers";
 
 interface BuildingLedgerData {
   applicantName: string;        // 신청인 성명
@@ -31,17 +41,6 @@ interface BuildingLedgerData {
   purpose: string;              // 사용 목적
   copies: string;               // 발급 부수
 }
-
-const borderStyle = {
-  top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-};
-
-const headerCellStyle = {
-  shading: { fill: "F5F5F5" },
-};
 
 const CHECKBOX_CHECKED = "☑";
 const CHECKBOX_UNCHECKED = "☐";
@@ -109,21 +108,20 @@ function createEmptyParagraph(spacing: number): Paragraph {
 
 function createReceiptInfoTable(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("접수번호", 20),
-          createDataCell("", 30),
-          createHeaderCell("접수일", 20),
-          createDataCell("", 30),
+          createHeaderCell("접수번호", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
+          createHeaderCell("접수일", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
         ],
       }),
       new TableRow({
         children: [
-          createHeaderCell("처리기간", 20),
-          createMergedDataCell("즉시", 80, 3),
+          createHeaderCell("처리기간", percentToDxa(20)),
+          createMergedDataCell("즉시", percentToDxa(80), 3),
         ],
       }),
     ],
@@ -132,30 +130,29 @@ function createReceiptInfoTable(): Table {
 
 function createApplicantInfoTable(data: BuildingLedgerData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("신 청 인", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(15), type: WidthType.DXA },
             rowSpan: 2,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("성 명", 15),
-          createDataCell(data.applicantName || "", 25),
-          createHeaderCell("연락처", 15),
-          createDataCell(formatPhone(data.applicantPhone || ""), 30),
+          createHeaderCell("성 명", percentToDxa(15)),
+          createDataCell(data.applicantName || "", percentToDxa(25)),
+          createHeaderCell("연락처", percentToDxa(15)),
+          createDataCell(formatPhone(data.applicantPhone || ""), percentToDxa(30)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("주 소", 15),
-          createMergedDataCell(data.applicantAddress || "", 70, 3),
+          createHeaderCell("주 소", percentToDxa(15)),
+          createMergedDataCell(data.applicantAddress || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -165,13 +162,12 @@ function createApplicantInfoTable(data: BuildingLedgerData): Table {
 
 function createBuildingInfoTable(data: BuildingLedgerData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("건축물 소재지", 30, 1),
-          createMergedDataCell(data.buildingAddress || "", 70, 1),
+          createHeaderCell("건축물 소재지", percentToDxa(30), 1),
+          createMergedDataCell(data.buildingAddress || "", percentToDxa(70), 1),
         ],
         height: { value: 500, rule: HeightRule.ATLEAST },
       }),
@@ -188,12 +184,11 @@ function createDocumentTypeTable(data: BuildingLedgerData): Table {
   const isCollectiveAll = docType.includes("집합") && docType.includes("전체");
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("발급 종류", 20),
+          createHeaderCell("발급 종류", percentToDxa(20)),
           new TableCell({
             children: [
               new Paragraph({
@@ -211,7 +206,7 @@ function createDocumentTypeTable(data: BuildingLedgerData): Table {
                 spacing: { before: 100 },
               }),
             ],
-            width: { size: 80, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(80), type: WidthType.DXA },
             verticalAlign: VerticalAlign.CENTER,
             borders: borderStyle,
           }),
@@ -220,15 +215,15 @@ function createDocumentTypeTable(data: BuildingLedgerData): Table {
       }),
       new TableRow({
         children: [
-          createHeaderCell("사용 목적", 20),
-          createDataCell(data.purpose || "", 80),
+          createHeaderCell("사용 목적", percentToDxa(20)),
+          createDataCell(data.purpose || "", percentToDxa(80)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("발급 부수", 20),
-          createDataCell(`${data.copies || "1"} 부`, 80),
+          createHeaderCell("발급 부수", percentToDxa(20)),
+          createDataCell(`${data.copies || "1"} 부`, percentToDxa(80)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -277,8 +272,7 @@ function createRecipient(): Paragraph {
 
 function createNotice(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
@@ -300,6 +294,7 @@ function createNotice(): Table {
                 children: [new TextRun({ text: "※ 정부24에서 온라인 발급 시 무료", size: 18, color: "0066CC" })],
               }),
             ],
+            width: { size: percentToDxa(100), type: WidthType.DXA },
             borders: borderStyle,
             shading: { fill: "FFFDE7" },
           }),
@@ -309,47 +304,3 @@ function createNotice(): Table {
   });
 }
 
-function createHeaderCell(text: string, width: number, colSpan?: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, true)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    columnSpan: colSpan,
-    ...headerCellStyle,
-    borders: borderStyle,
-  });
-}
-
-function createDataCell(text: string, width: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createMergedDataCell(text: string, width: number, colSpan: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    columnSpan: colSpan,
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createCellParagraph(text: string, bold: boolean): Paragraph {
-  return new Paragraph({
-    children: [new TextRun({ text, bold, size: 20 })],
-    alignment: AlignmentType.CENTER,
-  });
-}
-
-function formatPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 11) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  }
-  return phone;
-}

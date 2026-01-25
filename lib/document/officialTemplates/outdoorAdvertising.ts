@@ -15,12 +15,22 @@ import {
   TableCell,
   WidthType,
   AlignmentType,
-  BorderStyle,
   VerticalAlign,
   HeightRule,
   convertInchesToTwip,
-  TableLayoutType,
 } from "docx";
+
+import {
+  borderStyle,
+  headerCellStyle,
+  getTableOptions,
+  percentToDxa,
+  createCellParagraph,
+  createHeaderCell,
+  createDataCell,
+  createMergedDataCell,
+  formatPhone,
+} from "./tableHelpers";
 
 interface OutdoorAdvertisingData {
   applicantName: string;        // 신청인 성명/상호
@@ -35,15 +45,6 @@ interface OutdoorAdvertisingData {
   displayPeriod: string;        // 표시 기간
   quantity: string;             // 수량
 }
-
-const borderStyle = {
-  top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-};
-
-const headerCellStyle = { shading: { fill: "F5F5F5" } };
 
 export async function createOutdoorAdvertising(data: OutdoorAdvertisingData): Promise<Buffer> {
   const doc = new Document({
@@ -105,21 +106,20 @@ function createEmptyParagraph(spacing: number): Paragraph {
 
 function createReceiptInfoTable(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("접수번호", 20),
-          createDataCell("", 30),
-          createHeaderCell("접수일", 20),
-          createDataCell("", 30),
+          createHeaderCell("접수번호", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
+          createHeaderCell("접수일", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
         ],
       }),
       new TableRow({
         children: [
-          createHeaderCell("처리기간", 20),
-          createMergedDataCell("10일", 80, 3),
+          createHeaderCell("처리기간", percentToDxa(20)),
+          createMergedDataCell("10일", percentToDxa(80), 3),
         ],
       }),
     ],
@@ -128,37 +128,36 @@ function createReceiptInfoTable(): Table {
 
 function createApplicantInfoTable(data: OutdoorAdvertisingData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("신 청 인", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(15), type: WidthType.DXA },
             rowSpan: 3,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("성명(상호)", 15),
-          createDataCell(data.applicantName || "", 25),
-          createHeaderCell("대표자", 15),
-          createDataCell(data.representativeName || "", 30),
+          createHeaderCell("성명(상호)", percentToDxa(15)),
+          createDataCell(data.applicantName || "", percentToDxa(25)),
+          createHeaderCell("대표자", percentToDxa(15)),
+          createDataCell(data.representativeName || "", percentToDxa(30)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("주 소", 15),
-          createMergedDataCell(data.applicantAddress || "", 70, 3),
+          createHeaderCell("주 소", percentToDxa(15)),
+          createMergedDataCell(data.applicantAddress || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("전화번호", 15),
-          createMergedDataCell(formatPhone(data.phone || ""), 70, 3),
+          createHeaderCell("전화번호", percentToDxa(15)),
+          createMergedDataCell(formatPhone(data.phone || ""), percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -168,51 +167,50 @@ function createApplicantInfoTable(data: OutdoorAdvertisingData): Table {
 
 function createAdInfoTable(data: OutdoorAdvertisingData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("광 고 물", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(15), type: WidthType.DXA },
             rowSpan: 5,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("광고물 종류", 15),
-          createMergedDataCell(data.adType || "", 70, 3),
+          createHeaderCell("광고물 종류", percentToDxa(15)),
+          createMergedDataCell(data.adType || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("설치 장소", 15),
-          createMergedDataCell(data.adLocation || "", 70, 3),
+          createHeaderCell("설치 장소", percentToDxa(15)),
+          createMergedDataCell(data.adLocation || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("규 격", 15),
-          createDataCell(data.adSize || "", 25),
-          createHeaderCell("수 량", 15),
-          createDataCell(`${data.quantity || "1"} 개`, 30),
+          createHeaderCell("규 격", percentToDxa(15)),
+          createDataCell(data.adSize || "", percentToDxa(25)),
+          createHeaderCell("수 량", percentToDxa(15)),
+          createDataCell(`${data.quantity || "1"} 개`, percentToDxa(30)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("광고 내용", 15),
-          createMergedDataCell(data.adContent || "", 70, 3),
+          createHeaderCell("광고 내용", percentToDxa(15)),
+          createMergedDataCell(data.adContent || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("표시 기간", 15),
-          createMergedDataCell(data.displayPeriod || "", 70, 3),
+          createHeaderCell("표시 기간", percentToDxa(15)),
+          createMergedDataCell(data.displayPeriod || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -256,8 +254,7 @@ function createRecipient(): Paragraph {
 
 function createRequiredDocuments(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
@@ -269,6 +266,7 @@ function createRequiredDocuments(): Table {
               new Paragraph({ children: [new TextRun({ text: "3. 건물 임대차계약서 또는 건물주 동의서", size: 18 })], spacing: { after: 50 } }),
               new Paragraph({ children: [new TextRun({ text: "※ 제출처: 광고물 설치 장소 관할 시·군·구청", size: 18, color: "666666" })], spacing: { before: 100 } }),
             ],
+            width: { size: percentToDxa(100), type: WidthType.DXA },
             borders: borderStyle,
             shading: { fill: "FFFDE7" },
           }),
@@ -278,45 +276,3 @@ function createRequiredDocuments(): Table {
   });
 }
 
-function createHeaderCell(text: string, width: number, colSpan?: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, true)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    columnSpan: colSpan,
-    ...headerCellStyle,
-    borders: borderStyle,
-  });
-}
-
-function createDataCell(text: string, width: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createMergedDataCell(text: string, width: number, colSpan: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    columnSpan: colSpan,
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createCellParagraph(text: string, bold: boolean): Paragraph {
-  return new Paragraph({
-    children: [new TextRun({ text, bold, size: 20 })],
-    alignment: AlignmentType.CENTER,
-  });
-}
-
-function formatPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  return phone;
-}

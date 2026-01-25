@@ -16,12 +16,23 @@ import {
   TableCell,
   WidthType,
   AlignmentType,
-  BorderStyle,
   VerticalAlign,
   HeightRule,
   convertInchesToTwip,
-  TableLayoutType,
 } from "docx";
+
+import {
+  borderStyle,
+  headerCellStyle,
+  getTableOptions,
+  percentToDxa,
+  createCellParagraph,
+  createHeaderCell,
+  createDataCell,
+  createMergedDataCell,
+  formatPhone,
+  formatDate,
+} from "./tableHelpers";
 
 interface RestaurantBusinessData {
   businessName: string;         // 업소명
@@ -35,17 +46,6 @@ interface RestaurantBusinessData {
   hygieneEducationDate: string; // 위생교육 이수일
   hygieneEducationOrg: string;  // 위생교육 기관
 }
-
-const borderStyle = {
-  top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-};
-
-const headerCellStyle = {
-  shading: { fill: "F5F5F5" },
-};
 
 export async function createRestaurantBusinessReport(data: RestaurantBusinessData): Promise<Buffer> {
   const doc = new Document({
@@ -127,21 +127,20 @@ function createEmptyParagraph(spacing: number): Paragraph {
 
 function createReceiptInfoTable(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("접수번호", 20),
-          createDataCell("", 30),
-          createHeaderCell("접수일", 20),
-          createDataCell("", 30),
+          createHeaderCell("접수번호", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
+          createHeaderCell("접수일", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
         ],
       }),
       new TableRow({
         children: [
-          createHeaderCell("처리기간", 20),
-          createMergedDataCell("3일", 80, 3),
+          createHeaderCell("처리기간", percentToDxa(20)),
+          createMergedDataCell("3일", percentToDxa(80), 3),
         ],
       }),
     ],
@@ -150,44 +149,43 @@ function createReceiptInfoTable(): Table {
 
 function createApplicantInfoTable(data: RestaurantBusinessData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("신 고 인", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(15), type: WidthType.DXA },
             rowSpan: 4,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("업 소 명", 15),
-          createMergedDataCell(data.businessName || "", 70, 3),
+          createHeaderCell("업 소 명", percentToDxa(15)),
+          createMergedDataCell(data.businessName || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("성 명", 15),
-          createDataCell(data.representativeName || "", 25),
-          createHeaderCell("주민등록번호", 15),
-          createDataCell(data.residentNumber ? `${data.residentNumber}-*******` : "", 30),
+          createHeaderCell("성 명", percentToDxa(15)),
+          createDataCell(data.representativeName || "", percentToDxa(25)),
+          createHeaderCell("주민등록번호", percentToDxa(15)),
+          createDataCell(data.residentNumber ? `${data.residentNumber}-*******` : "", percentToDxa(30)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("영업소 소재지", 15),
-          createMergedDataCell(data.businessAddress || "", 70, 3),
+          createHeaderCell("영업소 소재지", percentToDxa(15)),
+          createMergedDataCell(data.businessAddress || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("전화번호", 15),
-          createMergedDataCell(formatPhone(data.phone || ""), 70, 3),
+          createHeaderCell("전화번호", percentToDxa(15)),
+          createMergedDataCell(formatPhone(data.phone || ""), percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -204,20 +202,19 @@ function createBusinessInfoTable(data: RestaurantBusinessData): Table {
   const UNCHECKED = "☐";
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("영 업 장", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(15), type: WidthType.DXA },
             rowSpan: 3,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("영업의 종류", 15),
+          createHeaderCell("영업의 종류", percentToDxa(15)),
           new TableCell({
             children: [
               new Paragraph({
@@ -229,7 +226,7 @@ function createBusinessInfoTable(data: RestaurantBusinessData): Table {
                 alignment: AlignmentType.LEFT,
               }),
             ],
-            width: { size: 70, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(70), type: WidthType.DXA },
             columnSpan: 3,
             verticalAlign: VerticalAlign.CENTER,
             borders: borderStyle,
@@ -239,15 +236,15 @@ function createBusinessInfoTable(data: RestaurantBusinessData): Table {
       }),
       new TableRow({
         children: [
-          createHeaderCell("영업장 면적", 15),
-          createMergedDataCell(`${data.floorArea || ""} ㎡`, 70, 3),
+          createHeaderCell("영업장 면적", percentToDxa(15)),
+          createMergedDataCell(`${data.floorArea || ""} ㎡`, percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("주요 취급 음식", 15),
-          createMergedDataCell(data.menuItems || "", 70, 3),
+          createHeaderCell("주요 취급 음식", percentToDxa(15)),
+          createMergedDataCell(data.menuItems || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -257,13 +254,12 @@ function createBusinessInfoTable(data: RestaurantBusinessData): Table {
 
 function createHygieneInfoTable(data: RestaurantBusinessData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("위생교육 이수", 30, 1),
-          createDataCell(`${formatDate(data.hygieneEducationDate)} (${data.hygieneEducationOrg || "한국식품산업협회"})`, 70),
+          createHeaderCell("위생교육 이수", percentToDxa(30), 1),
+          createDataCell(`${formatDate(data.hygieneEducationDate)} (${data.hygieneEducationOrg || "한국식품산업협회"})`, percentToDxa(70)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -312,8 +308,7 @@ function createRecipient(): Paragraph {
 
 function createRequiredDocuments(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
@@ -339,6 +334,7 @@ function createRequiredDocuments(): Table {
                 children: [new TextRun({ text: "※ 담당공무원 확인사항: 건물등기부등본 또는 건축물대장", size: 18, color: "666666" })],
               }),
             ],
+            width: { size: percentToDxa(100), type: WidthType.DXA },
             borders: borderStyle,
             shading: { fill: "FFFDE7" },
           }),
@@ -346,62 +342,4 @@ function createRequiredDocuments(): Table {
       }),
     ],
   });
-}
-
-// 헬퍼 함수들
-function createHeaderCell(text: string, width: number, colSpan?: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, true)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    columnSpan: colSpan,
-    ...headerCellStyle,
-    borders: borderStyle,
-  });
-}
-
-function createDataCell(text: string, width: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createMergedDataCell(text: string, width: number, colSpan: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    columnSpan: colSpan,
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createCellParagraph(text: string, bold: boolean): Paragraph {
-  return new Paragraph({
-    children: [new TextRun({ text, bold, size: 20 })],
-    alignment: AlignmentType.CENTER,
-  });
-}
-
-function formatPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 11) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  }
-  if (digits.length === 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
-  }
-  return phone;
-}
-
-function formatDate(dateStr: string): string {
-  if (!dateStr) return "";
-  if (dateStr.includes("-")) {
-    const [year, month, day] = dateStr.split("-");
-    return `${year}년 ${month}월 ${day}일`;
-  }
-  return dateStr;
 }

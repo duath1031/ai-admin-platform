@@ -35,8 +35,8 @@ const GOV24_SERVICES = [
     category: "사업자/세무",
     services: [
       { name: "사업자등록증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000016" },
-      { name: "휴폐업사실증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000033" },
-      { name: "납세증명서 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000014" },
+      { name: "휴폐업사실증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000019&tp_seq=01" },
+      { name: "납세증명서 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000011&tp_seq=01" },
       { name: "소득금액증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000021" },
     ],
   },
@@ -64,7 +64,7 @@ const GOV24_SERVICES = [
       { name: "통신판매업 신고", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=11300000006" },
       { name: "식품관련영업 신고", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=14600000021" },
       { name: "식품영업 변경신고", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=14600000022" },
-      { name: "건설업 등록", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000015" },
+      { name: "건설업 등록", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000230&tp_seq=01" },
     ],
   },
 ];

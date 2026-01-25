@@ -15,12 +15,22 @@ import {
   TableCell,
   WidthType,
   AlignmentType,
-  BorderStyle,
   VerticalAlign,
   HeightRule,
   convertInchesToTwip,
-  TableLayoutType,
 } from "docx";
+
+import {
+  borderStyle,
+  headerCellStyle,
+  getTableOptions,
+  percentToDxa,
+  createCellParagraph,
+  createHeaderCell,
+  createDataCell,
+  createMergedDataCell,
+  formatPhone,
+} from "./tableHelpers";
 
 interface AcademyRegistrationData {
   academyName: string;          // 학원명
@@ -35,15 +45,6 @@ interface AcademyRegistrationData {
   capacity: string;             // 정원
   teacherCount: string;         // 강사 수
 }
-
-const borderStyle = {
-  top: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  bottom: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  left: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-  right: { style: BorderStyle.SINGLE, size: 1, color: "000000" },
-};
-
-const headerCellStyle = { shading: { fill: "F5F5F5" } };
 
 export async function createAcademyRegistration(data: AcademyRegistrationData): Promise<Buffer> {
   const doc = new Document({
@@ -105,21 +106,20 @@ function createEmptyParagraph(spacing: number): Paragraph {
 
 function createReceiptInfoTable(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
-          createHeaderCell("접수번호", 20),
-          createDataCell("", 30),
-          createHeaderCell("접수일", 20),
-          createDataCell("", 30),
+          createHeaderCell("접수번호", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
+          createHeaderCell("접수일", percentToDxa(20)),
+          createDataCell("", percentToDxa(30)),
         ],
       }),
       new TableRow({
         children: [
-          createHeaderCell("처리기간", 20),
-          createMergedDataCell("10일", 80, 3),
+          createHeaderCell("처리기간", percentToDxa(20)),
+          createMergedDataCell("10일", percentToDxa(80), 3),
         ],
       }),
     ],
@@ -128,37 +128,36 @@ function createReceiptInfoTable(): Table {
 
 function createApplicantInfoTable(data: AcademyRegistrationData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("설립·운영자", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(15), type: WidthType.DXA },
             rowSpan: 3,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("성 명", 15),
-          createDataCell(data.representativeName || "", 25),
-          createHeaderCell("주민등록번호", 15),
-          createDataCell(data.residentNumber ? `${data.residentNumber}-*******` : "", 30),
+          createHeaderCell("성 명", percentToDxa(15)),
+          createDataCell(data.representativeName || "", percentToDxa(25)),
+          createHeaderCell("주민등록번호", percentToDxa(15)),
+          createDataCell(data.residentNumber ? `${data.residentNumber}-*******` : "", percentToDxa(30)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("주 소", 15),
-          createMergedDataCell(data.representativeAddress || "", 70, 3),
+          createHeaderCell("주 소", percentToDxa(15)),
+          createMergedDataCell(data.representativeAddress || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("전화번호", 15),
-          createMergedDataCell(formatPhone(data.phone || ""), 70, 3),
+          createHeaderCell("전화번호", percentToDxa(15)),
+          createMergedDataCell(formatPhone(data.phone || ""), percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -168,58 +167,57 @@ function createApplicantInfoTable(data: AcademyRegistrationData): Table {
 
 function createAcademyInfoTable(data: AcademyRegistrationData): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
           new TableCell({
             children: [createCellParagraph("학 원", true)],
-            width: { size: 15, type: WidthType.PERCENTAGE },
+            width: { size: percentToDxa(15), type: WidthType.DXA },
             rowSpan: 6,
             verticalAlign: VerticalAlign.CENTER,
             ...headerCellStyle,
             borders: borderStyle,
           }),
-          createHeaderCell("학 원 명", 15),
-          createMergedDataCell(data.academyName || "", 70, 3),
+          createHeaderCell("학 원 명", percentToDxa(15)),
+          createMergedDataCell(data.academyName || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("소 재 지", 15),
-          createMergedDataCell(data.academyAddress || "", 70, 3),
+          createHeaderCell("소 재 지", percentToDxa(15)),
+          createMergedDataCell(data.academyAddress || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("학원 종류", 15),
-          createMergedDataCell(data.academyType || "", 70, 3),
+          createHeaderCell("학원 종류", percentToDxa(15)),
+          createMergedDataCell(data.academyType || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("교습 과목", 15),
-          createMergedDataCell(data.subjects || "", 70, 3),
+          createHeaderCell("교습 과목", percentToDxa(15)),
+          createMergedDataCell(data.subjects || "", percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("시설 면적", 15),
-          createDataCell(`${data.floorArea || ""} ㎡`, 25),
-          createHeaderCell("정 원", 15),
-          createDataCell(`${data.capacity || ""} 명`, 30),
+          createHeaderCell("시설 면적", percentToDxa(15)),
+          createDataCell(`${data.floorArea || ""} ㎡`, percentToDxa(25)),
+          createHeaderCell("정 원", percentToDxa(15)),
+          createDataCell(`${data.capacity || ""} 명`, percentToDxa(30)),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
       new TableRow({
         children: [
-          createHeaderCell("강사 수", 15),
-          createMergedDataCell(`${data.teacherCount || ""} 명`, 70, 3),
+          createHeaderCell("강사 수", percentToDxa(15)),
+          createMergedDataCell(`${data.teacherCount || ""} 명`, percentToDxa(70), 3),
         ],
         height: { value: 400, rule: HeightRule.ATLEAST },
       }),
@@ -263,8 +261,7 @@ function createRecipient(): Paragraph {
 
 function createRequiredDocuments(): Table {
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    layout: TableLayoutType.FIXED,
+    ...getTableOptions(),
     rows: [
       new TableRow({
         children: [
@@ -278,6 +275,7 @@ function createRequiredDocuments(): Table {
               new Paragraph({ children: [new TextRun({ text: "5. 교습비용 등 표시 계획서", size: 18 })], spacing: { after: 50 } }),
               new Paragraph({ children: [new TextRun({ text: "※ 제출처: 사업장 소재지 관할 교육청", size: 18, color: "666666" })], spacing: { before: 100 } }),
             ],
+            width: { size: percentToDxa(100), type: WidthType.DXA },
             borders: borderStyle,
             shading: { fill: "FFFDE7" },
           }),
@@ -287,45 +285,3 @@ function createRequiredDocuments(): Table {
   });
 }
 
-function createHeaderCell(text: string, width: number, colSpan?: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, true)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    columnSpan: colSpan,
-    ...headerCellStyle,
-    borders: borderStyle,
-  });
-}
-
-function createDataCell(text: string, width: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createMergedDataCell(text: string, width: number, colSpan: number): TableCell {
-  return new TableCell({
-    children: [createCellParagraph(text, false)],
-    width: { size: width, type: WidthType.PERCENTAGE },
-    columnSpan: colSpan,
-    verticalAlign: VerticalAlign.CENTER,
-    borders: borderStyle,
-  });
-}
-
-function createCellParagraph(text: string, bold: boolean): Paragraph {
-  return new Paragraph({
-    children: [new TextRun({ text, bold, size: 20 })],
-    alignment: AlignmentType.CENTER,
-  });
-}
-
-function formatPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 11) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
-  return phone;
-}
