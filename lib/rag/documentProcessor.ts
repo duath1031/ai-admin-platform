@@ -67,18 +67,29 @@ export async function extractTextFromFile(
 
 /**
  * PDF 텍스트 추출
+ * 서버리스 환경(Vercel)에서 DOMMatrix 오류 방지를 위해 커스텀 렌더러 사용
  */
 async function extractFromPDF(buffer: Buffer): Promise<ProcessingResult> {
   try {
-    // 동적 import (서버 사이드 전용)
+    // pdf-parse 동적 import
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const pdfParse = require("pdf-parse");
 
-    const data = await pdfParse(buffer);
+    // 커스텀 렌더러로 DOMMatrix 오류 방지
+    const options = {
+      // 페이지 렌더링 함수 커스텀 (DOM 의존성 제거)
+      pagerender: function(pageData: { getTextContent: () => Promise<{ items: Array<{ str: string }> }> }) {
+        return pageData.getTextContent().then(function(textContent: { items: Array<{ str: string }> }) {
+          let text = "";
+          for (const item of textContent.items) {
+            text += item.str + " ";
+          }
+          return text;
+        });
+      },
+    };
 
-    // 페이지별 텍스트 추출 시도
-    // pdf-parse는 기본적으로 전체 텍스트만 제공
-    // 페이지 구분이 필요하면 pdf.js 사용 고려
+    const data = await pdfParse(buffer, options);
 
     return {
       success: true,
@@ -93,9 +104,19 @@ async function extractFromPDF(buffer: Buffer): Promise<ProcessingResult> {
     };
   } catch (error) {
     console.error("[DocumentProcessor] PDF parsing error:", error);
+
+    // DOMMatrix 오류인 경우 안내 메시지
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("DOMMatrix") || errorMessage.includes("canvas")) {
+      return {
+        success: false,
+        error: "PDF 파싱 실패. 텍스트 입력 방식을 사용해주세요. (PDF 열기 → Ctrl+A → Ctrl+C → 텍스트 탭에 붙여넣기)",
+      };
+    }
+
     return {
       success: false,
-      error: `PDF parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      error: `PDF parsing failed: ${errorMessage}`,
     };
   }
 }

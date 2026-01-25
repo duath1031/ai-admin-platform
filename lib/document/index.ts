@@ -18,9 +18,10 @@ export {
   type FormTemplate,
 } from "./templates";
 
-// 정부24 딥링크 시스템
+// 정부24 링크 시스템
 export {
   GOV24_SERVICES,
+  getGov24SearchUrl,
   findGov24Service,
   getServicesByCategory,
   getAllCategories,

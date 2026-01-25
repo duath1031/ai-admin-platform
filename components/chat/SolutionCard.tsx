@@ -63,15 +63,12 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
 
       // 파일 다운로드
       const blob = await response.blob();
-      const contentDisposition = response.headers.get("Content-Disposition");
-      let fileName = `${template.name}.docx`;
 
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename\*=UTF-8''(.+)/);
-        if (match) {
-          fileName = decodeURIComponent(match[1]);
-        }
-      }
+      // 파일명 생성 (한글 인코딩 문제 방지를 위해 클라이언트에서 생성)
+      const userName = formData.representativeName || formData.applicantName || "사용자";
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
+      const fileName = `${template.name}_${userName}_${dateStr}.docx`;
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");

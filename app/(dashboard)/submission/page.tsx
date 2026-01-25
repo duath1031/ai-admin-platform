@@ -26,41 +26,46 @@ const PROXY_UNAVAILABLE = [
   { category: "수수료 납부 필요", items: ["인지대, 수입증지 등 수수료 납부가 필요한 민원"] },
 ];
 
-// 정부24 주요 민원 서비스 (2025년 검증 링크)
+// 정부24 검색 URL 생성 함수
+const getGov24SearchUrl = (keyword: string) =>
+  `https://www.gov.kr/portal/service/serviceList?srchText=${encodeURIComponent(keyword)}`;
+
+// 정부24 주요 민원 서비스 (검색 URL 방식)
 const GOV24_SERVICES = [
   {
     category: "사업자/세무",
     services: [
-      { name: "사업자등록증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000016" },
-      { name: "휴폐업사실증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000019" },
-      { name: "국세 납세증명 (홈택스)", url: "https://www.hometax.go.kr" },
-      { name: "지방세 납세증명", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000056" },
+      { name: "사업자등록증명 발급", url: getGov24SearchUrl("사업자등록증명 발급") },
+      { name: "휴폐업사실증명 발급", url: getGov24SearchUrl("휴폐업사실증명 발급") },
+      { name: "납세증명서 발급", url: getGov24SearchUrl("납세증명서 발급") },
+      { name: "소득금액증명 발급", url: getGov24SearchUrl("소득금액증명 발급") },
     ],
   },
   {
     category: "부동산",
     services: [
-      { name: "건축물대장 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000098" },
-      { name: "토지대장 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000026" },
-      { name: "토지이용계획확인서", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000013" },
-      { name: "개별공시지가확인서", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000012" },
+      { name: "건축물대장 발급", url: getGov24SearchUrl("건축물대장 발급") },
+      { name: "토지대장 발급", url: getGov24SearchUrl("토지대장 발급") },
+      { name: "토지이용계획확인서", url: getGov24SearchUrl("토지이용계획확인서") },
+      { name: "개별공시지가 확인", url: getGov24SearchUrl("개별공시지가 확인") },
     ],
   },
   {
     category: "가족/신분",
     services: [
-      { name: "주민등록등·초본 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000015" },
-      { name: "가족관계증명서", url: "https://efamily.scourt.go.kr" },
-      { name: "기본증명서", url: "https://efamily.scourt.go.kr" },
-      { name: "혼인관계증명서", url: "https://efamily.scourt.go.kr" },
+      { name: "주민등록등본 발급", url: getGov24SearchUrl("주민등록등본 발급") },
+      { name: "주민등록초본 발급", url: getGov24SearchUrl("주민등록초본 발급") },
+      { name: "가족관계증명서", url: getGov24SearchUrl("가족관계증명서 발급") },
+      { name: "기본증명서", url: getGov24SearchUrl("기본증명서 발급") },
     ],
   },
   {
-    category: "인허가/영업",
+    category: "영업/인허가",
     services: [
-      { name: "건설업 등록현황 (KISCON)", url: "https://www.kiscon.net" },
-      { name: "전기공사업 등록확인", url: "https://www.ecqs.or.kr" },
-      { name: "소방시설업 등록현황", url: "https://www.fipa.or.kr" },
+      { name: "통신판매업 신고", url: getGov24SearchUrl("통신판매업 신고") },
+      { name: "일반음식점 영업신고", url: getGov24SearchUrl("일반음식점 영업신고") },
+      { name: "휴게음식점 영업신고", url: getGov24SearchUrl("휴게음식점 영업신고") },
+      { name: "건설업 등록", url: getGov24SearchUrl("건설업 등록") },
     ],
   },
 ];
@@ -124,87 +129,6 @@ export default function SubmissionPage() {
   const [searchTerm, setSearchTerm] = useState("");
 
   const [requestId, setRequestId] = useState<string>("");
-
-  // RPA 간편인증 상태
-  const [rpaStep, setRpaStep] = useState<"idle" | "input" | "waiting" | "authenticated" | "submitting" | "done" | "error">("idle");
-  const [rpaAuth, setRpaAuth] = useState({
-    name: "",
-    birthDate: "",
-    phoneNumber: "",
-    carrier: "SKT" as "SKT" | "KT" | "LGU" | "SKT_MVNO" | "KT_MVNO" | "LGU_MVNO",
-  });
-  const [rpaTaskId, setRpaTaskId] = useState<string>("");
-  const [rpaMessage, setRpaMessage] = useState<string>("");
-  const [rpaError, setRpaError] = useState<string>("");
-
-  // RPA 간편인증 요청
-  const handleRpaAuthRequest = async () => {
-    if (!rpaAuth.name || !rpaAuth.birthDate || !rpaAuth.phoneNumber) {
-      setRpaError("모든 필드를 입력해주세요.");
-      return;
-    }
-
-    setRpaStep("waiting");
-    setRpaError("");
-    setRpaMessage("인증 요청 중...");
-
-    try {
-      const response = await fetch("/api/rpa/delegate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          taskType: "gov24_auth_request",
-          taskData: {
-            name: rpaAuth.name,
-            birthDate: rpaAuth.birthDate,
-            phoneNumber: rpaAuth.phoneNumber,
-            carrier: rpaAuth.carrier,
-            authMethod: "pass",
-          },
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setRpaTaskId(data.taskId);
-        setRpaMessage("스마트폰에서 PASS 앱을 확인하여 인증을 완료해주세요.");
-      } else {
-        setRpaStep("error");
-        setRpaError(data.error || "인증 요청에 실패했습니다.");
-      }
-    } catch (error) {
-      setRpaStep("error");
-      setRpaError("서버 연결에 실패했습니다.");
-    }
-  };
-
-  // RPA 인증 완료 확인
-  const handleRpaAuthConfirm = async () => {
-    setRpaMessage("인증 확인 중...");
-
-    try {
-      const response = await fetch("/api/rpa/delegate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          taskType: "gov24_auth_confirm",
-          taskData: { taskId: rpaTaskId },
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.data?.phase === "completed") {
-        setRpaStep("authenticated");
-        setRpaMessage("인증이 완료되었습니다! 이제 민원을 제출할 수 있습니다.");
-      } else {
-        setRpaError("아직 인증이 완료되지 않았습니다. 스마트폰에서 인증을 완료해주세요.");
-      }
-    } catch (error) {
-      setRpaError("인증 확인에 실패했습니다.");
-    }
-  };
 
   const handleSubmit = async () => {
     if (!form.agreeTerms) {
@@ -353,136 +277,6 @@ export default function SubmissionPage() {
       {/* 정부24 직접 접수 탭 */}
       {activeTab === "gov24" && (
         <div className="space-y-6">
-          {/* RPA 자동 접수 카드 */}
-          <Card className="border-green-200 bg-green-50">
-            <CardContent className="p-6">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-green-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-green-900 mb-2">AI 자동 접수 (베타)</h3>
-                  <p className="text-sm text-green-800 mb-4">
-                    간편인증(PASS)으로 로그인하면 AI가 자동으로 정부24에 민원을 접수합니다.
-                  </p>
-
-                  {/* 인증 전 - 입력 폼 */}
-                  {(rpaStep === "idle" || rpaStep === "input" || rpaStep === "error") && (
-                    <div className="bg-white rounded-lg p-4 space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">이름</label>
-                          <input
-                            type="text"
-                            value={rpaAuth.name}
-                            onChange={(e) => setRpaAuth({ ...rpaAuth, name: e.target.value })}
-                            placeholder="홍길동"
-                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">생년월일</label>
-                          <input
-                            type="text"
-                            value={rpaAuth.birthDate}
-                            onChange={(e) => setRpaAuth({ ...rpaAuth, birthDate: e.target.value })}
-                            placeholder="19900101"
-                            maxLength={8}
-                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">휴대폰 번호</label>
-                          <input
-                            type="text"
-                            value={rpaAuth.phoneNumber}
-                            onChange={(e) => setRpaAuth({ ...rpaAuth, phoneNumber: e.target.value.replace(/[^0-9]/g, "") })}
-                            placeholder="01012345678"
-                            maxLength={11}
-                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">통신사</label>
-                          <select
-                            value={rpaAuth.carrier}
-                            onChange={(e) => setRpaAuth({ ...rpaAuth, carrier: e.target.value as any })}
-                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-green-500"
-                          >
-                            <option value="SKT">SKT</option>
-                            <option value="KT">KT</option>
-                            <option value="LGU">LG U+</option>
-                            <option value="SKT_MVNO">SKT 알뜰폰</option>
-                            <option value="KT_MVNO">KT 알뜰폰</option>
-                            <option value="LGU_MVNO">LG U+ 알뜰폰</option>
-                          </select>
-                        </div>
-                      </div>
-                      {rpaError && (
-                        <p className="text-sm text-red-600">{rpaError}</p>
-                      )}
-                      <button
-                        onClick={handleRpaAuthRequest}
-                        className="w-full py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                        </svg>
-                        PASS 간편인증 시작
-                      </button>
-                    </div>
-                  )}
-
-                  {/* 인증 대기 중 */}
-                  {rpaStep === "waiting" && (
-                    <div className="bg-white rounded-lg p-6 text-center">
-                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-yellow-100 flex items-center justify-center animate-pulse">
-                        <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <h4 className="text-lg font-semibold text-gray-900 mb-2">스마트폰 인증 대기 중</h4>
-                      <p className="text-sm text-gray-600 mb-4">{rpaMessage}</p>
-                      <div className="flex gap-3 justify-center">
-                        <button
-                          onClick={handleRpaAuthConfirm}
-                          className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
-                        >
-                          인증 완료 확인
-                        </button>
-                        <button
-                          onClick={() => { setRpaStep("idle"); setRpaError(""); }}
-                          className="px-6 py-2 border border-gray-300 rounded-lg font-medium hover:bg-gray-50"
-                        >
-                          취소
-                        </button>
-                      </div>
-                      {rpaError && (
-                        <p className="mt-4 text-sm text-red-600">{rpaError}</p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 인증 완료 */}
-                  {rpaStep === "authenticated" && (
-                    <div className="bg-white rounded-lg p-6 text-center">
-                      <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center">
-                        <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <h4 className="text-lg font-semibold text-gray-900 mb-2">인증 완료!</h4>
-                      <p className="text-sm text-gray-600 mb-4">{rpaMessage}</p>
-                      <p className="text-xs text-gray-500">아래 민원 서비스에서 자동 접수할 항목을 선택하세요.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* 정부24 안내 */}
           <Card className="border-blue-200 bg-blue-50">
             <CardContent className="p-6">
@@ -495,7 +289,7 @@ export default function SubmissionPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-blue-900 mb-2">정부24에서 직접 민원 접수</h3>
                   <p className="text-sm text-blue-800 mb-3">
-                    자동 접수가 어려운 경우, 정부24에서 직접 민원을 신청할 수 있습니다.
+                    정부24에서 직접 민원을 신청하세요. AI 상담에서 서류 작성을 도와드립니다.
                   </p>
                   <a
                     href="https://www.gov.kr"

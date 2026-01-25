@@ -80,10 +80,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 파일 응답
+    // 파일 응답 (파일명은 클라이언트에서 처리하므로 단순 ASCII 사용)
     const headers = new Headers();
     headers.set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`);
+    headers.set("Content-Disposition", "attachment; filename=document.docx");
     headers.set("Content-Length", String(result.fileData.length));
 
     // 추가 메타데이터를 헤더에 포함
