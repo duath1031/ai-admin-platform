@@ -86,16 +86,8 @@ export async function POST(req: NextRequest) {
     headers.set("Content-Disposition", "attachment; filename=document.docx");
     headers.set("Content-Length", String(result.fileData.length));
 
-    // 추가 메타데이터를 헤더에 포함
-    if (result.gov24Link) {
-      headers.set("X-Gov24-Link", result.gov24Link);
-    }
-    if (result.requiredDocs) {
-      headers.set("X-Required-Docs", JSON.stringify(result.requiredDocs));
-    }
-    if (result.tips) {
-      headers.set("X-Tips", JSON.stringify(result.tips));
-    }
+    // 메타데이터는 클라이언트의 SolutionCard에서 템플릿 정보로 표시하므로 헤더에서 제외
+    // (HTTP 헤더는 ASCII만 허용하므로 한글 포함 시 ByteString 오류 발생)
 
     console.log(`[Document Generate] Success: ${result.fileName}`);
 

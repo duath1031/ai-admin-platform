@@ -8,17 +8,24 @@
 import { createMailOrderSalesReport } from "./mailOrderSalesReport";
 import { createRestaurantBusinessReport } from "./restaurantBusinessReport";
 import { createBusinessRegistration } from "./businessRegistration";
+import { createBuildingLedger } from "./buildingLedger";
+import { createAccommodationBusiness } from "./accommodationBusiness";
+import { createAcademyRegistration } from "./academyRegistration";
+import { createBeautyShopRegistration } from "./beautyShopRegistration";
+import { createOutdoorAdvertising } from "./outdoorAdvertising";
 import { FormData } from "../generator";
 
 // 공식 양식이 지원되는 템플릿 키 목록
 export const OFFICIAL_TEMPLATES = [
   "통신판매업신고서",
   "일반음식점영업신고서",
+  "휴게음식점영업신고서",
   "사업자등록신청서",
-  // 추가 예정
-  // "휴게음식점영업신고서",
-  // "건축물대장발급신청서",
-  // "주류판매업면허신청서",
+  "건축물대장발급신청서",
+  "숙박업영업허가신청서",
+  "학원설립운영등록신청서",
+  "미용업신고서",
+  "옥외광고물표시허가신청서",
 ];
 
 /**
@@ -43,14 +50,12 @@ export async function generateOfficialDocx(
         businessNumber: String(data.businessNumber || ""),
         domainName: String(data.websiteUrl || data.domainName || ""),
         hostServer: String(data.hostingProvider || data.hostServer || "국내"),
-        // 판매 방식
         salesMethodInternet: data.salesMethod === "인터넷 쇼핑몰" || data.salesMethodInternet === "true",
         salesMethodTV: data.salesMethodTV === "true",
         salesMethodCatalog: data.salesMethodCatalog === "true",
         salesMethodNewspaper: data.salesMethodNewspaper === "true",
         salesMethodOther: data.salesMethod === "기타" || data.salesMethodOther === "true",
         salesMethodOtherText: String(data.salesMethodOtherText || ""),
-        // 취급 품목
         productGeneral: data.productGeneral === "true",
         productEducation: data.productEducation === "true",
         productElectronics: data.productElectronics === "true",
@@ -67,13 +72,14 @@ export async function generateOfficialDocx(
       });
 
     case "일반음식점영업신고서":
+    case "휴게음식점영업신고서":
       return await createRestaurantBusinessReport({
         businessName: String(data.businessName || ""),
         representativeName: String(data.representativeName || ""),
         residentNumber: String(data.residentNumber || ""),
         businessAddress: String(data.businessAddress || ""),
         phone: String(data.phone || ""),
-        businessType: String(data.businessType || "일반음식점"),
+        businessType: String(data.businessType || (templateKey === "휴게음식점영업신고서" ? "휴게음식점" : "일반음식점")),
         floorArea: String(data.floorArea || ""),
         menuItems: String(data.menuItems || ""),
         hygieneEducationDate: String(data.hygieneEducationDate || ""),
@@ -92,6 +98,75 @@ export async function generateOfficialDocx(
         businessType: String(data.businessType || ""),
         businessItem: String(data.businessItem || ""),
         startDate: String(data.startDate || ""),
+      });
+
+    case "건축물대장발급신청서":
+      return await createBuildingLedger({
+        applicantName: String(data.applicantName || ""),
+        applicantPhone: String(data.applicantPhone || data.phone || ""),
+        applicantAddress: String(data.applicantAddress || ""),
+        buildingAddress: String(data.buildingAddress || ""),
+        documentType: String(data.documentType || "전체"),
+        purpose: String(data.purpose || ""),
+        copies: String(data.copies || "1"),
+      });
+
+    case "숙박업영업허가신청서":
+      return await createAccommodationBusiness({
+        businessName: String(data.businessName || ""),
+        representativeName: String(data.representativeName || ""),
+        residentNumber: String(data.residentNumber || ""),
+        businessAddress: String(data.businessAddress || ""),
+        phone: String(data.phone || ""),
+        businessType: String(data.businessType || data.accommodationType || "일반숙박업"),
+        floorArea: String(data.floorArea || ""),
+        roomCount: String(data.roomCount || ""),
+        facilities: String(data.facilities || ""),
+        hygieneEducationDate: String(data.hygieneEducationDate || ""),
+      });
+
+    case "학원설립운영등록신청서":
+      return await createAcademyRegistration({
+        academyName: String(data.academyName || data.businessName || ""),
+        representativeName: String(data.representativeName || ""),
+        residentNumber: String(data.residentNumber || ""),
+        representativeAddress: String(data.representativeAddress || ""),
+        academyAddress: String(data.academyAddress || data.businessAddress || ""),
+        phone: String(data.phone || ""),
+        academyType: String(data.academyType || ""),
+        subjects: String(data.subjects || ""),
+        floorArea: String(data.floorArea || ""),
+        capacity: String(data.capacity || ""),
+        teacherCount: String(data.teacherCount || ""),
+      });
+
+    case "미용업신고서":
+      return await createBeautyShopRegistration({
+        businessName: String(data.businessName || ""),
+        representativeName: String(data.representativeName || ""),
+        residentNumber: String(data.residentNumber || ""),
+        businessAddress: String(data.businessAddress || ""),
+        phone: String(data.phone || ""),
+        beautyType: String(data.beautyType || "일반미용"),
+        floorArea: String(data.floorArea || ""),
+        workerCount: String(data.workerCount || "1"),
+        hygieneEducationDate: String(data.hygieneEducationDate || ""),
+        licenseNumber: String(data.licenseNumber || ""),
+      });
+
+    case "옥외광고물표시허가신청서":
+      return await createOutdoorAdvertising({
+        applicantName: String(data.applicantName || data.businessName || ""),
+        representativeName: String(data.representativeName || ""),
+        residentNumber: String(data.residentNumber || ""),
+        applicantAddress: String(data.applicantAddress || data.businessAddress || ""),
+        phone: String(data.phone || ""),
+        adType: String(data.adType || ""),
+        adLocation: String(data.adLocation || ""),
+        adSize: String(data.adSize || ""),
+        adContent: String(data.adContent || ""),
+        displayPeriod: String(data.displayPeriod || ""),
+        quantity: String(data.quantity || "1"),
       });
 
     default:

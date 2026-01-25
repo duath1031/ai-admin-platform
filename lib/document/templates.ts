@@ -131,6 +131,117 @@ export const FORM_TEMPLATES: Record<string, FormTemplate> = {
     ],
     outputFileName: "사업자등록신청서_{representativeName}님.pdf",
   },
+
+  // ============= 휴게음식점 영업신고서 =============
+  "휴게음식점영업신고서": {
+    id: "form_004",
+    name: "휴게음식점 영업신고서",
+    category: "사업자/영업",
+    description: "카페, 제과점, 빵집 등 개업 시 필요한 영업신고서",
+    gov24ServiceKey: "휴게음식점영업신고",
+    fields: [
+      { id: "businessName", label: "업소명", type: "text", required: true, placeholder: "예: 달콤 카페" },
+      { id: "representativeName", label: "대표자 성명", type: "text", required: true },
+      { id: "residentNumber", label: "주민등록번호 (앞 6자리)", type: "text", required: true, placeholder: "000000" },
+      { id: "businessAddress", label: "영업소 소재지", type: "address", required: true },
+      { id: "phone", label: "전화번호", type: "phone", required: true },
+      { id: "businessType", label: "영업의 종류", type: "select", required: true, options: ["휴게음식점", "제과점"], defaultValue: "휴게음식점" },
+      { id: "floorArea", label: "영업장 면적(㎡)", type: "number", required: true },
+      { id: "menuItems", label: "주요 취급 음식", type: "textarea", required: true, placeholder: "예: 커피, 음료, 베이커리" },
+      { id: "hygieneEducationDate", label: "위생교육 이수일", type: "date", required: true },
+      { id: "hygieneEducationOrg", label: "위생교육 기관", type: "text", required: true, defaultValue: "한국식품산업협회" },
+    ],
+    outputFileName: "휴게음식점영업신고서_{representativeName}님.pdf",
+  },
+
+  // ============= 숙박업 영업허가 신청서 =============
+  "숙박업영업허가신청서": {
+    id: "form_030",
+    name: "숙박업 영업허가 신청서",
+    category: "사업자/영업",
+    description: "호텔, 모텔, 펜션 등 숙박업 영업허가 신청",
+    gov24ServiceKey: "숙박업영업허가",
+    fields: [
+      { id: "businessName", label: "업소명", type: "text", required: true, placeholder: "예: 해피호텔" },
+      { id: "representativeName", label: "대표자 성명", type: "text", required: true },
+      { id: "residentNumber", label: "주민등록번호 (앞 6자리)", type: "text", required: true, placeholder: "000000" },
+      { id: "businessAddress", label: "영업소 소재지", type: "address", required: true },
+      { id: "phone", label: "전화번호", type: "phone", required: true },
+      { id: "businessType", label: "영업 종류", type: "select", required: true, options: ["호텔업", "휴양콘도미니엄업", "일반숙박업", "생활숙박업"] },
+      { id: "floorArea", label: "영업장 면적(㎡)", type: "number", required: true },
+      { id: "roomCount", label: "객실 수", type: "number", required: true },
+      { id: "facilities", label: "주요 시설", type: "textarea", required: true, placeholder: "예: 객실, 프런트, 주차장" },
+      { id: "hygieneEducationDate", label: "위생교육 이수일", type: "date", required: true },
+    ],
+    outputFileName: "숙박업영업허가신청서_{representativeName}님.pdf",
+  },
+
+  // ============= 학원 설립·운영 등록 신청서 =============
+  "학원설립운영등록신청서": {
+    id: "form_040",
+    name: "학원 설립·운영 등록 신청서",
+    category: "교육/학원",
+    description: "학원 설립 및 운영을 위한 등록 신청",
+    gov24ServiceKey: "학원설립운영등록",
+    fields: [
+      { id: "academyName", label: "학원명", type: "text", required: true, placeholder: "예: 영어천재학원" },
+      { id: "representativeName", label: "설립·운영자 성명", type: "text", required: true },
+      { id: "residentNumber", label: "주민등록번호 (앞 6자리)", type: "text", required: true, placeholder: "000000" },
+      { id: "representativeAddress", label: "설립·운영자 주소", type: "address", required: true },
+      { id: "academyAddress", label: "학원 소재지", type: "address", required: true },
+      { id: "phone", label: "전화번호", type: "phone", required: true },
+      { id: "academyType", label: "학원 종류", type: "select", required: true, options: ["입시·검정·보습", "국제화", "예능(음악·미술)", "직업기술", "독서실", "기타"] },
+      { id: "subjects", label: "교습 과목", type: "textarea", required: true, placeholder: "예: 영어, 수학, 국어" },
+      { id: "floorArea", label: "시설 면적(㎡)", type: "number", required: true },
+      { id: "capacity", label: "정원", type: "number", required: true },
+      { id: "teacherCount", label: "강사 수", type: "number", required: true },
+    ],
+    outputFileName: "학원설립운영등록신청서_{representativeName}님.pdf",
+  },
+
+  // ============= 미용업 신고서 =============
+  "미용업신고서": {
+    id: "form_050",
+    name: "미용업 신고서",
+    category: "사업자/영업",
+    description: "헤어샵, 네일샵, 피부관리샵 등 미용업 신고",
+    gov24ServiceKey: "미용업신고",
+    fields: [
+      { id: "businessName", label: "업소명", type: "text", required: true, placeholder: "예: 뷰티헤어" },
+      { id: "representativeName", label: "대표자 성명", type: "text", required: true },
+      { id: "residentNumber", label: "주민등록번호 (앞 6자리)", type: "text", required: true, placeholder: "000000" },
+      { id: "businessAddress", label: "영업소 소재지", type: "address", required: true },
+      { id: "phone", label: "전화번호", type: "phone", required: true },
+      { id: "beautyType", label: "미용 종류", type: "select", required: true, options: ["일반미용", "피부미용", "네일미용", "화장미용", "종합미용"] },
+      { id: "floorArea", label: "영업장 면적(㎡)", type: "number", required: true },
+      { id: "workerCount", label: "종사자 수", type: "number", required: true, defaultValue: "1" },
+      { id: "licenseNumber", label: "미용사 면허번호", type: "text", required: true },
+      { id: "hygieneEducationDate", label: "위생교육 이수일", type: "date", required: true },
+    ],
+    outputFileName: "미용업신고서_{representativeName}님.pdf",
+  },
+
+  // ============= 옥외광고물 표시 허가 신청서 =============
+  "옥외광고물표시허가신청서": {
+    id: "form_060",
+    name: "옥외광고물 표시 허가 신청서",
+    category: "광고/간판",
+    description: "간판, 현수막, 옥상광고 등 옥외광고물 설치 허가",
+    gov24ServiceKey: "옥외광고물표시허가",
+    fields: [
+      { id: "applicantName", label: "신청인 성명(상호)", type: "text", required: true },
+      { id: "representativeName", label: "대표자 (법인인 경우)", type: "text", required: false },
+      { id: "applicantAddress", label: "신청인 주소", type: "address", required: true },
+      { id: "phone", label: "전화번호", type: "phone", required: true },
+      { id: "adType", label: "광고물 종류", type: "select", required: true, options: ["가로형 간판", "세로형 간판", "돌출 간판", "옥상 간판", "지주 이용 간판", "현수막", "애드벌룬", "벽보", "기타"] },
+      { id: "adLocation", label: "설치 장소", type: "address", required: true },
+      { id: "adSize", label: "규격 (가로×세로)", type: "text", required: true, placeholder: "예: 2m × 1m" },
+      { id: "adContent", label: "광고 내용", type: "textarea", required: true, placeholder: "예: 상호명, 전화번호, 주요 업종" },
+      { id: "displayPeriod", label: "표시 기간", type: "text", required: true, placeholder: "예: 2025.01.01 ~ 2027.12.31" },
+      { id: "quantity", label: "수량", type: "number", required: true, defaultValue: "1" },
+    ],
+    outputFileName: "옥외광고물표시허가신청서_{applicantName}님.pdf",
+  },
 };
 
 /**
