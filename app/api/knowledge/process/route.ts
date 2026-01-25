@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     const chunksWithoutEmbedding = await prisma.$queryRaw<Array<{ id: string; content: string }>>`
       SELECT id, content FROM "KnowledgeChunk"
       WHERE "documentId" = ${document.id}
-      AND (embedding IS NULL OR embedding = '[]'::vector)
+      AND embedding IS NULL
       ORDER BY "chunkIndex"
       LIMIT ${CHUNKS_PER_BATCH}
     `;
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     const remainingCount = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*) as count FROM "KnowledgeChunk"
       WHERE "documentId" = ${document.id}
-      AND (embedding IS NULL OR embedding = '[]'::vector)
+      AND embedding IS NULL
     `;
 
     const remaining = Number(remainingCount[0]?.count || 0);
@@ -196,7 +196,6 @@ export async function GET(req: NextRequest) {
           SELECT COUNT(*) as count FROM "KnowledgeChunk"
           WHERE "documentId" = ${doc.id}
           AND embedding IS NOT NULL
-          AND embedding != '[]'::vector
         `;
         const processedChunks = Number(result[0]?.count || 0);
         const progress = doc.totalChunks > 0
