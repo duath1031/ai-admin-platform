@@ -79,6 +79,52 @@ app.get('/health', (req, res) => {
 });
 
 /**
+ * Playwright 테스트 (브라우저 실행 가능 여부 확인)
+ */
+app.get('/test-browser', validateApiKey, async (req, res) => {
+  const { chromium } = require('playwright');
+  let browser = null;
+
+  try {
+    console.log('[Test Browser] Starting browser...');
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    const version = browser.version();
+    console.log(`[Test Browser] Browser started: ${version}`);
+
+    const page = await browser.newPage();
+    await page.goto('https://www.google.com', { waitUntil: 'domcontentloaded', timeout: 10000 });
+    const title = await page.title();
+
+    await browser.close();
+    browser = null;
+
+    res.json({
+      success: true,
+      browserVersion: version,
+      testPageTitle: title,
+      message: 'Playwright 정상 작동',
+    });
+
+  } catch (error) {
+    console.error('[Test Browser] Error:', error);
+
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack,
+    });
+  }
+});
+
+/**
  * 작업 실행 (메인 엔드포인트)
  * POST /execute-task
  */
@@ -142,12 +188,25 @@ app.post('/execute-task', validateApiKey, async (req, res) => {
 app.post('/gov24/auth/request', validateApiKey, async (req, res) => {
   const { name, birthDate, phoneNumber, carrier, authMethod } = req.body;
 
+  console.log('[Gov24 Auth Request] Received:', { name, birthDate: '***', phoneNumber: '***', carrier, authMethod });
+
   if (!name || !birthDate || !phoneNumber) {
     return res.status(400).json({
       success: false,
       error: '이름, 생년월일, 전화번호는 필수입니다.',
     });
   }
+
+  // 타임아웃 설정 (Railway 제한 고려)
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      console.error('[Gov24 Auth Request] Timeout');
+      res.status(504).json({
+        success: false,
+        error: '작업 시간 초과 (60초)',
+      });
+    }
+  }, 60000);
 
   try {
     const result = await requestGov24Auth({
@@ -158,14 +217,24 @@ app.post('/gov24/auth/request', validateApiKey, async (req, res) => {
       authMethod,
     });
 
-    res.json(result);
+    clearTimeout(timeout);
+
+    if (!res.headersSent) {
+      console.log('[Gov24 Auth Request] Result:', result.success ? 'SUCCESS' : 'FAILED');
+      res.json(result);
+    }
 
   } catch (error) {
+    clearTimeout(timeout);
     console.error('[Gov24 Auth Request] Error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+        stack: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
+      });
+    }
   }
 });
 
