@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
         email,
         documentType,
         description: description || null,
-        attachmentUrls: attachmentUrls ? JSON.stringify(attachmentUrls) : null,
+        attachmentUrls: attachments.length > 0 ? JSON.stringify(attachments.map(a => a.filename)) : null,
         userId: session?.user?.id || null,
         status: "pending",
       },

@@ -71,7 +71,8 @@ export async function extractTextFromFile(
 async function extractFromPDF(buffer: Buffer): Promise<ProcessingResult> {
   try {
     // 동적 import (서버 사이드 전용)
-    const pdfParse = (await import("pdf-parse")).default;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const pdfParse = require("pdf-parse");
 
     const data = await pdfParse(buffer);
 
@@ -101,56 +102,17 @@ async function extractFromPDF(buffer: Buffer): Promise<ProcessingResult> {
 
 /**
  * HWP 텍스트 추출
- * 주의: HWP 파싱 라이브러리 설치 필요 (hwp.js 또는 fun-hwp)
+ * 주의: HWP 파일은 현재 지원되지 않음 (hwp.js가 텍스트 추출 기능이 제한적)
+ * 사용자에게 PDF 변환 권장
  */
 async function extractFromHWP(buffer: Buffer): Promise<ProcessingResult> {
-  try {
-    // hwp.js 사용 시도
-    // npm install hwp.js 필요
-    try {
-      const HWP = (await import("hwp.js")).default;
-      const hwpDocument = new HWP(buffer);
-      const text = hwpDocument.text();
-
-      return {
-        success: true,
-        document: {
-          text,
-        },
-      };
-    } catch (hwpError) {
-      // hwp.js 실패 시 fun-hwp 시도
-      console.log("[DocumentProcessor] hwp.js failed, trying alternative...");
-    }
-
-    // fun-hwp 사용 시도
-    // npm install fun-hwp 필요
-    try {
-      const { extractText } = await import("fun-hwp");
-      const text = await extractText(buffer);
-
-      return {
-        success: true,
-        document: {
-          text,
-        },
-      };
-    } catch (funHwpError) {
-      console.error("[DocumentProcessor] fun-hwp also failed:", funHwpError);
-    }
-
-    // 모든 HWP 파서 실패
-    return {
-      success: false,
-      error: "HWP 파일 처리 실패. hwp.js 또는 fun-hwp 라이브러리를 설치해주세요.",
-    };
-  } catch (error) {
-    console.error("[DocumentProcessor] HWP parsing error:", error);
-    return {
-      success: false,
-      error: `HWP parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-    };
-  }
+  // hwp.js는 뷰어용이며 텍스트 추출이 제한적
+  // 사용자에게 PDF 변환 권장
+  console.log("[DocumentProcessor] HWP file detected - recommending PDF conversion");
+  return {
+    success: false,
+    error: "HWP 파일은 현재 지원되지 않습니다. PDF로 변환하여 업로드해주세요. (한글에서 파일 > 다른 이름으로 저장 > PDF)",
+  };
 }
 
 /**
