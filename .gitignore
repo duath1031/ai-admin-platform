@@ -65,3 +65,9 @@ secrets.json
 *.pem
 *.key
 serviceAccountKey.json
+secrets.toml
+secrets.toml.txt
+*.secrets.*
+
+# 프롬프트/설정 폴더 (API 키 포함 가능)
+관리자페이지 지침프롬프트/
