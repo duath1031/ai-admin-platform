@@ -262,8 +262,13 @@ async function requestGov24Auth(params) {
   } finally {
     // 브라우저는 확인 단계에서 종료하므로 여기서는 닫지 않음
     // 단, 에러 발생 시에만 정리
-    if (!browser) return;
     // 참고: 실제 구현에서는 세션 풀링 필요
+    // 주의: finally에서 return하면 try/catch의 반환값을 덮어씀
+    if (browser) {
+      // 인증 요청 단계에서는 브라우저를 열어두어야 하지만
+      // 현재 구조상 세션 유지가 안되므로 일단 닫음
+      await browser.close().catch(() => {});
+    }
   }
 }
 
