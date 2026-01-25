@@ -64,11 +64,11 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
       // 파일 다운로드
       const blob = await response.blob();
 
-      // 파일명 생성 (한글 인코딩 문제 방지를 위해 클라이언트에서 생성)
-      const userName = formData.representativeName || formData.applicantName || "사용자";
+      // 파일명 생성 (브라우저 호환성을 위해 영문+숫자만 사용)
       const today = new Date();
       const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-      const fileName = `${template.name}_${userName}_${dateStr}.docx`;
+      const timeStr = `${String(today.getHours()).padStart(2, "0")}${String(today.getMinutes()).padStart(2, "0")}`;
+      const fileName = `document_${dateStr}_${timeStr}.docx`;
 
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
