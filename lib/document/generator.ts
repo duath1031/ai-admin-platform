@@ -3,12 +3,13 @@
  * 서식 생성기 (Document Generator)
  * =============================================================================
  * AI가 수집한 정보를 바탕으로 완성된 서식 문서를 생성
- * - PDF 생성 (react-pdf)
+ * - 공식 양식 지원 (국가법령정보센터 양식 기반)
  * - DOCX 생성 (docx)
  */
 
 import { FormTemplate, FormField, FORM_TEMPLATES } from "./templates";
 import { Gov24Service, GOV24_SERVICES } from "./gov24Links";
+import { generateOfficialDocx, hasOfficialTemplate } from "./officialTemplates/generator";
 
 // 문서 생성 결과
 export interface GeneratedDocument {
@@ -113,6 +114,7 @@ export function formatFieldValue(field: FormField, value: string | number | unde
 
 /**
  * DOCX 문서 생성 (서버사이드용)
+ * 공식 양식이 있으면 공식 양식으로, 없으면 기본 테이블 형식으로 생성
  */
 export async function generateDocx(
   templateKey: string,
@@ -145,6 +147,29 @@ export async function generateDocx(
   }
 
   try {
+    // 공식 양식이 있는 경우 공식 양식으로 생성
+    if (hasOfficialTemplate(templateKey)) {
+      const officialBuffer = await generateOfficialDocx(templateKey, data);
+      if (officialBuffer) {
+        const fileName = generateFileName(template, data).replace(".pdf", ".docx");
+        const gov24Service = template.gov24ServiceKey
+          ? GOV24_SERVICES[template.gov24ServiceKey]
+          : null;
+
+        return {
+          success: true,
+          fileName,
+          fileType: "docx",
+          fileData: officialBuffer,
+          templateName: template.name,
+          gov24Link: gov24Service?.applyUrl,
+          requiredDocs: gov24Service?.requiredDocs,
+          tips: gov24Service?.tips,
+        };
+      }
+    }
+
+    // 공식 양식이 없는 경우 기본 테이블 형식으로 생성
     const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } = await import("docx");
 
     // 문서 헤더
