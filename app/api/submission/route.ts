@@ -8,9 +8,47 @@ import { notifyNewSubmission } from "@/lib/notification";
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const body = await request.json();
 
-    const { type, name, phone, email, documentType, description, attachmentUrls } = body;
+    // Content-Type 확인 (FormData 또는 JSON)
+    const contentType = request.headers.get("content-type") || "";
+    let type: string, name: string, phone: string, email: string, documentType: string, description: string | undefined;
+    let attachments: Array<{ filename: string; content: string }> = [];
+
+    if (contentType.includes("multipart/form-data")) {
+      // FormData로 파일 업로드 처리
+      const formData = await request.formData();
+
+      type = formData.get("type") as string;
+      name = formData.get("name") as string;
+      phone = formData.get("phone") as string;
+      email = formData.get("email") as string;
+      documentType = formData.get("documentType") as string;
+      description = formData.get("description") as string | undefined;
+
+      // 파일 처리
+      const files = formData.getAll("files") as File[];
+      for (const file of files) {
+        if (file && file.size > 0) {
+          const buffer = await file.arrayBuffer();
+          const base64 = Buffer.from(buffer).toString("base64");
+          attachments.push({
+            filename: file.name,
+            content: base64,
+          });
+        }
+      }
+
+      console.log(`[Submission] FormData 수신: ${files.length}개 파일`);
+    } else {
+      // JSON 처리 (기존 방식)
+      const body = await request.json();
+      type = body.type;
+      name = body.name;
+      phone = body.phone;
+      email = body.email;
+      documentType = body.documentType;
+      description = body.description;
+    }
 
     // 유효성 검사
     if (!type || !name || !phone || !email || !documentType) {
@@ -44,13 +82,14 @@ export async function POST(request: NextRequest) {
 
     // 알림 발송 (비동기로 처리)
     notifyNewSubmission({
-      type,
+      type: type as "proxy" | "delegate",
       name,
       phone,
       email,
       documentType,
       description,
       requestId: submission.id,
+      attachments: attachments.length > 0 ? attachments : undefined,
     }).then((results) => {
       // 알림 결과 업데이트
       prisma.submissionRequest.update({

@@ -5,10 +5,17 @@
 // 이메일 알림 서비스 (네이버 SMTP 대신 Resend 또는 기본 알림 사용)
 // =============================================================================
 
+// 파일 첨부 타입
+interface EmailAttachment {
+  filename: string;
+  content: string; // Base64 encoded content
+}
+
 interface EmailOptions {
   to: string;
   subject: string;
   html: string;
+  attachments?: EmailAttachment[];
 }
 
 export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; error?: string }> {
@@ -19,22 +26,32 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
     if (RESEND_API_KEY) {
       // Resend 무료 플랜: onboarding@resend.dev 사용 시 본인 이메일로만 발송 가능
       // 다른 수신자에게 보내려면 도메인 인증 필요 (resend.com/domains)
+      const emailData: any = {
+        from: "행정사합동사무소 정의 <onboarding@resend.dev>",
+        to: [options.to],
+        subject: options.subject,
+        html: options.html,
+      };
+
+      // 파일 첨부가 있는 경우 추가
+      if (options.attachments && options.attachments.length > 0) {
+        emailData.attachments = options.attachments.map(att => ({
+          filename: att.filename,
+          content: att.content,
+        }));
+      }
+
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${RESEND_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          from: "행정사합동사무소 정의 <onboarding@resend.dev>",
-          to: [options.to],
-          subject: options.subject,
-          html: options.html,
-        }),
+        body: JSON.stringify(emailData),
       });
 
       if (response.ok) {
-        console.log(`[Email] Resend 발송 성공: ${options.to}`);
+        console.log(`[Email] Resend 발송 성공: ${options.to} (첨부파일: ${options.attachments?.length || 0}개)`);
         return { success: true };
       } else {
         const errorText = await response.text();
@@ -53,6 +70,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
     console.log("[Email] 이메일 발송 (API 미설정, 로그만 기록):", {
       to: options.to,
       subject: options.subject,
+      attachments: options.attachments?.length || 0,
     });
 
     return { success: true }; // 로그 기록은 성공으로 처리
@@ -183,6 +201,7 @@ interface SubmissionNotification {
   documentType: string;
   description?: string;
   requestId: string;
+  attachments?: Array<{ filename: string; content: string }>; // Base64 파일 첨부
 }
 
 export async function notifyNewSubmission(data: SubmissionNotification) {
@@ -251,6 +270,7 @@ export async function notifyNewSubmission(data: SubmissionNotification) {
     to: adminEmail,
     subject: `[${typeLabel}] 새로운 신청 - ${data.name}님 (${data.documentType})`,
     html: emailHtml,
+    attachments: data.attachments, // 첨부파일 전달
   });
   results.email = emailResult.success;
 

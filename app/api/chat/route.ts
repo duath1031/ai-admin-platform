@@ -11,6 +11,8 @@ import { searchBusinessTypes } from "@/lib/formDatabase";
 // RAG 시스템 (맥락 인식형 법령 검색)
 import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawService";
 import { quickClassify } from "@/lib/rag/intentClassifier";
+// Knowledge Base RAG 시스템
+import { getRAGContext, shouldSearchKnowledge, checkKnowledgeBaseStatus } from "@/lib/rag/retriever";
 
 // 사용자 메시지에서 의도 파악
 function detectIntent(message: string): {
@@ -192,6 +194,27 @@ export async function POST(req: NextRequest) {
       } catch (error) {
         console.error("[Chat] 법령 검색 오류:", error);
         additionalContext += `\n\n[시스템 안내]\n죄송합니다. 현재 정부 시스템 연결이 불안정하여 일부 법령 정보를 가져오지 못했습니다.\n`;
+      }
+    }
+
+    // Knowledge Base RAG 검색 (업로드된 문서에서 관련 내용 검색)
+    if (shouldSearchKnowledge(lastUserMessage)) {
+      try {
+        const kbStatus = await checkKnowledgeBaseStatus();
+        if (kbStatus.available) {
+          console.log(`[Chat] Knowledge Base 검색 시작 (${kbStatus.stats.totalDocuments}개 문서)`);
+          const ragContext = await getRAGContext(lastUserMessage, {
+            topK: 5,
+            threshold: 0.5,
+          });
+          if (ragContext) {
+            additionalContext += ragContext;
+            console.log(`[Chat] Knowledge Base 검색 완료`);
+          }
+        }
+      } catch (error) {
+        console.error("[Chat] Knowledge Base 검색 오류:", error);
+        // Knowledge Base 오류는 조용히 무시 (필수 기능 아님)
       }
     }
 

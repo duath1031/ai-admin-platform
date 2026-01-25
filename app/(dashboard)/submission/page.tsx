@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui";
 
 interface SubmissionForm {
@@ -96,10 +97,20 @@ const PROCUREMENT_SITES = [
 
 export default function SubmissionPage() {
   const { data: session } = useSession();
-  const [activeTab, setActiveTab] = useState<TabType>("gov24");
+  const searchParams = useSearchParams();
+  const typeParam = searchParams.get("type");
+
+  // URL 파라미터로 탭 초기화
+  const getInitialTab = (): TabType => {
+    if (typeParam === "proxy") return "proxy";
+    if (typeParam === "delegate") return "delegate";
+    return "gov24";
+  };
+
+  const [activeTab, setActiveTab] = useState<TabType>(getInitialTab());
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<SubmissionForm>({
-    type: "proxy",
+    type: typeParam === "delegate" ? "delegate" : "proxy",
     name: session?.user?.name || "",
     phone: "",
     email: session?.user?.email || "",
@@ -128,17 +139,25 @@ export default function SubmissionPage() {
     setIsSubmitting(true);
 
     try {
+      // FormData 사용 (파일 첨부 지원)
+      const formData = new FormData();
+      formData.append("type", form.type);
+      formData.append("name", form.name);
+      formData.append("phone", form.phone);
+      formData.append("email", form.email);
+      formData.append("documentType", form.documentType);
+      if (form.documentDescription) {
+        formData.append("description", form.documentDescription);
+      }
+
+      // 파일 첨부
+      for (const file of form.attachments) {
+        formData.append("files", file);
+      }
+
       const response = await fetch("/api/submission", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: form.type,
-          name: form.name,
-          phone: form.phone,
-          email: form.email,
-          documentType: form.documentType,
-          description: form.documentDescription,
-        }),
+        body: formData, // FormData 전송 (Content-Type 자동 설정)
       });
 
       const data = await response.json();

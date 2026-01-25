@@ -737,3 +737,72 @@ model SiteSettings {
 
   @@index([category])
 }
+
+// =============================================================================
+// Knowledge Base Models (RAG 시스템)
+// =============================================================================
+
+model KnowledgeDocument {
+  id          String   @id @default(cuid())
+
+  // Document Information
+  fileName    String             // 원본 파일명
+  fileType    String             // pdf, hwp, docx, txt
+  fileUrl     String?            // S3 URL (원본 파일)
+  fileSize    Int?               // 파일 크기 (bytes)
+
+  // Metadata
+  title       String?            // 문서 제목 (자동 추출 또는 수동 입력)
+  category    String?            // 카테고리 (행정절차, 출입국, 인허가 등)
+  tags        String?            // JSON: 태그 배열
+  description String?            // 문서 설명
+
+  // Processing Status
+  status      String   @default("pending") // pending, processing, completed, failed
+  errorMessage String?
+
+  // Content Stats
+  totalChunks Int      @default(0)
+  totalTokens Int?
+
+  // Audit
+  uploadedBy  String?            // 업로더 이메일
+
+  // Relations
+  chunks      KnowledgeChunk[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([fileType])
+}
+
+model KnowledgeChunk {
+  id          String   @id @default(cuid())
+
+  // Parent Document
+  documentId  String
+  document    KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  // Chunk Content
+  content     String             // 청크 텍스트 내용
+  chunkIndex  Int                // 청크 순서 (0부터 시작)
+
+  // Metadata
+  pageNumber  Int?               // PDF 페이지 번호
+  sectionTitle String?           // 섹션/챕터 제목
+
+  // Vector Embedding (pgvector)
+  // Supabase에서 vector extension 활성화 필요
+  // embedding  Unsupported("vector(768)")?  // Google text-embedding-004는 768차원
+
+  // Token Count
+  tokenCount  Int?
+
+  createdAt   DateTime @default(now())
+
+  @@index([documentId])
+  @@index([chunkIndex])
+}
