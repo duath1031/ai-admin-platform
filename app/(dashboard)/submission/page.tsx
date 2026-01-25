@@ -29,42 +29,42 @@ const PROXY_UNAVAILABLE = [
 // 정부24 민원 검색 페이지 (검색어는 사용자가 직접 입력)
 const GOV24_SEARCH_PAGE = "https://www.gov.kr/portal/minwon/search";
 
-// 정부24 주요 민원 서비스 (직접 서비스 링크)
+// 정부24 주요 민원 서비스 (직접 서비스 링크) - 2025년 검증된 CappBizCD 코드
 const GOV24_SERVICES = [
   {
     category: "사업자/세무",
     services: [
-      { name: "사업자등록증명 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=13100000015" },
-      { name: "휴폐업사실증명 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=13100000018" },
-      { name: "납세증명서 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=13100000010" },
-      { name: "소득금액증명 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=13100000005" },
+      { name: "사업자등록증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000016" },
+      { name: "휴폐업사실증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000033" },
+      { name: "납세증명서 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000014" },
+      { name: "소득금액증명 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000021" },
     ],
   },
   {
     category: "부동산",
     services: [
-      { name: "건축물대장 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=12500000098" },
-      { name: "토지대장 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=12500000031" },
-      { name: "토지이용계획확인서", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=12500000028" },
-      { name: "개별공시지가 확인", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=12500000024" },
+      { name: "건축물대장 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000098" },
+      { name: "토지대장 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000026" },
+      { name: "토지이용계획확인서", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000013" },
+      { name: "개별공시지가 확인", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000012" },
     ],
   },
   {
     category: "가족/신분",
     services: [
-      { name: "주민등록등본 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=12300000035" },
-      { name: "주민등록초본 발급", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=12300000036" },
-      { name: "가족관계증명서", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=15000000022" },
-      { name: "기본증명서", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=15000000023" },
+      { name: "주민등록등본 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000015" },
+      { name: "주민등록초본 발급", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000015" },
+      { name: "가족관계증명서", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=97400000004" },
+      { name: "기본증명서", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=97400000004" },
     ],
   },
   {
     category: "영업/인허가",
     services: [
-      { name: "통신판매업 신고", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=11300000006" },
-      { name: "일반음식점 영업신고", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=13600000141" },
-      { name: "휴게음식점 영업신고", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=13600000142" },
-      { name: "건설업 등록", url: "https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=12100000015" },
+      { name: "통신판매업 신고", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=11300000006" },
+      { name: "식품관련영업 신고", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=14600000021" },
+      { name: "식품영업 변경신고", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=14600000022" },
+      { name: "건설업 등록", url: "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=12100000015" },
     ],
   },
 ];

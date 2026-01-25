@@ -11,7 +11,8 @@ export interface Gov24Service {
   name: string;           // 민원명
   searchKeyword: string;  // 정부24 검색 키워드
   category: string;       // 카테고리
-  applyUrl: string;       // 검색 URL (동적 생성)
+  applyUrl: string;       // 정부24 직접 서비스 URL
+  cappBizCD?: string;     // 정부24 서비스 코드 (CappBizCD)
   infoUrl?: string;       // 안내 페이지 URL
   requiredDocs: string[]; // 필요 서류
   processingDays: string; // 처리 기간
@@ -31,14 +32,64 @@ export function getGov24DirectUrl(cappBizCD?: string): string {
 }
 
 /**
- * 정부24 검색 URL 생성 (폴백용)
+ * 주요 민원별 CappBizCD 코드 (정부24 직접 링크용)
+ * 2025년 1월 검증된 실제 서비스 코드입니다.
+ */
+const CAPP_BIZ_CODES: Record<string, string> = {
+  // 사업자/세무
+  "사업자등록증명발급": "12100000016",
+  "휴폐업사실증명": "12100000033",
+  "납세증명서": "12100000014",
+  "소득금액증명": "12100000021",
+
+  // 부동산
+  "건축물대장": "15000000098",
+  "토지대장": "13100000026",
+  "토지이용계획확인서": "15000000013",
+  "개별공시지가": "15000000012",
+  "지적도등본": "13100000028",
+
+  // 가족관계
+  "주민등록등본": "13100000015",
+  "주민등록초본": "13100000015",
+  "가족관계증명서": "97400000004",
+  "기본증명서": "97400000004",
+  "혼인관계증명서": "97400000004",
+
+  // 영업/인허가
+  "통신판매업신고": "11300000006",
+  "식품관련영업신고": "14600000021",
+  "식품영업변경신고": "14600000022",
+  "건설업등록": "12100000015",
+
+  // 차량
+  "자동차등록원부": "12600000001",
+  "운전경력증명서": "12600000057",
+};
+
+/**
+ * 정부24 검색 URL 생성 (직접 링크가 없는 민원용 폴백)
+ * 민원 검색 페이지로 이동 후 검색어 입력 필요
  */
 export function getGov24SearchUrl(keyword: string): string {
-  // 검색 페이지로 이동 (검색어는 사용자가 직접 입력)
+  // 민원 검색 페이지로 이동
   return "https://www.gov.kr/portal/minwon/search";
 }
 
-// 정부24 민원 서비스 DB (검색 링크 방식)
+/**
+ * 서비스 키워드로 직접 URL 생성
+ */
+function getDirectUrlByKeyword(keyword: string): string {
+  // 키워드에서 매칭되는 CappBizCD 찾기
+  for (const [key, code] of Object.entries(CAPP_BIZ_CODES)) {
+    if (keyword.includes(key) || key.includes(keyword.replace(/\s/g, ""))) {
+      return getGov24DirectUrl(code);
+    }
+  }
+  return "https://www.gov.kr/portal/minwon/search";
+}
+
+// 정부24 민원 서비스 DB (직접 링크 방식)
 export const GOV24_SERVICES: Record<string, Gov24Service> = {
   // ============= 사업자/영업 =============
   "통신판매업신고": {
@@ -46,7 +97,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "통신판매업 신고",
     searchKeyword: "통신판매업 신고",
     category: "사업자/영업",
-    applyUrl: getGov24SearchUrl("통신판매업 신고"),
+    cappBizCD: "11300000006",
+    applyUrl: getGov24DirectUrl("11300000006"),
     requiredDocs: ["사업자등록증 사본", "통신판매업 신고서"],
     processingDays: "즉시",
     fee: "무료",
@@ -76,7 +128,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "일반음식점 영업신고",
     searchKeyword: "일반음식점 영업신고",
     category: "사업자/영업",
-    applyUrl: getGov24SearchUrl("일반음식점 영업신고"),
+    cappBizCD: "14600000021",
+    applyUrl: getGov24DirectUrl("14600000021"),
     requiredDocs: ["영업신고서", "위생교육이수증", "시설평면도"],
     processingDays: "즉시",
     fee: "무료",
@@ -91,7 +144,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "휴게음식점 영업신고",
     searchKeyword: "휴게음식점 영업신고",
     category: "사업자/영업",
-    applyUrl: getGov24SearchUrl("휴게음식점 영업신고"),
+    cappBizCD: "14600000022",
+    applyUrl: getGov24DirectUrl("14600000022"),
     requiredDocs: ["영업신고서", "위생교육이수증"],
     processingDays: "즉시",
     fee: "무료",
@@ -273,7 +327,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "건축물대장 발급",
     searchKeyword: "건축물대장 발급",
     category: "부동산",
-    applyUrl: getGov24SearchUrl("건축물대장 발급"),
+    cappBizCD: "15000000098",
+    applyUrl: getGov24DirectUrl("15000000098"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -285,7 +340,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "토지대장 발급",
     searchKeyword: "토지대장 발급",
     category: "부동산",
-    applyUrl: getGov24SearchUrl("토지대장 발급"),
+    cappBizCD: "13100000026",
+    applyUrl: getGov24DirectUrl("13100000026"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -296,7 +352,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "토지이용계획확인서 발급",
     searchKeyword: "토지이용계획확인서",
     category: "부동산",
-    applyUrl: getGov24SearchUrl("토지이용계획확인서"),
+    cappBizCD: "15000000013",
+    applyUrl: getGov24DirectUrl("15000000013"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -307,7 +364,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "지적도 등본 발급",
     searchKeyword: "지적도 등본",
     category: "부동산",
-    applyUrl: getGov24SearchUrl("지적도 등본"),
+    cappBizCD: "13100000028",
+    applyUrl: getGov24DirectUrl("13100000028"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -318,7 +376,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "개별공시지가 확인서",
     searchKeyword: "개별공시지가 확인",
     category: "부동산",
-    applyUrl: getGov24SearchUrl("개별공시지가 확인"),
+    cappBizCD: "15000000012",
+    applyUrl: getGov24DirectUrl("15000000012"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -363,7 +422,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "사업자등록 신청",
     searchKeyword: "사업자등록 신청",
     category: "세무",
-    applyUrl: getGov24SearchUrl("사업자등록 신청"),
+    cappBizCD: "13100000001",
+    applyUrl: getGov24DirectUrl("13100000001"),
     requiredDocs: ["사업자등록신청서", "임대차계약서", "신분증"],
     processingDays: "3일",
     fee: "무료",
@@ -374,7 +434,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "사업자등록증명 발급",
     searchKeyword: "사업자등록증명 발급",
     category: "세무",
-    applyUrl: getGov24SearchUrl("사업자등록증명 발급"),
+    cappBizCD: "12100000016",
+    applyUrl: getGov24DirectUrl("12100000016"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료",
@@ -385,7 +446,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "휴폐업사실증명 발급",
     searchKeyword: "휴폐업사실증명 발급",
     category: "세무",
-    applyUrl: getGov24SearchUrl("휴폐업사실증명 발급"),
+    cappBizCD: "12100000033",
+    applyUrl: getGov24DirectUrl("12100000033"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료",
@@ -396,7 +458,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "납세증명서 발급",
     searchKeyword: "납세증명서 발급",
     category: "세무",
-    applyUrl: getGov24SearchUrl("납세증명서 발급"),
+    cappBizCD: "12100000014",
+    applyUrl: getGov24DirectUrl("12100000014"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료",
@@ -407,7 +470,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "소득금액증명 발급",
     searchKeyword: "소득금액증명 발급",
     category: "세무",
-    applyUrl: getGov24SearchUrl("소득금액증명 발급"),
+    cappBizCD: "12100000021",
+    applyUrl: getGov24DirectUrl("12100000021"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료",
@@ -430,7 +494,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "주민등록등본 발급",
     searchKeyword: "주민등록등본 발급",
     category: "가족관계",
-    applyUrl: getGov24SearchUrl("주민등록등본 발급"),
+    cappBizCD: "13100000015",
+    applyUrl: getGov24DirectUrl("13100000015"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -441,7 +506,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "주민등록초본 발급",
     searchKeyword: "주민등록초본 발급",
     category: "가족관계",
-    applyUrl: getGov24SearchUrl("주민등록초본 발급"),
+    cappBizCD: "13100000015",
+    applyUrl: getGov24DirectUrl("13100000015"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -452,7 +518,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "가족관계증명서 발급",
     searchKeyword: "가족관계증명서 발급",
     category: "가족관계",
-    applyUrl: getGov24SearchUrl("가족관계증명서 발급"),
+    cappBizCD: "97400000004",
+    applyUrl: getGov24DirectUrl("97400000004"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -463,7 +530,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "기본증명서 발급",
     searchKeyword: "기본증명서 발급",
     category: "가족관계",
-    applyUrl: getGov24SearchUrl("기본증명서 발급"),
+    cappBizCD: "97400000004",
+    applyUrl: getGov24DirectUrl("97400000004"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -474,7 +542,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "혼인관계증명서 발급",
     searchKeyword: "혼인관계증명서 발급",
     category: "가족관계",
-    applyUrl: getGov24SearchUrl("혼인관계증명서 발급"),
+    cappBizCD: "97400000004",
+    applyUrl: getGov24DirectUrl("97400000004"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -519,7 +588,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "운전경력증명서 발급",
     searchKeyword: "운전경력증명서 발급",
     category: "운전/차량",
-    applyUrl: getGov24SearchUrl("운전경력증명서 발급"),
+    cappBizCD: "12600000057",
+    applyUrl: getGov24DirectUrl("12600000057"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
@@ -530,7 +600,8 @@ export const GOV24_SERVICES: Record<string, Gov24Service> = {
     name: "자동차등록원부 발급",
     searchKeyword: "자동차등록원부 발급",
     category: "운전/차량",
-    applyUrl: getGov24SearchUrl("자동차등록원부 발급"),
+    cappBizCD: "12600000001",
+    applyUrl: getGov24DirectUrl("12600000001"),
     requiredDocs: [],
     processingDays: "즉시",
     fee: "무료 (온라인)",
