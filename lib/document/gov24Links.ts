@@ -20,10 +20,22 @@ export interface Gov24Service {
 }
 
 /**
- * 정부24 검색 URL 생성
+ * 정부24 서비스 직접 링크 생성
+ * CappBizCD가 있으면 직접 링크, 없으면 민원 검색 페이지
+ */
+export function getGov24DirectUrl(cappBizCD?: string): string {
+  if (cappBizCD) {
+    return `https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=${cappBizCD}`;
+  }
+  return "https://www.gov.kr/portal/minwon/search";
+}
+
+/**
+ * 정부24 검색 URL 생성 (폴백용)
  */
 export function getGov24SearchUrl(keyword: string): string {
-  return `https://www.gov.kr/portal/service/serviceList?srchText=${encodeURIComponent(keyword)}`;
+  // 검색 페이지로 이동 (검색어는 사용자가 직접 입력)
+  return "https://www.gov.kr/portal/minwon/search";
 }
 
 // 정부24 민원 서비스 DB (검색 링크 방식)

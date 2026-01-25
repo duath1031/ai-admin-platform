@@ -20,6 +20,7 @@ import {
   VerticalAlign,
   HeightRule,
   convertInchesToTwip,
+  TableLayoutType,
 } from "docx";
 
 interface BusinessRegistrationData {
@@ -136,6 +137,7 @@ function createEmptyParagraph(spacing: number): Paragraph {
 function createReceiptInfoTable(): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -158,6 +160,7 @@ function createReceiptInfoTable(): Table {
 function createPersonalInfoTable(data: BusinessRegistrationData): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -206,6 +209,7 @@ function createPersonalInfoTable(data: BusinessRegistrationData): Table {
 function createBusinessInfoTable(data: BusinessRegistrationData): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -236,6 +240,7 @@ function createBusinessInfoTable(data: BusinessRegistrationData): Table {
 function createBusinessContentTable(data: BusinessRegistrationData): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -305,6 +310,7 @@ function createRecipient(): Paragraph {
 function createRequiredDocuments(): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [

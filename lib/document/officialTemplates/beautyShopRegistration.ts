@@ -19,6 +19,7 @@ import {
   VerticalAlign,
   HeightRule,
   convertInchesToTwip,
+  TableLayoutType,
 } from "docx";
 
 interface BeautyShopData {
@@ -106,6 +107,7 @@ function createEmptyParagraph(spacing: number): Paragraph {
 function createReceiptInfoTable(): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -128,6 +130,7 @@ function createReceiptInfoTable(): Table {
 function createApplicantInfoTable(data: BeautyShopData): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -183,6 +186,7 @@ function createBusinessInfoTable(data: BeautyShopData): Table {
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -272,6 +276,7 @@ function createRecipient(): Paragraph {
 function createRequiredDocuments(): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [

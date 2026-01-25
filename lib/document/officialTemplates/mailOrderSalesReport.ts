@@ -20,7 +20,7 @@ import {
   VerticalAlign,
   HeightRule,
   convertInchesToTwip,
-  PageOrientation,
+  TableLayoutType,
 } from "docx";
 
 interface MailOrderSalesData {
@@ -173,6 +173,7 @@ function createEmptyParagraph(spacing: number): Paragraph {
 function createReceiptInfoTable(): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -195,6 +196,7 @@ function createReceiptInfoTable(): Table {
 function createApplicantInfoTable(data: MailOrderSalesData): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       // 신고인 헤더
       new TableRow({
@@ -277,6 +279,7 @@ function createSalesMethodTable(data: MailOrderSalesData): Table {
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -310,6 +313,7 @@ function createProductCategoryTable(data: MailOrderSalesData): Table {
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
@@ -431,6 +435,7 @@ function createRecipient(): Paragraph {
 function createNotice(): Table {
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
     rows: [
       new TableRow({
         children: [
