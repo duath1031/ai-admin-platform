@@ -13,6 +13,32 @@ import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawServic
 import { quickClassify } from "@/lib/rag/intentClassifier";
 // Knowledge Base RAG 시스템
 import { getRAGContext, shouldSearchKnowledge, checkKnowledgeBaseStatus } from "@/lib/rag/retriever";
+// 문서 생성 시스템
+import { FORM_TEMPLATES, findTemplate } from "@/lib/document/templates";
+import { GOV24_SERVICES } from "@/lib/document/gov24Links";
+
+// 문서 생성 가능한 템플릿 매칭
+function detectDocumentTemplate(message: string): string | undefined {
+  const templateKeywords: Record<string, string[]> = {
+    "통신판매업신고서": ["통신판매", "쇼핑몰", "인터넷판매", "온라인판매", "스마트스토어", "오픈마켓"],
+    "일반음식점영업신고서": ["음식점", "식당", "카페", "레스토랑", "휴게음식점"],
+    "식품제조업영업신고서": ["식품제조", "식품가공", "제조업영업"],
+    "건축물대장발급신청서": ["건축물대장", "건축물대장발급"],
+    "사업자등록신청서": ["사업자등록", "창업", "개업"],
+  };
+
+  for (const [templateKey, keywords] of Object.entries(templateKeywords)) {
+    if (keywords.some(k => message.includes(k))) {
+      // 서류 작성 의도가 있는지 확인
+      const writeIntentKeywords = ["작성", "만들", "서류", "신고서", "신청서", "준비", "어떻게"];
+      if (writeIntentKeywords.some(k => message.includes(k))) {
+        return templateKey;
+      }
+    }
+  }
+
+  return undefined;
+}
 
 // 사용자 메시지에서 의도 파악
 function detectIntent(message: string): {
@@ -22,6 +48,7 @@ function detectIntent(message: string): {
   formKeyword?: string;
   address?: string;
   targetBusiness?: string;     // 목표 업종 (숙박, 음식점 등)
+  documentTemplate?: string;   // 문서 생성 템플릿 키
 } {
   const lowerMsg = message.toLowerCase();
 
@@ -104,6 +131,9 @@ function detectIntent(message: string): {
     }
   }
 
+  // 문서 생성 템플릿 감지
+  const documentTemplate = detectDocumentTemplate(message);
+
   return {
     needsFormInfo,
     needsLandUse,
@@ -111,6 +141,7 @@ function detectIntent(message: string): {
     formKeyword,
     address: addressMatch ? addressMatch[1] : undefined,
     targetBusiness,
+    documentTemplate,
   };
 }
 
@@ -215,6 +246,47 @@ export async function POST(req: NextRequest) {
       } catch (error) {
         console.error("[Chat] Knowledge Base 검색 오류:", error);
         // Knowledge Base 오류는 조용히 무시 (필수 기능 아님)
+      }
+    }
+
+    // 문서 생성 템플릿 감지 시 AI에게 정보 제공
+    if (intent.documentTemplate) {
+      const template = FORM_TEMPLATES[intent.documentTemplate];
+      const gov24Service = template?.gov24ServiceKey ? GOV24_SERVICES[template.gov24ServiceKey] : null;
+
+      if (template) {
+        console.log(`[Chat] 문서 생성 템플릿 감지: ${intent.documentTemplate}`);
+
+        additionalContext += `\n\n[서류 자동 작성 기능 안내]
+당신은 사용자가 "${template.name}"를 작성할 수 있도록 도와줄 수 있습니다.
+
+사용자에게 필요한 정보를 물어본 후, 답변 마지막에 아래 형식의 마커를 추가하면
+시스템이 자동으로 서류 작성 카드를 표시합니다:
+
+[[DOCUMENT:${intent.documentTemplate}]]
+
+필수 입력 항목:
+${template.fields.filter(f => f.required).map(f => `- ${f.label}`).join('\n')}
+
+선택 입력 항목:
+${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') || '없음'}
+`;
+
+        if (gov24Service) {
+          additionalContext += `
+정부24 신청 정보:
+- 서비스명: ${gov24Service.name}
+- 처리기간: ${gov24Service.processingDays}
+- 수수료: ${gov24Service.fee}
+- 필요서류: ${gov24Service.requiredDocs.join(', ') || '없음'}
+`;
+        }
+
+        additionalContext += `
+⚠️ 중요: 사용자에게 서류 작성에 필요한 정보를 친절하게 안내하고,
+정보가 수집되면 답변 끝에 [[DOCUMENT:${intent.documentTemplate}]] 마커를 추가하세요.
+마커가 포함되면 사용자 화면에 서류 작성 카드가 나타납니다.
+`;
       }
     }
 

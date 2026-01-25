@@ -2,11 +2,18 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
+
+// SolutionCard는 클라이언트에서만 로드
+const SolutionCard = dynamic(() => import("./SolutionCard"), { ssr: false });
 
 interface MessageRendererProps {
   content: string;
   isUser?: boolean;
 }
+
+// 솔루션 카드 마커 패턴: [[DOCUMENT:templateKey]] 또는 [[DOCUMENT:templateKey:jsonData]]
+const SOLUTION_CARD_PATTERN = /\[\[DOCUMENT:([^\]:\s]+)(?::(\{[^}]+\}))?\]\]/g;
 
 // 접수대행 불가 업무 (직접 방문 또는 개별 홈페이지 접수 필요)
 const DIRECT_VISIT_REQUIRED = [
@@ -372,14 +379,34 @@ export default function MessageRenderer({ content, isUser = false }: MessageRend
     return <span>{content}</span>;
   }
 
+  // 솔루션 카드 추출
+  const solutionCards: { templateKey: string; data?: Record<string, string> }[] = [];
+  let match;
+  const cardPattern = new RegExp(SOLUTION_CARD_PATTERN.source, "g");
+  while ((match = cardPattern.exec(content)) !== null) {
+    const templateKey = match[1];
+    let data: Record<string, string> | undefined;
+    if (match[2]) {
+      try {
+        data = JSON.parse(match[2]);
+      } catch {
+        data = undefined;
+      }
+    }
+    solutionCards.push({ templateKey, data });
+  }
+
+  // 솔루션 카드 마커 제거한 콘텐츠
+  const contentWithoutCards = content.replace(SOLUTION_CARD_PATTERN, "").trim();
+
   // AI 응답 메시지 파싱 및 렌더링
-  const renderContent = () => {
+  const renderContent = (textContent: string) => {
     const elements: React.ReactNode[] = [];
     let lastIndex = 0;
     let key = 0;
 
     // 먼저 마크다운 링크 처리
-    let processedContent = content;
+    let processedContent = textContent;
     const markdownLinks: { original: string; label: string; url: string }[] = [];
 
     let match;
@@ -478,22 +505,33 @@ export default function MessageRenderer({ content, isUser = false }: MessageRend
   };
 
   // 서식 다운로드 또는 법령 서식 링크가 있는지 확인
-  const hasFormDownload = LAW_DOWNLOAD_PATTERN.test(content) || LAW_PAGE_PATTERN.test(content);
+  const hasFormDownload = LAW_DOWNLOAD_PATTERN.test(contentWithoutCards) || LAW_PAGE_PATTERN.test(contentWithoutCards);
 
-  // 서류 작성 관련 키워드가 있는지 확인
-  const hasDocumentKeywords = /서식|신청서|신고서|등록신청|허가신청|인가신청|위임장|첨부서류|구비서류/.test(content);
+  // 서류 작성 관련 키워드가 있는지 확인 (솔루션 카드가 없을 때만)
+  const hasDocumentKeywords = solutionCards.length === 0 &&
+    /서식|신청서|신고서|등록신청|허가신청|인가신청|위임장|첨부서류|구비서류/.test(contentWithoutCards);
 
   // 민원/인허가 관련 키워드가 있는지 확인
-  const hasServiceKeywords = Object.keys(SERVICE_LINKS).some(keyword => content.includes(keyword));
+  const hasServiceKeywords = Object.keys(SERVICE_LINKS).some(keyword => contentWithoutCards.includes(keyword));
 
   const showSubmissionButtons = hasFormDownload || hasDocumentKeywords;
-  const showServiceLinks = hasServiceKeywords;
+  const showServiceLinks = hasServiceKeywords && solutionCards.length === 0;
 
   return (
     <div className="text-sm leading-relaxed">
-      {renderContent()}
-      {showServiceLinks && <ServiceLinks content={content} />}
-      {showSubmissionButtons && <SubmissionButtons content={content} />}
+      {contentWithoutCards && renderContent(contentWithoutCards)}
+
+      {/* 솔루션 카드 렌더링 */}
+      {solutionCards.map((card, index) => (
+        <SolutionCard
+          key={`solution-${index}`}
+          templateKey={card.templateKey}
+          collectedData={card.data}
+        />
+      ))}
+
+      {showServiceLinks && <ServiceLinks content={contentWithoutCards} />}
+      {showSubmissionButtons && <SubmissionButtons content={contentWithoutCards} />}
     </div>
   );
 }
