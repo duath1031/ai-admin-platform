@@ -15,6 +15,7 @@ const adminMenuItems = [
   { name: "신청 관리", href: "/admin/submissions", icon: "📋" },
   { name: "사용자 관리", href: "/admin/users", icon: "👥" },
   { name: "AI 프롬프트", href: "/admin/prompts", icon: "🤖" },
+  { name: "지식 베이스", href: "/admin/knowledge", icon: "📚" },
   { name: "사이트 설정", href: "/admin/settings", icon: "⚙️" },
 ];
 
