@@ -2,13 +2,13 @@
 
 /**
  * =============================================================================
- * PDF Mapper Tool
+ * PDF Mapper Tool (Simple Version)
  * =============================================================================
  * PDF 좌표 추출 및 매핑 편집 도구
- * 관리자가 PDF 템플릿에서 필드 좌표를 추출하고 매핑 JSON을 생성
+ * iframe으로 PDF 표시, 클릭으로 좌표 추출
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import {
   Card,
   CardHeader,
@@ -16,7 +16,6 @@ import {
   CardContent,
   Button,
   Input,
-  Textarea,
   Label,
   Select,
   SelectContent,
@@ -30,9 +29,7 @@ import {
   Download,
   Trash2,
   Copy,
-  Plus,
-  Save,
-  Eye,
+  Info,
 } from 'lucide-react';
 
 interface FieldMapping {
@@ -53,132 +50,72 @@ interface MappingData {
   serviceName: string;
   templateFile: string;
   version: string;
-  fields: FieldMapping[];
 }
 
+// A4 크기 (포인트)
+const A4_WIDTH = 595;
+const A4_HEIGHT = 842;
+
 export default function PdfMapperPage() {
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
+  const [pdfFileName, setPdfFileName] = useState<string>('');
   const [fields, setFields] = useState<FieldMapping[]>([]);
   const [selectedField, setSelectedField] = useState<number | null>(null);
   const [isAddingField, setIsAddingField] = useState(false);
   const [newFieldType, setNewFieldType] = useState<'text' | 'checkbox' | 'image'>('text');
   const [clickPosition, setClickPosition] = useState<{ x: number; y: number } | null>(null);
-  const [scale, setScale] = useState(1);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageHeight, setPageHeight] = useState(A4_HEIGHT);
 
-  const [mappingData, setMappingData] = useState<Partial<MappingData>>({
+  const [mappingData, setMappingData] = useState<MappingData>({
     serviceCode: '',
     serviceName: '',
     templateFile: '',
     version: new Date().toISOString().slice(0, 7),
   });
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   // PDF 파일 업로드 처리
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !file.type.includes('pdf')) return;
+    if (!file) return;
 
-    setPdfFile(file);
+    if (!file.type.includes('pdf')) {
+      alert('PDF 파일을 선택해주세요.');
+      return;
+    }
+
     const url = URL.createObjectURL(file);
     setPdfUrl(url);
+    setPdfFileName(file.name);
 
     setMappingData(prev => ({
       ...prev,
       templateFile: file.name,
-      serviceCode: file.name.replace('.pdf', '').toUpperCase().replace(/\s/g, '_'),
+      serviceCode: file.name.replace('.pdf', '').toUpperCase().replace(/\s+/g, '_').replace(/[^A-Z0-9_]/g, ''),
     }));
-
-    // pdf.js로 PDF 로드 (동적 임포트)
-    const pdfjsLib = await import('pdfjs-dist');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-
-    const pdf = await pdfjsLib.getDocument(url).promise;
-    setTotalPages(pdf.numPages);
-    setCurrentPage(0);
-
-    renderPage(pdf, 0);
   };
 
-  // PDF 페이지 렌더링
-  const renderPage = async (pdf: any, pageNum: number) => {
-    const page = await pdf.getPage(pageNum + 1);
-    const viewport = page.getViewport({ scale: scale });
+  // 오버레이 클릭 처리
+  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!overlayRef.current) return;
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
 
-    const context = canvas.getContext('2d');
-    if (!context) return;
+    // 화면 좌표를 PDF 좌표로 변환
+    // 화면: (0,0) = 왼쪽 위, PDF: (0,0) = 왼쪽 아래
+    const scaleX = A4_WIDTH / rect.width;
+    const scaleY = A4_HEIGHT / rect.height;
 
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-
-    await page.render({
-      canvasContext: context,
-      viewport: viewport,
-    }).promise;
-
-    // 필드 마커 그리기
-    drawFieldMarkers(context, viewport.height);
-  };
-
-  // 필드 마커 그리기
-  const drawFieldMarkers = (ctx: CanvasRenderingContext2D, pageHeight: number) => {
-    const currentPageFields = fields.filter(f => f.page === currentPage);
-
-    currentPageFields.forEach((field, index) => {
-      // PDF 좌표계 -> 캔버스 좌표계 변환 (Y축 반전)
-      const canvasY = pageHeight - field.y * scale;
-      const canvasX = field.x * scale;
-
-      // 마커 색상
-      const isSelected = selectedField === fields.indexOf(field);
-      ctx.fillStyle = isSelected ? '#3b82f6' : '#ef4444';
-      ctx.strokeStyle = isSelected ? '#1d4ed8' : '#b91c1c';
-
-      if (field.type === 'checkbox') {
-        ctx.fillRect(canvasX - 6, canvasY - 6, 12, 12);
-        ctx.strokeRect(canvasX - 6, canvasY - 6, 12, 12);
-      } else if (field.type === 'image') {
-        ctx.beginPath();
-        ctx.arc(canvasX, canvasY, 8, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.stroke();
-      } else {
-        ctx.beginPath();
-        ctx.arc(canvasX, canvasY, 5, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-
-      // 필드 ID 표시
-      ctx.fillStyle = '#000';
-      ctx.font = '10px sans-serif';
-      ctx.fillText(field.fieldId, canvasX + 8, canvasY + 4);
-    });
-  };
-
-  // 캔버스 클릭 처리
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const canvasX = e.clientX - rect.left;
-    const canvasY = e.clientY - rect.top;
-
-    // 캔버스 좌표 -> PDF 좌표 변환
-    const pdfX = Math.round(canvasX / scale);
-    const pdfY = Math.round((canvas.height - canvasY) / scale);
+    const pdfX = Math.round(clickX * scaleX);
+    const pdfY = Math.round(A4_HEIGHT - (clickY * scaleY)); // Y축 반전
 
     setClickPosition({ x: pdfX, y: pdfY });
 
     if (isAddingField) {
-      // 새 필드 추가
       const newField: FieldMapping = {
         fieldId: `field_${fields.length + 1}`,
         x: pdfX,
@@ -199,9 +136,7 @@ export default function PdfMapperPage() {
   // 필드 업데이트
   const updateField = (index: number, updates: Partial<FieldMapping>) => {
     setFields(prev =>
-      prev.map((field, i) =>
-        i === index ? { ...field, ...updates } : field
-      )
+      prev.map((field, i) => (i === index ? { ...field, ...updates } : field))
     );
   };
 
@@ -218,12 +153,12 @@ export default function PdfMapperPage() {
       serviceName: mappingData.serviceName,
       templateFile: mappingData.templateFile,
       version: mappingData.version,
-      pageCount: totalPages,
+      pageCount: 1,
       fields: fields.filter(f => f.type === 'text').map(({ type, ...rest }) => rest),
       checkboxes: fields.filter(f => f.type === 'checkbox').map(({ type, fontSize, ...rest }) => rest),
       images: fields.filter(f => f.type === 'image').map(({ type, fontSize, trueValue, ...rest }) => rest),
       metadata: {
-        lastVerified: new Date().toISOString(),
+        lastVerified: new Date().toISOString().slice(0, 10),
         notes: '',
       },
     };
@@ -236,7 +171,6 @@ export default function PdfMapperPage() {
     a.href = url;
     a.download = `${mappingData.serviceCode || 'mapping'}.json`;
     a.click();
-
     URL.revokeObjectURL(url);
   };
 
@@ -247,31 +181,22 @@ export default function PdfMapperPage() {
       serviceName: mappingData.serviceName,
       templateFile: mappingData.templateFile,
       version: mappingData.version,
-      fields: fields.filter(f => f.type === 'text'),
-      checkboxes: fields.filter(f => f.type === 'checkbox'),
-      images: fields.filter(f => f.type === 'image'),
+      pageCount: 1,
+      fields: fields.filter(f => f.type === 'text').map(({ type, ...rest }) => rest),
+      checkboxes: fields.filter(f => f.type === 'checkbox').map(({ type, fontSize, ...rest }) => rest),
+      images: fields.filter(f => f.type === 'image').map(({ type, fontSize, trueValue, ...rest }) => rest),
     };
 
     navigator.clipboard.writeText(JSON.stringify(mapping, null, 2));
+    alert('클립보드에 복사되었습니다!');
   };
-
-  // 페이지 변경 시 재렌더링
-  useEffect(() => {
-    if (pdfUrl) {
-      import('pdfjs-dist').then(async pdfjsLib => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-        const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
-        renderPage(pdf, currentPage);
-      });
-    }
-  }, [currentPage, fields, selectedField, scale, pdfUrl]);
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">PDF 좌표 매핑 도구</h1>
         <p className="text-muted-foreground">
-          PDF 템플릿에서 필드 좌표를 추출하고 매핑 JSON을 생성합니다.
+          PDF에서 클릭하여 필드 좌표를 추출하고 매핑 JSON을 생성합니다.
         </p>
       </div>
 
@@ -280,25 +205,30 @@ export default function PdfMapperPage() {
         <div className="lg:col-span-2">
           <Card>
             <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-2">
                 <CardTitle>PDF 미리보기</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Input
+                <label className="cursor-pointer">
+                  <input
                     type="file"
                     accept=".pdf"
                     onChange={handleFileUpload}
-                    className="max-w-[200px]"
+                    className="hidden"
                   />
-                </div>
+                  <span className="inline-flex items-center px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                    <Upload className="w-4 h-4 mr-2" />
+                    PDF 업로드
+                  </span>
+                </label>
               </div>
             </CardHeader>
             <CardContent>
               {/* 도구 모음 */}
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-4 flex-wrap">
                 <Button
                   variant={isAddingField ? 'primary' : 'outline'}
                   size="sm"
                   onClick={() => setIsAddingField(!isAddingField)}
+                  disabled={!pdfUrl}
                 >
                   <MousePointer className="w-4 h-4 mr-1" />
                   {isAddingField ? '클릭하여 추가' : '필드 추가'}
@@ -316,73 +246,69 @@ export default function PdfMapperPage() {
                     </SelectContent>
                   </Select>
                 )}
-
-                <div className="flex-1" />
-
-                <Select value={scale.toString()} onValueChange={(v) => setScale(parseFloat(v))}>
-                  <SelectTrigger className="w-[100px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0.5">50%</SelectItem>
-                    <SelectItem value="0.75">75%</SelectItem>
-                    <SelectItem value="1">100%</SelectItem>
-                    <SelectItem value="1.5">150%</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {totalPages > 1 && (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
-                      disabled={currentPage === 0}
-                    >
-                      이전
-                    </Button>
-                    <span className="text-sm px-2">
-                      {currentPage + 1} / {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
-                      disabled={currentPage === totalPages - 1}
-                    >
-                      다음
-                    </Button>
-                  </div>
-                )}
               </div>
 
               {/* 좌표 표시 */}
               {clickPosition && (
-                <div className="mb-2 text-sm text-muted-foreground">
-                  클릭 좌표: X={clickPosition.x}, Y={clickPosition.y}
+                <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                  <strong>클릭 좌표:</strong> X = {clickPosition.x}, Y = {clickPosition.y}
+                  <span className="text-gray-500 ml-2">(PDF 좌표계: 왼쪽 아래가 0,0)</span>
                 </div>
               )}
 
-              {/* 캔버스 */}
+              {/* PDF 뷰어 영역 */}
               <div
-                ref={containerRef}
-                className="border rounded-lg overflow-auto bg-gray-100"
-                style={{ maxHeight: '600px' }}
+                className="border-2 border-dashed rounded-lg overflow-hidden bg-gray-100 relative"
+                style={{ height: '700px' }}
               >
                 {pdfUrl ? (
-                  <canvas
-                    ref={canvasRef}
-                    onClick={handleCanvasClick}
-                    className="cursor-crosshair"
-                  />
+                  <>
+                    {/* PDF를 embed로 표시 */}
+                    <embed
+                      src={pdfUrl}
+                      type="application/pdf"
+                      className="w-full h-full"
+                    />
+                    {/* 클릭 캡처용 오버레이 */}
+                    {isAddingField && (
+                      <div
+                        ref={overlayRef}
+                        onClick={handleOverlayClick}
+                        className="absolute inset-0 cursor-crosshair bg-blue-500 bg-opacity-10"
+                        style={{ zIndex: 10 }}
+                      >
+                        <div className="absolute top-2 left-2 bg-blue-600 text-white px-3 py-1 rounded text-sm">
+                          PDF를 클릭하여 필드 위치 지정
+                        </div>
+                      </div>
+                    )}
+                  </>
                 ) : (
-                  <div className="flex items-center justify-center h-[400px] text-muted-foreground">
+                  <div className="flex items-center justify-center h-full text-muted-foreground">
                     <div className="text-center">
                       <Upload className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                      <p>PDF 파일을 업로드하세요</p>
+                      <p className="text-lg">PDF 파일을 업로드하세요</p>
+                      <p className="text-sm mt-2">위의 "PDF 업로드" 버튼을 클릭하세요</p>
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* 안내 */}
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm">
+                <div className="flex items-start gap-2">
+                  <Info className="w-5 h-5 text-yellow-600 mt-0.5" />
+                  <div>
+                    <strong>사용 방법:</strong>
+                    <ol className="list-decimal list-inside mt-1 space-y-1">
+                      <li>PDF 파일을 업로드합니다</li>
+                      <li>"필드 추가" 버튼을 클릭합니다</li>
+                      <li>PDF 위에 파란 오버레이가 나타나면, 필드 위치를 클릭합니다</li>
+                      <li>필드 ID를 수정하고 필요시 좌표를 미세 조정합니다</li>
+                      <li>JSON 다운로드 또는 복사합니다</li>
+                    </ol>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -399,7 +325,7 @@ export default function PdfMapperPage() {
               <div>
                 <Label>서비스 코드</Label>
                 <Input
-                  value={mappingData.serviceCode || ''}
+                  value={mappingData.serviceCode}
                   onChange={(e) => setMappingData(prev => ({ ...prev, serviceCode: e.target.value }))}
                   placeholder="MAIL_ORDER_SALES"
                 />
@@ -407,15 +333,23 @@ export default function PdfMapperPage() {
               <div>
                 <Label>서비스명</Label>
                 <Input
-                  value={mappingData.serviceName || ''}
+                  value={mappingData.serviceName}
                   onChange={(e) => setMappingData(prev => ({ ...prev, serviceName: e.target.value }))}
                   placeholder="통신판매업 신고서"
                 />
               </div>
               <div>
+                <Label>템플릿 파일</Label>
+                <Input
+                  value={mappingData.templateFile}
+                  onChange={(e) => setMappingData(prev => ({ ...prev, templateFile: e.target.value }))}
+                  placeholder="MAIL_ORDER_SALES.pdf"
+                />
+              </div>
+              <div>
                 <Label>버전</Label>
                 <Input
-                  value={mappingData.version || ''}
+                  value={mappingData.version}
                   onChange={(e) => setMappingData(prev => ({ ...prev, version: e.target.value }))}
                   placeholder="2025-01"
                 />
@@ -429,27 +363,42 @@ export default function PdfMapperPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-lg">필드 목록 ({fields.length})</CardTitle>
                 <div className="flex gap-1">
-                  <Button variant="outline" size="sm" onClick={copyMapping}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyMapping}
+                    title="JSON 복사"
+                    disabled={fields.length === 0}
+                  >
                     <Copy className="w-4 h-4" />
                   </Button>
-                  <Button variant="outline" size="sm" onClick={exportMapping}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportMapping}
+                    title="JSON 다운로드"
+                    disabled={fields.length === 0}
+                  >
                     <Download className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2 max-h-[300px] overflow-auto">
+              <div className="space-y-2 max-h-[250px] overflow-auto">
                 {fields.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    PDF에서 클릭하여 필드를 추가하세요
+                    필드가 없습니다.<br />
+                    "필드 추가" 후 PDF를 클릭하세요.
                   </p>
                 ) : (
                   fields.map((field, index) => (
                     <div
                       key={index}
-                      className={`p-2 border rounded cursor-pointer text-sm ${
-                        selectedField === index ? 'border-blue-500 bg-blue-50' : ''
+                      className={`p-2 border rounded cursor-pointer text-sm transition-colors ${
+                        selectedField === index
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'hover:bg-gray-50'
                       }`}
                       onClick={() => setSelectedField(index)}
                     >
@@ -458,7 +407,7 @@ export default function PdfMapperPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 w-6 p-0"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
                           onClick={(e) => {
                             e.stopPropagation();
                             deleteField(index);
@@ -468,7 +417,7 @@ export default function PdfMapperPage() {
                         </Button>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {field.type} | X:{field.x} Y:{field.y} | P:{field.page + 1}
+                        {field.type} | X:{field.x} Y:{field.y}
                       </div>
                     </div>
                   ))
@@ -489,6 +438,7 @@ export default function PdfMapperPage() {
                   <Input
                     value={fields[selectedField].fieldId}
                     onChange={(e) => updateField(selectedField, { fieldId: e.target.value })}
+                    placeholder="companyName"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -497,7 +447,7 @@ export default function PdfMapperPage() {
                     <Input
                       type="number"
                       value={fields[selectedField].x}
-                      onChange={(e) => updateField(selectedField, { x: parseInt(e.target.value) })}
+                      onChange={(e) => updateField(selectedField, { x: parseInt(e.target.value) || 0 })}
                     />
                   </div>
                   <div>
@@ -505,7 +455,7 @@ export default function PdfMapperPage() {
                     <Input
                       type="number"
                       value={fields[selectedField].y}
-                      onChange={(e) => updateField(selectedField, { y: parseInt(e.target.value) })}
+                      onChange={(e) => updateField(selectedField, { y: parseInt(e.target.value) || 0 })}
                     />
                   </div>
                 </div>
@@ -515,21 +465,21 @@ export default function PdfMapperPage() {
                     <Input
                       type="number"
                       value={fields[selectedField].fontSize}
-                      onChange={(e) => updateField(selectedField, { fontSize: parseInt(e.target.value) })}
+                      onChange={(e) => updateField(selectedField, { fontSize: parseInt(e.target.value) || 10 })}
                     />
                   </div>
                   <div>
-                    <Label>페이지</Label>
+                    <Label>페이지 (0부터)</Label>
                     <Input
                       type="number"
                       value={fields[selectedField].page}
-                      onChange={(e) => updateField(selectedField, { page: parseInt(e.target.value) })}
+                      onChange={(e) => updateField(selectedField, { page: parseInt(e.target.value) || 0 })}
                     />
                   </div>
                 </div>
                 {fields[selectedField].type === 'text' && (
                   <div>
-                    <Label>최대 너비</Label>
+                    <Label>최대 너비 (선택)</Label>
                     <Input
                       type="number"
                       value={fields[selectedField].maxWidth || ''}
@@ -556,7 +506,7 @@ export default function PdfMapperPage() {
                       <Input
                         type="number"
                         value={fields[selectedField].width || 40}
-                        onChange={(e) => updateField(selectedField, { width: parseInt(e.target.value) })}
+                        onChange={(e) => updateField(selectedField, { width: parseInt(e.target.value) || 40 })}
                       />
                     </div>
                     <div>
@@ -564,7 +514,7 @@ export default function PdfMapperPage() {
                       <Input
                         type="number"
                         value={fields[selectedField].height || 40}
-                        onChange={(e) => updateField(selectedField, { height: parseInt(e.target.value) })}
+                        onChange={(e) => updateField(selectedField, { height: parseInt(e.target.value) || 40 })}
                       />
                     </div>
                   </div>

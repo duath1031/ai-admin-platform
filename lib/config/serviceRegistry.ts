@@ -48,10 +48,11 @@ export interface ServiceDefinition {
 
 /**
  * 정부24 직접 URL 생성
+ * 원본 형식: https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=xxxxx
  */
 export function getGov24DirectUrl(cappBizCD?: string): string {
   if (cappBizCD) {
-    return `https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=${cappBizCD}`;
+    return `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A01010&CappBizCD=${cappBizCD}`;
   }
   return 'https://www.gov.kr/portal/minwon/search';
 }
@@ -84,8 +85,8 @@ export const SERVICE_REGISTRY: Record<string, ServiceDefinition> = {
     name: '통신판매업 신고',
     category: '전자상거래',
     gov24: {
-      cappBizCD: '11300000006',
-      directUrl: getGov24DirectUrl('11300000006'),
+      cappBizCD: '14800000001',
+      directUrl: getGov24DirectUrl('14800000001'),
       searchKeyword: '통신판매업 신고',
     },
     document: {
@@ -115,8 +116,8 @@ export const SERVICE_REGISTRY: Record<string, ServiceDefinition> = {
     name: '일반음식점 영업신고',
     category: '식품위생',
     gov24: {
-      cappBizCD: '14600000021',
-      directUrl: getGov24DirectUrl('14600000021'),
+      cappBizCD: '12500000056',
+      directUrl: getGov24DirectUrl('12500000056'),
       searchKeyword: '일반음식점 영업신고',
     },
     document: {
