@@ -1,4 +1,11 @@
 export { default as Button } from "./Button";
 export { default as Input } from "./Input";
 export { default as Textarea } from "./Textarea";
-export { Card, CardHeader, CardContent, CardFooter } from "./Card";
+export { Card, CardHeader, CardContent, CardFooter, CardTitle } from "./Card";
+export { Label } from "./label";
+export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectItem } from "./select";
+export { Checkbox } from "./checkbox";
+export { Badge } from "./badge";
+export { Alert, AlertDescription } from "./alert";
+export { Progress } from "./progress";
+export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";

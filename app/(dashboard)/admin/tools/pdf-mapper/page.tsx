@@ -9,18 +9,21 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  Button,
+  Input,
+  Textarea,
+  Label,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from '@/components/ui';
 import {
   Upload,
   MousePointer,
@@ -293,7 +296,7 @@ export default function PdfMapperPage() {
               {/* 도구 모음 */}
               <div className="flex items-center gap-2 mb-4">
                 <Button
-                  variant={isAddingField ? 'default' : 'outline'}
+                  variant={isAddingField ? 'primary' : 'outline'}
                   size="sm"
                   onClick={() => setIsAddingField(!isAddingField)}
                 >

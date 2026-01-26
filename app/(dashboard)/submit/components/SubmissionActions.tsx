@@ -8,9 +8,7 @@
  */
 
 import { useState } from 'react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Card, CardContent, Button, Alert, AlertDescription } from '@/components/ui';
 import {
   FileText,
   ExternalLink,
@@ -133,7 +131,7 @@ export default function SubmissionActions({
         {/* 정부24 이동 버튼 */}
         <Button
           onClick={handleGov24}
-          variant={pdfGenerated ? 'default' : 'outline'}
+          variant={pdfGenerated ? 'primary' : 'outline'}
           className="w-full h-12"
           size="lg"
         >

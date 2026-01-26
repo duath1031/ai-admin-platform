@@ -11,9 +11,7 @@
  */
 
 import { useState, useMemo } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
+import { Card, CardHeader, CardTitle, CardContent, Badge, Progress } from '@/components/ui';
 import { FileText, Search, Edit, Send } from 'lucide-react';
 import ServiceSelector from './components/ServiceSelector';
 import DynamicForm from './components/DynamicForm';

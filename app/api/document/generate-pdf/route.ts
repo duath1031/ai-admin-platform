@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // PDF 반환
-    return new NextResponse(result.pdfData, {
+    // PDF 반환 (Uint8Array를 Buffer로 변환)
+    return new NextResponse(Buffer.from(result.pdfData), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

@@ -56,10 +56,11 @@ export async function generatePdf(
 
     // 2. 템플릿 PDF 로드
     const templatePath = path.join(TEMPLATES_DIR, mapping.templateFile);
-    let pdfBytes: ArrayBuffer;
+    let pdfBytes: Uint8Array;
 
     try {
-      pdfBytes = await fs.readFile(templatePath);
+      const buffer = await fs.readFile(templatePath);
+      pdfBytes = new Uint8Array(buffer);
     } catch (error) {
       return {
         success: false,
@@ -153,7 +154,8 @@ async function loadKoreanFont(
   // 1. 옵션에서 지정된 경로 시도
   if (options.fontPath) {
     try {
-      const fontBytes = await fs.readFile(options.fontPath);
+      const buffer = await fs.readFile(options.fontPath);
+      const fontBytes = new Uint8Array(buffer);
       return await pdfDoc.embedFont(fontBytes);
     } catch (e) {
       console.warn('[PDF Engine] Custom font not found:', options.fontPath);
@@ -162,7 +164,8 @@ async function loadKoreanFont(
 
   // 2. 기본 로컬 폰트 시도
   try {
-    const fontBytes = await fs.readFile(DEFAULT_FONT_PATH);
+    const buffer = await fs.readFile(DEFAULT_FONT_PATH);
+    const fontBytes = new Uint8Array(buffer);
     return await pdfDoc.embedFont(fontBytes);
   } catch (e) {
     console.warn('[PDF Engine] Local font not found, trying URL');
