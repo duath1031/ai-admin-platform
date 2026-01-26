@@ -1,0 +1,11 @@
+# PDF 템플릿 디렉토리
+# 이 디렉토리에 정부24 공식 PDF 양식을 저장하세요.
+# 파일명은 serviceCode와 동일하게 지정합니다.
+# 예: MAIL_ORDER_SALES.pdf
+
+# 템플릿 추가 방법:
+# 1. 국가법령정보센터(law.go.kr)에서 관련 법령 시행규칙의 서식을 다운로드
+# 2. 또는 정부24에서 해당 민원의 신청서 양식을 다운로드
+# 3. 파일명을 serviceCode.pdf 형식으로 변경
+# 4. 이 디렉토리에 저장
+# 5. data/mappings/{serviceCode}.json 매핑 파일 생성

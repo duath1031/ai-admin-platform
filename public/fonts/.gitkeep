@@ -1,0 +1,8 @@
+# 폰트 디렉토리
+# PDF 생성 시 사용할 한글 폰트를 저장하세요.
+
+# 권장 폰트: NanumGothic.ttf
+# 다운로드: https://hangeul.naver.com/font
+
+# 폰트 파일이 없으면 온라인에서 자동으로 다운로드를 시도합니다.
+# (CDN: cdn.jsdelivr.net)

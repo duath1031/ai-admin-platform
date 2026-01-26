@@ -1,0 +1,145 @@
+{
+  "serviceCode": "MAIL_ORDER_SALES",
+  "serviceName": "통신판매업 신고서",
+  "templateFile": "MAIL_ORDER_SALES.pdf",
+  "version": "2025-01",
+  "pageCount": 2,
+  "description": "전자상거래 등에서의 소비자보호에 관한 법률에 따른 통신판매업 신고서",
+  "fields": [
+    {
+      "fieldId": "companyName",
+      "x": 200,
+      "y": 645,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "corporateNumber",
+      "x": 430,
+      "y": 645,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "companyAddress",
+      "x": 200,
+      "y": 620,
+      "fontSize": 9,
+      "maxWidth": 300,
+      "page": 0
+    },
+    {
+      "fieldId": "companyPhone",
+      "x": 200,
+      "y": 595,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "representativeName",
+      "x": 200,
+      "y": 570,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "residentNumber",
+      "x": 430,
+      "y": 570,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "representativeAddress",
+      "x": 200,
+      "y": 545,
+      "fontSize": 9,
+      "maxWidth": 300,
+      "page": 0
+    },
+    {
+      "fieldId": "email",
+      "x": 200,
+      "y": 520,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "businessNumber",
+      "x": 430,
+      "y": 520,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "domainName",
+      "x": 200,
+      "y": 495,
+      "fontSize": 10,
+      "maxWidth": 300,
+      "page": 0
+    },
+    {
+      "fieldId": "hostServer",
+      "x": 200,
+      "y": 470,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "applicationDate",
+      "x": 280,
+      "y": 200,
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "applicantName",
+      "x": 400,
+      "y": 180,
+      "fontSize": 10,
+      "page": 0
+    }
+  ],
+  "checkboxes": [
+    {
+      "fieldId": "isOnlineSales",
+      "x": 150,
+      "y": 470,
+      "trueValue": "V",
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "isTVSales",
+      "x": 250,
+      "y": 470,
+      "trueValue": "V",
+      "fontSize": 10,
+      "page": 0
+    },
+    {
+      "fieldId": "isCatalogSales",
+      "x": 350,
+      "y": 470,
+      "trueValue": "V",
+      "fontSize": 10,
+      "page": 0
+    }
+  ],
+  "images": [
+    {
+      "fieldId": "stamp",
+      "x": 450,
+      "y": 170,
+      "width": 40,
+      "height": 40,
+      "page": 0
+    }
+  ],
+  "metadata": {
+    "source": "국가법령정보센터",
+    "lastVerified": "2025-01-15",
+    "notes": "통신판매업 신고서 (별지 제3호서식)"
+  }
+}

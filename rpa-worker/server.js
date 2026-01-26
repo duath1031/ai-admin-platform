@@ -20,6 +20,9 @@ const {
   submitGov24Service,
 } = require('./gov24Logic');
 
+// RAG 라우터
+const ragRoutes = require('./routes/rag');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -31,7 +34,8 @@ app.use(cors({
   ],
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // 요청 로깅 미들웨어
 app.use((req, res, next) => {
@@ -74,9 +78,19 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '1.0.0',
+    version: '1.1.0',
+    features: ['gov24-rpa', 'rag-pipeline'],
   });
 });
+
+/**
+ * RAG 라우터 등록 (대용량 문서 처리)
+ * - POST /rag/upload   : 문서 업로드 및 임베딩
+ * - GET  /rag/status/  : 처리 상태 조회
+ * - POST /rag/search   : 벡터 검색
+ * - GET  /rag/health   : RAG 서비스 상태
+ */
+app.use('/rag', validateApiKey, ragRoutes);
 
 /**
  * Playwright 테스트 (브라우저 실행 가능 여부 확인)
