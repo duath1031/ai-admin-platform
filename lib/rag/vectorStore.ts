@@ -114,7 +114,7 @@ export async function searchSimilar(
         d.category
       FROM "KnowledgeChunk" c
       JOIN "KnowledgeDocument" d ON c."documentId" = d.id
-      WHERE d.status = 'ready'
+      WHERE d.status IN ('ready', 'completed')
         AND d.category = ${category}
         AND c.embedding IS NOT NULL
         AND 1 - (c.embedding <=> ${vectorString}::vector) >= ${threshold}
@@ -137,7 +137,7 @@ export async function searchSimilar(
         d.category
       FROM "KnowledgeChunk" c
       JOIN "KnowledgeDocument" d ON c."documentId" = d.id
-      WHERE d.status = 'ready'
+      WHERE d.status IN ('ready', 'completed')
         AND c.embedding IS NOT NULL
         AND 1 - (c.embedding <=> ${vectorString}::vector) >= ${threshold}
       ORDER BY c.embedding <=> ${vectorString}::vector
@@ -188,7 +188,7 @@ export async function searchByVector(
       d.category
     FROM "KnowledgeChunk" c
     JOIN "KnowledgeDocument" d ON c."documentId" = d.id
-    WHERE d.status = 'ready'
+    WHERE d.status IN ('ready', 'completed')
       AND c.embedding IS NOT NULL
       AND 1 - (c.embedding <=> ${vectorString}::vector) >= ${threshold}
     ORDER BY c.embedding <=> ${vectorString}::vector
@@ -278,7 +278,7 @@ export async function getVectorStats(): Promise<{
     SELECT
       (SELECT COUNT(*) FROM "KnowledgeChunk") as "totalChunks",
       (SELECT COUNT(*) FROM "KnowledgeChunk" WHERE embedding IS NOT NULL) as "chunksWithEmbedding",
-      (SELECT COUNT(*) FROM "KnowledgeDocument" WHERE status = 'ready') as "totalDocuments"
+      (SELECT COUNT(*) FROM "KnowledgeDocument" WHERE status IN ('ready', 'completed')) as "totalDocuments"
   `;
 
   return {
