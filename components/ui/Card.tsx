@@ -96,4 +96,22 @@ const CardTitle = forwardRef<HTMLHeadingElement, CardTitleProps>(
 
 CardTitle.displayName = "CardTitle";
 
-export { Card, CardHeader, CardContent, CardFooter, CardTitle };
+interface CardDescriptionProps extends HTMLAttributes<HTMLParagraphElement> {}
+
+const CardDescription = forwardRef<HTMLParagraphElement, CardDescriptionProps>(
+  ({ className = "", children, ...props }, ref) => {
+    return (
+      <p
+        ref={ref}
+        className={`text-sm text-gray-500 ${className}`}
+        {...props}
+      >
+        {children}
+      </p>
+    );
+  }
+);
+
+CardDescription.displayName = "CardDescription";
+
+export { Card, CardHeader, CardContent, CardFooter, CardTitle, CardDescription };

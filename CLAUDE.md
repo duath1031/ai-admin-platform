@@ -1,5 +1,97 @@
 # AI Admin Platform - 작업 메모
 
+## ✅ 완료: The Navigator (정부24 딥링크) - 2026-01-28
+
+### 핵심 변경
+- PDF 생성 완료 후 **[🚀 정부24 접수 페이지로 이동]** 버튼 강조 표시
+- `serviceRegistry.ts`의 `gov24.directUrl` 필드로 직접 신청 페이지 연결
+- 애니메이션 효과로 사용자 주의 유도
+
+### 수정된 파일
+- `app/(dashboard)/submit/components/SubmissionActions.tsx` - The Navigator UI
+  - PDF 생성 완료 시 성공 메시지 표시
+  - 정부24 버튼에 그라디언트, 펄스 애니메이션 적용
+  - 필요서류 목록 표시 추가
+
+---
+
+## ✅ 완료: The Brain (대용량 지식 파이프라인) - 2026-01-28
+
+### 핵심 변경
+- Vercel 10초 타임아웃 우회 → **RPA Worker로 직접 업로드**
+- 500MB 파일 지원, 비동기 처리 + 실시간 상태 폴링
+
+### 수정/생성된 파일
+- `app/admin/knowledge/page.tsx` - The Brain 관리자 UI (전면 개편)
+  - RPA Worker 상태 표시
+  - 드래그&드롭 업로드
+  - 실시간 진행률 표시 (텍스트 추출 → 청크 분할 → 임베딩 생성)
+- `.env` - `NEXT_PUBLIC_RPA_URL`, `RPA_WORKER_API_KEY` 추가
+
+### RPA Worker RAG 엔드포인트 (기존 구현됨)
+- `POST /rag/upload` - 대용량 문서 업로드 (500MB)
+- `GET /rag/status/:id` - 처리 상태 조회
+- `POST /rag/search` - 벡터 검색
+- `GET /rag/health` - 서비스 헬스체크
+
+### 사용법
+1. `/admin/knowledge` 접속
+2. PDF/DOCX/TXT 파일 드래그&드롭 또는 클릭하여 선택
+3. 제목, 카테고리 입력 후 "🚀 업로드 시작"
+4. 진행률 확인 (자동 폴링)
+5. 완료 후 AI 상담 시 해당 문서 참조
+
+---
+
+## ✅ 완료: DOCX 템플릿 엔진 (The Writer) - 2026-01-27
+
+### 핵심 변경
+- **PDF 좌표 매핑 방식 폐기** → **DOCX 플레이스홀더 치환 방식** 도입
+- `{{변수명}}` 형태로 수천 개 서식에 즉시 대응 가능
+
+### 생성된 파일
+- `lib/document/docxEngine/index.ts` - DOCX 템플릿 엔진 코어
+- `app/api/document/generate-docx/route.ts` - 문서 생성 API
+- `app/api/admin/templates/upload/route.ts` - 템플릿 업로드 API
+- `app/api/admin/templates/metadata/route.ts` - 메타데이터 관리 API
+- `app/(dashboard)/admin/tools/template-manager/page.tsx` - 템플릿 관리 UI
+- `public/templates/docx/MAIL_ORDER_SALES.docx` - 통신판매업 신고서 샘플 템플릿
+- `public/templates/docx/MAIL_ORDER_SALES.json` - 필드 메타데이터
+- `scripts/create-sample-template.js` - 샘플 템플릿 생성 스크립트
+- `scripts/test-docx-engine.js` - 엔진 테스트 스크립트
+
+### 사용법
+1. Word에서 `{{businessName}}`, `{{address}}` 같은 플레이스홀더로 DOCX 작성
+2. `/admin/tools/template-manager`에서 업로드
+3. 메타데이터 (필드 정의) 설정
+4. API 호출 또는 UI에서 문서 생성
+
+### 자동 변수
+- `{{today}}` - 오늘 날짜 (2026년 1월 27일)
+- `{{todayYear}}`, `{{todayMonth}}`, `{{todayDay}}` - 연/월/일
+
+---
+
+## 🎯 핵심 기능 완성 현황
+
+| 미션 | 이름 | 상태 | 설명 |
+|------|------|------|------|
+| 1 | The Writer | ✅ 완료 | DOCX 템플릿 엔진 |
+| 2 | The Brain | ✅ 완료 | 대용량 지식 파이프라인 (500MB) |
+| 3 | The Navigator | ✅ 완료 | 정부24 딥링크 시스템 |
+
+### 테스트 방법
+```bash
+# 엔진 테스트
+node scripts/test-docx-engine.js
+
+# 개발 서버 실행 후 관리자 페이지 접속
+npm run dev
+# http://localhost:3000/admin/tools/template-manager
+```
+
+---
+
 ## 🚀 다음 작업: 관리자 페이지 구축 (우선순위 1)
 
 ### 관리자 페이지 기능 요구사항

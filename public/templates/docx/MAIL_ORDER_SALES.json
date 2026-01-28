@@ -1,0 +1,92 @@
+{
+  "code": "MAIL_ORDER_SALES",
+  "name": "통신판매업 신고서",
+  "category": "사업자등록/인허가",
+  "description": "전자상거래 및 통신판매업 신고를 위한 신고서",
+  "gov24Link": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000056",
+  "requiredDocuments": [
+    "사업자등록증 사본",
+    "신분증 사본",
+    "임대차계약서 (해당 시)"
+  ],
+  "fields": [
+    {
+      "id": "businessName",
+      "label": "상호(법인명)",
+      "type": "text",
+      "required": true,
+      "placeholder": "예: 주식회사 ○○○"
+    },
+    {
+      "id": "representativeName",
+      "label": "대표자 성명",
+      "type": "text",
+      "required": true,
+      "placeholder": "홍길동"
+    },
+    {
+      "id": "businessNumber",
+      "label": "사업자등록번호",
+      "type": "text",
+      "required": true,
+      "placeholder": "000-00-00000",
+      "validation": "^\\d{3}-\\d{2}-\\d{5}$"
+    },
+    {
+      "id": "businessAddress",
+      "label": "사업장 소재지",
+      "type": "address",
+      "required": true,
+      "placeholder": "서울특별시 ○○구 ○○로 123"
+    },
+    {
+      "id": "phone",
+      "label": "전화번호",
+      "type": "phone",
+      "required": true,
+      "placeholder": "02-1234-5678"
+    },
+    {
+      "id": "email",
+      "label": "이메일",
+      "type": "email",
+      "required": true,
+      "placeholder": "example@domain.com"
+    },
+    {
+      "id": "websiteUrl",
+      "label": "인터넷 도메인명(URL)",
+      "type": "text",
+      "required": false,
+      "placeholder": "www.example.com"
+    },
+    {
+      "id": "hostingProvider",
+      "label": "호스팅 서버 소재지",
+      "type": "text",
+      "required": false,
+      "placeholder": "㈜○○호스팅 (서울시 ○○구)"
+    },
+    {
+      "id": "mainProducts",
+      "label": "주요 취급 품목",
+      "type": "textarea",
+      "required": true,
+      "placeholder": "의류, 잡화, 전자제품 등"
+    },
+    {
+      "id": "salesMethod",
+      "label": "판매방식",
+      "type": "select",
+      "required": true,
+      "options": ["인터넷", "TV홈쇼핑", "카탈로그", "전화권유", "기타"]
+    },
+    {
+      "id": "birthDate",
+      "label": "생년월일",
+      "type": "date",
+      "required": true,
+      "placeholder": "1990-01-01"
+    }
+  ]
+}

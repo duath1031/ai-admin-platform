@@ -2,9 +2,10 @@
 
 /**
  * =============================================================================
- * Submission Actions Component
+ * Submission Actions Component (The Navigator)
  * =============================================================================
- * PDF 생성 및 정부24 연동 버튼
+ * PDF 생성 및 정부24 딥링크 연동
+ * - 서류 생성 완료 후 정확한 신청 페이지로 안내
  */
 
 import { useState } from 'react';
@@ -17,6 +18,7 @@ import {
   CheckCircle,
   AlertCircle,
   Info,
+  Rocket,
 } from 'lucide-react';
 import type { ServiceDefinition } from '@/lib/config/serviceRegistry';
 import { getServiceGov24Url } from '@/lib/config/serviceRegistry';
@@ -34,6 +36,7 @@ export default function SubmissionActions({
 }: SubmissionActionsProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [pdfGenerated, setPdfGenerated] = useState(false);
+  const [generatedFileName, setGeneratedFileName] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   // PDF 생성
@@ -67,15 +70,17 @@ export default function SubmissionActions({
       // PDF 다운로드
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
+      const fileName = `${service.name}_${new Date().toISOString().slice(0, 10)}.pdf`;
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${service.name}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
       setPdfGenerated(true);
+      setGeneratedFileName(fileName);
     } catch (error) {
       console.error('PDF generation error:', error);
       setError(error instanceof Error ? error.message : 'PDF 생성 중 오류가 발생했습니다.');
@@ -90,6 +95,9 @@ export default function SubmissionActions({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
+  // 정부24 직접 URL 존재 여부 확인
+  const hasDirectUrl = !!service.gov24.directUrl || !!service.gov24.cappBizCD;
+
   return (
     <Card>
       <CardContent className="p-6 space-y-4">
@@ -101,6 +109,22 @@ export default function SubmissionActions({
           </Alert>
         )}
 
+        {/* PDF 생성 완료 성공 메시지 */}
+        {pdfGenerated && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 text-green-800 font-semibold mb-2">
+              <CheckCircle className="w-5 h-5" />
+              서류 생성 완료!
+            </div>
+            <p className="text-green-700 text-sm">
+              <strong>{generatedFileName}</strong> 파일이 다운로드되었습니다.
+            </p>
+            <p className="text-green-600 text-sm mt-1">
+              아래 버튼을 눌러 정부24에서 신청을 완료하세요.
+            </p>
+          </div>
+        )}
+
         {/* PDF 생성 버튼 */}
         {service.document.hasTemplate && (
           <Button
@@ -108,6 +132,7 @@ export default function SubmissionActions({
             disabled={isGenerating || !isFormValid}
             className="w-full h-12"
             size="lg"
+            variant={pdfGenerated ? 'outline' : 'default'}
           >
             {isGenerating ? (
               <>
@@ -116,8 +141,8 @@ export default function SubmissionActions({
               </>
             ) : pdfGenerated ? (
               <>
-                <CheckCircle className="w-5 h-5 mr-2" />
-                PDF 다시 생성
+                <Download className="w-5 h-5 mr-2" />
+                PDF 다시 다운로드
               </>
             ) : (
               <>
@@ -128,28 +153,37 @@ export default function SubmissionActions({
           </Button>
         )}
 
-        {/* 정부24 이동 버튼 */}
+        {/* 🚀 정부24 접수 페이지 이동 버튼 - The Navigator */}
         <Button
           onClick={handleGov24}
-          variant={pdfGenerated ? 'primary' : 'outline'}
-          className="w-full h-12"
           size="lg"
+          className={`w-full h-14 text-base font-semibold transition-all ${
+            pdfGenerated
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl animate-pulse'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
         >
-          <ExternalLink className="w-5 h-5 mr-2" />
-          정부24 접수창구 열기
+          <Rocket className={`w-5 h-5 mr-2 ${pdfGenerated ? 'animate-bounce' : ''}`} />
+          {pdfGenerated ? '🚀 정부24 접수 페이지로 이동' : '정부24 접수 페이지 열기'}
         </Button>
 
+        {/* 딥링크 정보 */}
+        {hasDirectUrl && (
+          <div className="text-xs text-center text-muted-foreground">
+            {service.name} 신청 페이지로 바로 연결됩니다
+          </div>
+        )}
+
         {/* 안내 메시지 */}
-        {service.document.hasTemplate && (
+        {service.document.hasTemplate && !pdfGenerated && (
           <Alert>
             <Info className="h-4 w-4" />
             <AlertDescription>
               <strong>신청 방법:</strong>
               <ol className="list-decimal list-inside mt-2 space-y-1 text-sm">
                 <li>위 버튼으로 신청서 PDF를 생성하세요</li>
-                <li>정부24 접수창구를 열어 로그인하세요</li>
-                <li>신청서 첨부 단계에서 다운로드한 PDF를 업로드하세요</li>
-                <li>추가 서류가 있다면 함께 첨부하세요</li>
+                <li>정부24 접수 페이지에서 로그인하세요</li>
+                <li>신청서 첨부 단계에서 PDF를 업로드하세요</li>
               </ol>
             </AlertDescription>
           </Alert>
@@ -159,6 +193,16 @@ export default function SubmissionActions({
         <div className="text-sm text-muted-foreground space-y-1 border-t pt-4">
           <p><strong>처리기간:</strong> {service.info.processingDays}</p>
           <p><strong>수수료:</strong> {service.info.fee}</p>
+          {service.info.requiredDocs.length > 0 && (
+            <div className="mt-2">
+              <strong>필요서류:</strong>
+              <ul className="list-disc list-inside mt-1">
+                {service.info.requiredDocs.map((doc, i) => (
+                  <li key={i}>{doc}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           {service.info.tips && service.info.tips.length > 0 && (
             <div className="mt-2">
               <strong>신청 팁:</strong>

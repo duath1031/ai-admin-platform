@@ -25,6 +25,7 @@
     "@react-pdf/renderer": "^3.4.0",
     "class-variance-authority": "^0.7.1",
     "docx": "^9.5.1",
+    "docx-templates": "^4.15.0",
     "fast-xml-parser": "^5.3.3",
     "hwp.js": "^0.0.3",
     "lucide-react": "^0.563.0",
