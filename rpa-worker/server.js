@@ -380,6 +380,13 @@ app.listen(PORT, () => {
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`Started at: ${new Date().toISOString()}`);
   console.log('='.repeat(60));
+
+  // 환경변수 디버그 로그
+  console.log('[ENV] DATABASE_URL:', process.env.DATABASE_URL ? 'SET (length: ' + process.env.DATABASE_URL.length + ')' : 'NOT SET');
+  console.log('[ENV] SUPABASE_DATABASE_URL:', process.env.SUPABASE_DATABASE_URL ? 'SET' : 'NOT SET');
+  console.log('[ENV] GOOGLE_AI_API_KEY:', process.env.GOOGLE_AI_API_KEY ? 'SET' : 'NOT SET');
+  console.log('[ENV] WORKER_API_KEY:', process.env.WORKER_API_KEY ? 'SET' : 'NOT SET');
+  console.log('='.repeat(60));
 });
 
 // Graceful shutdown
