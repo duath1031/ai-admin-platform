@@ -4,7 +4,7 @@
  * =============================================================================
  * PostgreSQL pgvector extension을 사용한 벡터 저장 및 검색
  * - Supabase에서 pgvector extension 활성화 필요
- * - 768차원 벡터 (Google text-embedding-004)
+ * - 3072차원 벡터 (Google gemini-embedding-001)
  *
  * [Supabase SQL Setup]
  * 1. Extensions 활성화:
@@ -12,13 +12,9 @@
  *
  * 2. 임베딩 컬럼 추가:
  *    ALTER TABLE "KnowledgeChunk"
- *    ADD COLUMN IF NOT EXISTS embedding vector(768);
+ *    ADD COLUMN IF NOT EXISTS embedding vector(3072);
  *
- * 3. 인덱스 생성 (IVFFlat - 대규모 데이터용):
- *    CREATE INDEX IF NOT EXISTS knowledge_chunk_embedding_idx
- *    ON "KnowledgeChunk"
- *    USING ivfflat (embedding vector_cosine_ops)
- *    WITH (lists = 100);
+ * 3. 인덱스: 3072차원은 HNSW/IVFFlat 인덱스 제한(2000차원) 초과로 생략
  */
 
 import prisma from "@/lib/prisma";
@@ -118,7 +114,7 @@ export async function searchSimilar(
         d.category
       FROM "KnowledgeChunk" c
       JOIN "KnowledgeDocument" d ON c."documentId" = d.id
-      WHERE d.status = 'completed'
+      WHERE d.status = 'ready'
         AND d.category = ${category}
         AND c.embedding IS NOT NULL
         AND 1 - (c.embedding <=> ${vectorString}::vector) >= ${threshold}
@@ -141,7 +137,7 @@ export async function searchSimilar(
         d.category
       FROM "KnowledgeChunk" c
       JOIN "KnowledgeDocument" d ON c."documentId" = d.id
-      WHERE d.status = 'completed'
+      WHERE d.status = 'ready'
         AND c.embedding IS NOT NULL
         AND 1 - (c.embedding <=> ${vectorString}::vector) >= ${threshold}
       ORDER BY c.embedding <=> ${vectorString}::vector
@@ -192,7 +188,7 @@ export async function searchByVector(
       d.category
     FROM "KnowledgeChunk" c
     JOIN "KnowledgeDocument" d ON c."documentId" = d.id
-    WHERE d.status = 'completed'
+    WHERE d.status = 'ready'
       AND c.embedding IS NOT NULL
       AND 1 - (c.embedding <=> ${vectorString}::vector) >= ${threshold}
     ORDER BY c.embedding <=> ${vectorString}::vector
@@ -282,7 +278,7 @@ export async function getVectorStats(): Promise<{
     SELECT
       (SELECT COUNT(*) FROM "KnowledgeChunk") as "totalChunks",
       (SELECT COUNT(*) FROM "KnowledgeChunk" WHERE embedding IS NOT NULL) as "chunksWithEmbedding",
-      (SELECT COUNT(*) FROM "KnowledgeDocument" WHERE status = 'completed') as "totalDocuments"
+      (SELECT COUNT(*) FROM "KnowledgeDocument" WHERE status = 'ready') as "totalDocuments"
   `;
 
   return {

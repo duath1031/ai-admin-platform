@@ -2,8 +2,8 @@
  * =============================================================================
  * Google Text Embedding Service
  * =============================================================================
- * Google text-embedding-004 모델을 사용한 텍스트 임베딩 생성
- * - 768차원 벡터 출력
+ * Google gemini-embedding-001 모델을 사용한 텍스트 임베딩 생성
+ * - 3072차원 벡터 출력
  * - 한국어 지원 우수
  */
 
@@ -11,9 +11,9 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
-// 임베딩 모델 (text-embedding-004)
-const EMBEDDING_MODEL = "text-embedding-004";
-const EMBEDDING_DIMENSION = 768;
+// 임베딩 모델 (gemini-embedding-001) - RPA Worker와 동일
+const EMBEDDING_MODEL = "gemini-embedding-001";
+const EMBEDDING_DIMENSION = 3072;
 
 // 배치 처리 설정
 const BATCH_SIZE = 100; // Google API 배치 제한
