@@ -77,18 +77,19 @@ async function createKnowledgeDocument(document) {
   const id = generateUUID();
   const now = new Date().toISOString();
 
+  // Prisma 스키마에 맞게 fileName 사용 (originalFileName 대신)
   const query = `
     INSERT INTO "KnowledgeDocument" (
-      "id", "title", "category", "fileType", "originalFileName",
-      "fileSize", "totalChunks", "status", "metadata", "createdAt", "updatedAt"
+      "id", "title", "category", "fileType", "fileName",
+      "fileSize", "totalChunks", "status", "createdAt", "updatedAt"
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING *
   `;
 
   const values = [
-    id, title, category, fileType, originalFileName,
-    fileSize, totalChunks, status, JSON.stringify(metadata), now, now
+    id, title || originalFileName, category, fileType, originalFileName,
+    fileSize, totalChunks, status, now, now
   ];
 
   const result = await db.query(query, values);
@@ -108,10 +109,15 @@ async function updateKnowledgeDocument(documentId, updates) {
   const values = [];
   let paramIndex = 1;
 
+  // Prisma 스키마에 있는 필드만 업데이트 (metadata 제외)
+  const allowedFields = ['title', 'category', 'fileType', 'fileName', 'fileSize',
+                         'status', 'totalChunks', 'totalTokens', 'errorMessage', 'description'];
+
   for (const [key, value] of Object.entries(updates)) {
-    const dbKey = key === 'metadata' ? `"${key}"` : `"${key}"`;
-    setClause.push(`${dbKey} = $${paramIndex}`);
-    values.push(key === 'metadata' ? JSON.stringify(value) : value);
+    if (!allowedFields.includes(key)) continue; // metadata 등 스키마에 없는 필드 스킵
+
+    setClause.push(`"${key}" = $${paramIndex}`);
+    values.push(value);
     paramIndex++;
   }
 
