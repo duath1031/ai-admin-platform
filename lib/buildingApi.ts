@@ -191,8 +191,8 @@ export async function searchBuilding(address: string): Promise<BuildingInfo> {
     console.log(`[BuildingAPI] 주소코드: 시군구=${addrResult.sigunguCd}, 법정동=${addrResult.bjdongCd}, 본번=${addrResult.bun}, 부번=${addrResult.ji}`);
 
     // 2. 건축물대장 표제부 API 호출
-    // https://www.data.go.kr/data/15044713/openapi.do (건축물대장정보 서비스)
-    const apiUrl = "http://apis.data.go.kr/1613000/BldRgstService_v2/getBrTitleInfo";
+    // https://www.data.go.kr/data/15044713/openapi.do (건축HUB 건축물대장정보 서비스)
+    const apiUrl = "https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo";
     const params = new URLSearchParams({
       serviceKey: PUBLIC_DATA_KEY,
       sigunguCd: addrResult.sigunguCd || '',
