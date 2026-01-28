@@ -11,8 +11,8 @@
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// 임베딩 모델 설정 (Google AI embedding-001 모델 사용)
-const EMBEDDING_MODEL = 'embedding-001';
+// 임베딩 모델 설정 (Google AI Gemini Embedding 모델 사용)
+const EMBEDDING_MODEL = 'gemini-embedding-001';
 const EMBEDDING_DIMENSION = 768;
 
 // 배치 처리 설정

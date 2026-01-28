@@ -345,7 +345,7 @@ router.get('/health', async (req, res) => {
       success: true,
       status: 'ok',
       database: dbConnected ? 'connected' : 'disconnected',
-      embeddingModel: 'embedding-001',
+      embeddingModel: 'gemini-embedding-001',
       embeddingDimension: EMBEDDING_DIMENSION,
       maxFileSize: '500MB',
       supportedFormats: ['.pdf', '.docx', '.txt'],
