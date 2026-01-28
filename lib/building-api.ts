@@ -164,8 +164,8 @@ export async function fetchBuildingInfo(address: string): Promise<BuildingInfo |
     // 주소를 지번 주소와 도로명 주소로 분리하여 검색
     const encodedAddress = encodeURIComponent(address);
 
-    // 건축물대장 표제부 조회 API
-    const url = `http://apis.data.go.kr/1613000/BldRgstService_v2/getBrTitleInfo?serviceKey=${API_KEY}&sigunguCd=&bjdongCd=&platGbCd=0&bun=&ji=&startDate=&endDate=&numOfRows=10&pageNo=1&format=json`;
+    // 건축물대장 표제부 조회 API (건축HUB)
+    const url = `https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo?serviceKey=${API_KEY}&sigunguCd=&bjdongCd=&platGbCd=0&bun=&ji=&startDate=&endDate=&numOfRows=10&pageNo=1&format=json`;
 
     const response = await fetch(url);
     const data = await response.json();
