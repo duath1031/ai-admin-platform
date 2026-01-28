@@ -377,7 +377,7 @@ export default function KnowledgePage() {
             🧠 The Brain - 지식 베이스
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            대용량 문서를 업로드하면 AI가 학습하여 상담에 활용합니다.
+            대용량 문서를 업로드하면 AI가 학습하여 상담에 활용합니다. (v2.0)
           </p>
         </div>
         <div className="flex items-center gap-3">
