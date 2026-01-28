@@ -171,7 +171,7 @@ async function insertKnowledgeChunks(chunks, documentId) {
         : null;
 
       placeholders.push(
-        `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8})`
+        `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7})`
       );
 
       values.push(
@@ -182,17 +182,16 @@ async function insertKnowledgeChunks(chunks, documentId) {
         chunk.pageNumber || null,              // pageNumber
         chunk.sectionTitle || null,            // sectionTitle
         embeddingVector,                       // embedding (pgvector format)
-        now,                                   // createdAt
-        now                                    // updatedAt
+        now                                    // createdAt
       );
 
-      paramIndex += 9;
+      paramIndex += 8;
     }
 
     const query = `
       INSERT INTO "KnowledgeChunk" (
         "id", "documentId", "content", "chunkIndex", "pageNumber",
-        "sectionTitle", "embedding", "createdAt", "updatedAt"
+        "sectionTitle", "embedding", "createdAt"
       )
       VALUES ${placeholders.join(', ')}
     `;
