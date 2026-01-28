@@ -132,7 +132,7 @@ export default function SubmissionActions({
             disabled={isGenerating || !isFormValid}
             className="w-full h-12"
             size="lg"
-            variant={pdfGenerated ? 'outline' : 'default'}
+            variant={pdfGenerated ? 'outline' : 'primary'}
           >
             {isGenerating ? (
               <>
