@@ -38,5 +38,5 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3001/health || exit 1
 
-# 서버 실행 (메모리 제한 증가: 4GB)
-CMD ["node", "--max-old-space-size=4096", "server.js"]
+# 서버 실행 (메모리 제한 증가: 8GB - 대용량 PDF 500MB+ 처리용)
+CMD ["node", "--max-old-space-size=8192", "server.js"]
