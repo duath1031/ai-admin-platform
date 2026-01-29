@@ -13,14 +13,9 @@ import { prisma } from "@/lib/prisma";
 const RPA_WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
 const WORKER_API_KEY = process.env.WORKER_API_KEY || '';
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
-// Next.js 14에서 대용량 파일 허용
+// Next.js App Router에서 대용량 파일 허용
 export const maxDuration = 60; // 60초 타임아웃
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
