@@ -283,7 +283,8 @@ export async function POST(req: NextRequest) {
       }
 
       // 자동 갱신 포함된 Knowledge Context 조회
-      const kbResult = await getKnowledgeContext(targetCategory, 3);
+      // 대용량 PDF는 1개만 사용 (Gemini API 제한: 총 파일 크기)
+      const kbResult = await getKnowledgeContext(targetCategory, 1);
 
       if (kbResult.fileParts.length > 0) {
         knowledgeFiles = kbResult.fileParts;
