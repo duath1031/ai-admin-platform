@@ -242,11 +242,41 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Knowledge Base - 임시 비활성화 (디버깅용)
-    // TODO: 문제 해결 후 다시 활성화
-    const knowledgeFiles: FileDataPart[] = [];
-    const knowledgeTitles: string[] = [];
-    console.log("[Chat] Knowledge Base 임시 비활성화됨");
+    // Knowledge Base - Gemini File API 방식 (Long Context)
+    // 학습된 문서를 fileData로 Gemini에 직접 전달
+    let knowledgeFiles: FileDataPart[] = [];
+    let knowledgeTitles: string[] = [];
+
+    try {
+      // 카테고리 자동 감지 (질문 내용 기반)
+      let targetCategory: string | undefined;
+      if (/비자|사증|출입국|하이코리아|체류|외국인/i.test(lastUserMessage)) {
+        targetCategory = "출입국";
+      } else if (/숙박|호텔|모텔|펜션|게스트하우스|관광숙박/i.test(lastUserMessage)) {
+        targetCategory = "관광숙박";
+      } else if (/음식점|식품|휴게음식|일반음식|위생/i.test(lastUserMessage)) {
+        targetCategory = "인허가";
+      }
+
+      const kbResult = await getKnowledgeContext(targetCategory, 3);
+
+      if (kbResult.fileParts.length > 0) {
+        knowledgeFiles = kbResult.fileParts;
+        knowledgeTitles = kbResult.documentTitles;
+        console.log(`[Chat] Knowledge Base 연동: ${knowledgeTitles.join(', ')} (${knowledgeFiles.length}개 파일)`);
+
+        // 참고 문서 정보를 컨텍스트에 추가
+        additionalContext += `\n\n[참고 매뉴얼 - 아래 문서 내용을 기반으로 답변하세요]
+📚 학습된 문서: ${knowledgeTitles.join(', ')}
+⚠️ 문서 내용과 질문이 관련 있으면 문서의 정확한 내용을 인용하여 답변하세요.
+`;
+      }
+    } catch (error) {
+      console.error("[Chat] Knowledge Base 오류 (기본 채팅으로 진행):", error);
+      // 오류 시 빈 배열로 진행 - 기본 채팅 사용
+      knowledgeFiles = [];
+      knowledgeTitles = [];
+    }
 
     // 문서 생성 템플릿 감지 시 AI에게 정보 제공
     if (intent.documentTemplate) {

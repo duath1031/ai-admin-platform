@@ -5,8 +5,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { chatWithGemini } from "@/lib/gemini";
+import { chatWithGemini, chatWithKnowledge, FileDataPart } from "@/lib/gemini";
 import { getActiveSystemPrompt } from "@/lib/systemPromptService";
+import { getKnowledgeContext } from "@/lib/ai/knowledge";
 import prisma from "@/lib/prisma";
 
 export async function GET() {
@@ -44,24 +45,74 @@ export async function GET() {
     };
   }
 
+  // Knowledge Base 테스트
+  try {
+    const kbResult = await getKnowledgeContext(undefined, 3);
+    checks.knowledgeBase = {
+      status: "ok",
+      fileCount: kbResult.fileParts.length,
+      titles: kbResult.documentTitles,
+    };
+  } catch (error) {
+    checks.knowledgeBase = {
+      status: "error",
+      error: error instanceof Error ? error.message : "Unknown",
+    };
+  }
+
   return NextResponse.json(checks);
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const { message = "안녕하세요" } = await req.json().catch(() => ({}));
+    const { message = "안녕하세요", useKnowledge = false } = await req.json().catch(() => ({}));
 
-    console.log("[Debug] Testing Gemini with message:", message);
+    console.log("[Debug] Testing Gemini with message:", message, "useKnowledge:", useKnowledge);
 
     const systemPrompt = await getActiveSystemPrompt();
-    const response = await chatWithGemini(
-      [{ role: "user", content: message }],
-      systemPrompt
-    );
+    let response: string;
+    let knowledgeInfo: any = null;
+
+    if (useKnowledge) {
+      // Knowledge Base 연동 테스트
+      try {
+        const kbResult = await getKnowledgeContext(undefined, 3);
+        knowledgeInfo = {
+          fileCount: kbResult.fileParts.length,
+          titles: kbResult.documentTitles,
+        };
+
+        if (kbResult.fileParts.length > 0) {
+          response = await chatWithKnowledge(
+            [{ role: "user", content: message }],
+            systemPrompt,
+            kbResult.fileParts
+          );
+        } else {
+          response = await chatWithGemini(
+            [{ role: "user", content: message }],
+            systemPrompt
+          );
+        }
+      } catch (kbError) {
+        console.error("[Debug] Knowledge Base error:", kbError);
+        knowledgeInfo = { error: kbError instanceof Error ? kbError.message : "Unknown" };
+        response = await chatWithGemini(
+          [{ role: "user", content: message }],
+          systemPrompt
+        );
+      }
+    } else {
+      response = await chatWithGemini(
+        [{ role: "user", content: message }],
+        systemPrompt
+      );
+    }
 
     return NextResponse.json({
       success: true,
       message: response,
+      knowledge: knowledgeInfo,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
