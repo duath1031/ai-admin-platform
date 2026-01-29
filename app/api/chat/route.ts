@@ -17,6 +17,23 @@ import { getKnowledgeContext } from "@/lib/ai/knowledgeQuery";
 import { FORM_TEMPLATES, findTemplate } from "@/lib/document/templates";
 import { GOV24_SERVICES } from "@/lib/document/gov24Links";
 
+// Vercel 서버리스 함수 타임아웃 설정 (Pro: 최대 60초)
+export const maxDuration = 30; // 30초 타임아웃
+
+// 외부 API 타임아웃 헬퍼 함수 (기능 유지하면서 안정성 확보)
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) =>
+      setTimeout(() => resolve(fallback), timeoutMs)
+    ),
+  ]);
+}
+
 // 문서 생성 가능한 템플릿 매칭
 function detectDocumentTemplate(message: string): string | undefined {
   const templateKeywords: Record<string, string[]> = {
@@ -222,9 +239,28 @@ export async function POST(req: NextRequest) {
       additionalContext += `\n⚠️ 위 링크를 마크다운 형식으로 답변에 반드시 포함하세요.\n`;
     }
 
-    // 맥락 인식형 법령 검색 (RAG) - 임시 비활성화 (타임아웃 방지)
-    // TODO: 외부 API 타임아웃 문제 해결 후 재활성화
-    console.log("[Chat] RAG 검색 비활성화됨 (타임아웃 방지)");
+    // 맥락 인식형 법령 검색 (RAG) - 타임아웃 5초로 제한
+    try {
+      const intentClass = quickClassify(lastUserMessage);
+      // 법령 관련 키워드가 있는 경우에만 검색 (점수 기반 판단)
+      const needsLegalSearch = intentClass.procedureScore >= 2 || intentClass.disputeScore >= 2;
+      if (needsLegalSearch) {
+        console.log(`[Chat] RAG 법령 검색 시작... (절차:${intentClass.procedureScore}, 분쟁:${intentClass.disputeScore})`);
+        const legalResult = await withTimeout(
+          searchLegalInfo(lastUserMessage),
+          5000, // 5초 타임아웃
+          { success: false, intent: { mode: intentClass.likelyMode, confidence: 0, keywords: [], reasoning: "타임아웃", searchScope: { statutes: false, regulations: false, localLaws: false, precedents: false, rulings: false, forms: false } }, statutes: [], precedents: [], rulings: [], forms: [], localLaws: [], error: "타임아웃", systemMessage: "법령 검색 타임아웃" }
+        );
+        if (legalResult.success) {
+          additionalContext += formatLegalResultForPrompt(legalResult);
+          console.log("[Chat] RAG 검색 완료");
+        } else {
+          console.log("[Chat] RAG 검색 실패/타임아웃:", legalResult.systemMessage || legalResult.error);
+        }
+      }
+    } catch (ragError) {
+      console.warn("[Chat] RAG 검색 오류 (무시하고 계속):", ragError);
+    }
 
     // Knowledge Base - Gemini File API 방식 (Long Context)
     let knowledgeFiles: FileDataPart[] = [];
@@ -306,10 +342,51 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
       }
     }
 
-    // 토지이용계획 + 건축물대장 조회 - 임시 비활성화 (타임아웃 방지)
-    // TODO: 외부 API 타임아웃 문제 해결 후 재활성화
+    // 토지이용계획 + 건축물대장 조회 - 타임아웃 5초로 제한 (병렬 처리)
     if (intent.address) {
-      console.log(`[Chat] 부동산 정보 조회 비활성화됨: "${intent.address}"`);
+      console.log(`[Chat] 부동산 정보 조회 시작: "${intent.address}"`);
+
+      // 병렬로 조회하되, 각각 5초 타임아웃 적용
+      const [landResult, buildingResult] = await Promise.all([
+        // 토지이용계획 조회 (타임아웃 시 실패 결과 반환)
+        intent.needsLandUse
+          ? withTimeout(
+              searchLandUse(intent.address),
+              5000,
+              { success: false, error: "토지이용계획 조회 타임아웃" }
+            )
+          : Promise.resolve(null),
+        // 건축물대장 조회 (타임아웃 시 실패 결과 반환)
+        intent.needsBuildingInfo
+          ? withTimeout(
+              searchBuilding(intent.address),
+              5000,
+              { success: false, error: "건축물대장 조회 타임아웃" }
+            )
+          : Promise.resolve(null),
+      ]);
+
+      // 토지이용계획 결과 추가
+      if (landResult) {
+        if (landResult.success) {
+          additionalContext += `\n\n${formatLandUseResult(landResult)}`;
+          console.log("[Chat] 토지이용계획 조회 완료");
+        } else {
+          console.log("[Chat] 토지이용계획 조회 실패:", landResult.error);
+          additionalContext += `\n\n[토지이용계획 조회]\n⚠️ ${landResult.error || "조회 실패"}\n토지이음(eum.go.kr)에서 직접 확인해주세요.`;
+        }
+      }
+
+      // 건축물대장 결과 추가
+      if (buildingResult) {
+        if (buildingResult.success) {
+          additionalContext += `\n\n${formatBuildingResult(buildingResult)}`;
+          console.log("[Chat] 건축물대장 조회 완료");
+        } else {
+          console.log("[Chat] 건축물대장 조회 실패:", buildingResult.error);
+          additionalContext += `\n\n[건축물대장 조회]\n⚠️ ${buildingResult.error || "조회 실패"}\n세움터(cloud.eais.go.kr)에서 직접 확인해주세요.`;
+        }
+      }
     }
 
     // DB에서 시스템 프롬프트 가져오기 (없으면 기본 프롬프트 사용)
