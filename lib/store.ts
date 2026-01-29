@@ -11,7 +11,7 @@ interface ChatState {
   messages: Message[];
   isLoading: boolean;
   currentChatId: string | null;
-  addMessage: (message: Omit<Message, "createdAt"> & { id?: string }) => void;
+  addMessage: (message: Omit<Message, "createdAt" | "id"> & { id?: string }) => void;
   updateMessage: (id: string, content: string) => void;
   setMessages: (messages: Message[]) => void;
   setLoading: (loading: boolean) => void;
