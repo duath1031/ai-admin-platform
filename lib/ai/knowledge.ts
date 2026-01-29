@@ -377,7 +377,6 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       title: true,
       category: true,
       fileName: true,
-      storagePath: true,
       geminiFileUri: true,
       geminiMimeType: true,
       geminiExpiresAt: true,
@@ -400,33 +399,7 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       continue;
     }
 
-    // 캐시 만료 확인 (30분 버퍼)
-    const isExpired = !isGeminiCacheValid(doc.geminiExpiresAt, 30);
-
-    if (isExpired && doc.storagePath) {
-      // 만료되었고 영구 저장소 경로가 있으면 갱신 시도
-      console.log(`[Knowledge] Auto-renewing expired cache for: ${doc.id}`);
-      const renewed = await renewGeminiCache({
-        id: doc.id,
-        storagePath: doc.storagePath,
-        fileName: doc.fileName,
-        title: doc.title,
-      });
-
-      if (renewed) {
-        activeDocuments.push({
-          id: doc.id,
-          title: doc.title || "제목 없음",
-          category: doc.category,
-          fileUri: renewed.fileUri,
-          mimeType: renewed.mimeType,
-          expiresAt: renewed.expiresAt,
-        });
-        continue;
-      }
-      // 갱신 실패 시 기존 URI 사용 (만료되었지만 아직 동작할 수도 있음)
-    }
-
+    // TODO: Auto-Renewal 로직은 storagePath 컬럼 확인 후 재활성화
     activeDocuments.push({
       id: doc.id,
       title: doc.title || "제목 없음",
