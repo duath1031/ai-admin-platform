@@ -7,7 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chatWithGemini, chatWithKnowledge, FileDataPart } from "@/lib/gemini";
 import { getActiveSystemPrompt } from "@/lib/systemPromptService";
-import { getKnowledgeContext } from "@/lib/ai/knowledge";
+import { getKnowledgeContext } from "@/lib/ai/knowledgeQuery";
 import prisma from "@/lib/prisma";
 
 export async function GET() {
