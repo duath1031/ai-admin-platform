@@ -222,25 +222,9 @@ export async function POST(req: NextRequest) {
       additionalContext += `\n⚠️ 위 링크를 마크다운 형식으로 답변에 반드시 포함하세요.\n`;
     }
 
-    // 맥락 인식형 법령 검색 (RAG)
-    // 절차/요건 질문: 법령+서식만, 분쟁/구제 질문: 판례+재결례 포함
-    const quickIntent = quickClassify(lastUserMessage);
-    if (quickIntent.procedureScore > 0 || quickIntent.disputeScore > 0) {
-      try {
-        console.log(`[Chat] RAG 검색 시작: ${quickIntent.likelyMode}`);
-        const legalResult = await searchLegalInfo(lastUserMessage);
-        if (legalResult.success) {
-          additionalContext += formatLegalResultForPrompt(legalResult);
-        }
-        // API 오류 시 안내 메시지 추가
-        if (legalResult.systemMessage) {
-          additionalContext += `\n\n[시스템 안내]\n${legalResult.systemMessage}\n`;
-        }
-      } catch (error) {
-        console.error("[Chat] 법령 검색 오류:", error);
-        additionalContext += `\n\n[시스템 안내]\n죄송합니다. 현재 정부 시스템 연결이 불안정하여 일부 법령 정보를 가져오지 못했습니다.\n`;
-      }
-    }
+    // 맥락 인식형 법령 검색 (RAG) - 임시 비활성화 (타임아웃 방지)
+    // TODO: 외부 API 타임아웃 문제 해결 후 재활성화
+    console.log("[Chat] RAG 검색 비활성화됨 (타임아웃 방지)");
 
     // Knowledge Base - Gemini File API 방식 (Long Context)
     let knowledgeFiles: FileDataPart[] = [];
@@ -322,49 +306,10 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
       }
     }
 
-    // 토지이용계획 + 건축물대장 조회 (병렬 실행)
-    if (intent.address && (intent.needsLandUse || intent.needsBuildingInfo)) {
-      console.log(`[Chat] 부동산 정보 조회 시작: "${intent.address}" (토지: ${intent.needsLandUse}, 건물: ${intent.needsBuildingInfo})`);
-
-      // 병렬로 API 호출
-      const [landResult, buildingResult] = await Promise.all([
-        intent.needsLandUse ? searchLandUse(intent.address).catch(err => {
-          console.error("[Chat] 토지이용계획 조회 오류:", err);
-          return null;
-        }) : Promise.resolve(null),
-        intent.needsBuildingInfo ? searchBuilding(intent.address).catch(err => {
-          console.error("[Chat] 건축물대장 조회 오류:", err);
-          return null;
-        }) : Promise.resolve(null),
-      ]);
-
-      // 토지이용계획 결과
-      if (landResult) {
-        console.log(`[Chat] 토지이용계획 조회 결과: success=${landResult.success}, zones=${landResult.zoneInfo?.map(z => z.name).join(', ') || 'none'}`);
-        additionalContext += `\n\n[토지이용계획 조회 결과]\n${formatLandUseResult(landResult)}`;
-      } else if (intent.needsLandUse) {
-        additionalContext += `\n\n[토지이용계획 조회]\n⚠️ 주소 "${intent.address}"의 토지이용계획 조회 중 오류가 발생했습니다. 토지이음(eum.go.kr)에서 직접 확인해주세요.`;
-      }
-
-      // 건축물대장 결과
-      if (buildingResult) {
-        console.log(`[Chat] 건축물대장 조회 결과: success=${buildingResult.success}, 용도=${buildingResult.mainPurpose || 'none'}`);
-        additionalContext += `\n\n[건축물대장 조회 결과]\n${formatBuildingResult(buildingResult)}`;
-
-        // 목표 업종이 있으면 용도변경 가능성 분석 추가
-        if (intent.targetBusiness && buildingResult.success && buildingResult.mainPurpose) {
-          const { checkPurposeChangeability } = await import("@/lib/buildingApi");
-          const changeability = checkPurposeChangeability(buildingResult.mainPurpose, intent.targetBusiness);
-          additionalContext += `\n\n[용도변경 분석]\n`;
-          additionalContext += `- 현재 용도: ${buildingResult.mainPurpose}\n`;
-          additionalContext += `- 목표 용도: ${intent.targetBusiness}\n`;
-          additionalContext += `- 분석: ${changeability.note}\n`;
-        }
-      } else if (intent.needsBuildingInfo) {
-        additionalContext += `\n\n[건축물대장 조회]\n⚠️ 주소 "${intent.address}"의 건축물대장 조회 중 오류가 발생했습니다. 세움터(cloud.eais.go.kr)에서 직접 확인해주세요.`;
-      }
-    } else if (intent.address) {
-      console.log(`[Chat] 주소 감지됨 ("${intent.address}") 하지만 관련 키워드 없음`);
+    // 토지이용계획 + 건축물대장 조회 - 임시 비활성화 (타임아웃 방지)
+    // TODO: 외부 API 타임아웃 문제 해결 후 재활성화
+    if (intent.address) {
+      console.log(`[Chat] 부동산 정보 조회 비활성화됨: "${intent.address}"`);
     }
 
     // DB에서 시스템 프롬프트 가져오기 (없으면 기본 프롬프트 사용)
