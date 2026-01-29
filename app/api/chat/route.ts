@@ -244,18 +244,23 @@ export async function POST(req: NextRequest) {
       const intentClass = quickClassify(lastUserMessage);
       // 법령 관련 키워드가 있는 경우에만 검색 (점수 기반 판단)
       const needsLegalSearch = intentClass.procedureScore >= 2 || intentClass.disputeScore >= 2;
+      console.log(`[Chat] 의도분류: 절차=${intentClass.procedureScore}, 분쟁=${intentClass.disputeScore}, 검색필요=${needsLegalSearch}`);
       if (needsLegalSearch) {
-        console.log(`[Chat] RAG 법령 검색 시작... (절차:${intentClass.procedureScore}, 분쟁:${intentClass.disputeScore})`);
-        const legalResult = await withTimeout(
-          searchLegalInfo(lastUserMessage),
-          5000, // 5초 타임아웃
-          { success: false, intent: { mode: intentClass.likelyMode, confidence: 0, keywords: [], reasoning: "타임아웃", searchScope: { statutes: false, regulations: false, localLaws: false, precedents: false, rulings: false, forms: false } }, statutes: [], precedents: [], rulings: [], forms: [], localLaws: [], error: "타임아웃", systemMessage: "법령 검색 타임아웃" }
-        );
-        if (legalResult.success) {
-          additionalContext += formatLegalResultForPrompt(legalResult);
-          console.log("[Chat] RAG 검색 완료");
-        } else {
-          console.log("[Chat] RAG 검색 실패/타임아웃:", legalResult.systemMessage || legalResult.error);
+        console.log(`[Chat] RAG 법령 검색 시작...`);
+        try {
+          const legalResult = await withTimeout(
+            searchLegalInfo(lastUserMessage),
+            5000, // 5초 타임아웃
+            { success: false, intent: { mode: intentClass.likelyMode, confidence: 0, keywords: [], reasoning: "타임아웃", searchScope: { statutes: false, regulations: false, localLaws: false, precedents: false, rulings: false, forms: false } }, statutes: [], precedents: [], rulings: [], forms: [], localLaws: [], error: "타임아웃", systemMessage: "법령 검색 타임아웃" }
+          );
+          if (legalResult.success) {
+            additionalContext += formatLegalResultForPrompt(legalResult);
+            console.log("[Chat] RAG 검색 완료");
+          } else {
+            console.log("[Chat] RAG 검색 실패/타임아웃:", legalResult.systemMessage || legalResult.error);
+          }
+        } catch (searchError) {
+          console.warn("[Chat] RAG searchLegalInfo 오류:", searchError);
         }
       }
     } catch (ragError) {
@@ -344,48 +349,52 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
 
     // 토지이용계획 + 건축물대장 조회 - 타임아웃 5초로 제한 (병렬 처리)
     if (intent.address) {
-      console.log(`[Chat] 부동산 정보 조회 시작: "${intent.address}"`);
+      console.log(`[Chat] 부동산 정보 조회 시작: "${intent.address}", 토지=${intent.needsLandUse}, 건물=${intent.needsBuildingInfo}`);
 
-      // 병렬로 조회하되, 각각 5초 타임아웃 적용
-      const [landResult, buildingResult] = await Promise.all([
-        // 토지이용계획 조회 (타임아웃 시 실패 결과 반환)
-        intent.needsLandUse
-          ? withTimeout(
-              searchLandUse(intent.address),
-              5000,
-              { success: false, error: "토지이용계획 조회 타임아웃" }
-            )
-          : Promise.resolve(null),
-        // 건축물대장 조회 (타임아웃 시 실패 결과 반환)
-        intent.needsBuildingInfo
-          ? withTimeout(
-              searchBuilding(intent.address),
-              5000,
-              { success: false, error: "건축물대장 조회 타임아웃" }
-            )
-          : Promise.resolve(null),
-      ]);
+      try {
+        // 병렬로 조회하되, 각각 5초 타임아웃 적용
+        const [landResult, buildingResult] = await Promise.all([
+          // 토지이용계획 조회 (타임아웃 시 실패 결과 반환)
+          intent.needsLandUse
+            ? withTimeout(
+                searchLandUse(intent.address).catch(e => ({ success: false, error: `조회 오류: ${e.message}` })),
+                5000,
+                { success: false, error: "토지이용계획 조회 타임아웃" }
+              )
+            : Promise.resolve(null),
+          // 건축물대장 조회 (타임아웃 시 실패 결과 반환)
+          intent.needsBuildingInfo
+            ? withTimeout(
+                searchBuilding(intent.address).catch(e => ({ success: false, error: `조회 오류: ${e.message}` })),
+                5000,
+                { success: false, error: "건축물대장 조회 타임아웃" }
+              )
+            : Promise.resolve(null),
+        ]);
 
-      // 토지이용계획 결과 추가
-      if (landResult) {
-        if (landResult.success) {
-          additionalContext += `\n\n${formatLandUseResult(landResult)}`;
-          console.log("[Chat] 토지이용계획 조회 완료");
-        } else {
-          console.log("[Chat] 토지이용계획 조회 실패:", landResult.error);
-          additionalContext += `\n\n[토지이용계획 조회]\n⚠️ ${landResult.error || "조회 실패"}\n토지이음(eum.go.kr)에서 직접 확인해주세요.`;
+        // 토지이용계획 결과 추가
+        if (landResult) {
+          if (landResult.success) {
+            additionalContext += `\n\n${formatLandUseResult(landResult)}`;
+            console.log("[Chat] 토지이용계획 조회 완료");
+          } else {
+            console.log("[Chat] 토지이용계획 조회 실패:", landResult.error);
+            additionalContext += `\n\n[토지이용계획 조회]\n⚠️ ${landResult.error || "조회 실패"}\n토지이음(eum.go.kr)에서 직접 확인해주세요.`;
+          }
         }
-      }
 
-      // 건축물대장 결과 추가
-      if (buildingResult) {
-        if (buildingResult.success) {
-          additionalContext += `\n\n${formatBuildingResult(buildingResult)}`;
-          console.log("[Chat] 건축물대장 조회 완료");
-        } else {
-          console.log("[Chat] 건축물대장 조회 실패:", buildingResult.error);
-          additionalContext += `\n\n[건축물대장 조회]\n⚠️ ${buildingResult.error || "조회 실패"}\n세움터(cloud.eais.go.kr)에서 직접 확인해주세요.`;
+        // 건축물대장 결과 추가
+        if (buildingResult) {
+          if (buildingResult.success) {
+            additionalContext += `\n\n${formatBuildingResult(buildingResult)}`;
+            console.log("[Chat] 건축물대장 조회 완료");
+          } else {
+            console.log("[Chat] 건축물대장 조회 실패:", buildingResult.error);
+            additionalContext += `\n\n[건축물대장 조회]\n⚠️ ${buildingResult.error || "조회 실패"}\n세움터(cloud.eais.go.kr)에서 직접 확인해주세요.`;
+          }
         }
+      } catch (realEstateError) {
+        console.warn("[Chat] 부동산 정보 조회 오류 (무시하고 계속):", realEstateError);
       }
     }
 
@@ -444,12 +453,14 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
       );
     }
 
-    // 개발 환경에서는 상세 에러 반환
+    // 상세 에러 반환 (디버깅용)
     const errorMessage = error instanceof Error ? error.message : "알 수 없는 오류";
+    const errorName = error instanceof Error ? error.name : "UnknownError";
     return NextResponse.json(
       {
         error: "서버 오류가 발생했습니다.",
-        details: process.env.NODE_ENV !== 'production' ? errorMessage : undefined
+        errorType: errorName,
+        details: errorMessage.substring(0, 200) // 보안을 위해 200자로 제한
       },
       { status: 500 }
     );
