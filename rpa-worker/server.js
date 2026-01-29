@@ -30,6 +30,8 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS?.split(',') || [
     'https://aiadminplatform.vercel.app',
+    'https://ai-admin-platform.vercel.app',
+    'https://ai-admin-platform-git-main.vercel.app',
     'http://localhost:3000',
   ],
   credentials: true,
@@ -85,12 +87,21 @@ app.get('/health', (req, res) => {
 
 /**
  * RAG 라우터 등록 (대용량 문서 처리)
- * - POST /rag/upload   : 문서 업로드 및 임베딩
- * - GET  /rag/status/  : 처리 상태 조회
- * - POST /rag/search   : 벡터 검색
- * - GET  /rag/health   : RAG 서비스 상태
+ * - POST /rag/upload        : 문서 업로드 및 임베딩
+ * - POST /rag/upload-gemini : Gemini File API 업로드 (CORS로 보호)
+ * - GET  /rag/status/       : 처리 상태 조회
+ * - POST /rag/search        : 벡터 검색
+ * - GET  /rag/health        : RAG 서비스 상태
  */
-app.use('/rag', validateApiKey, ragRoutes);
+// API Key 검증 (upload-gemini는 CORS로만 보호 - 브라우저 직접 업로드용)
+const ragApiKeyMiddleware = (req, res, next) => {
+  // upload-gemini는 CORS로만 보호 (대용량 파일 브라우저 직접 업로드)
+  if (req.path === '/upload-gemini') {
+    return next();
+  }
+  return validateApiKey(req, res, next);
+};
+app.use('/rag', ragApiKeyMiddleware, ragRoutes);
 
 /**
  * Playwright 테스트 (브라우저 실행 가능 여부 확인)

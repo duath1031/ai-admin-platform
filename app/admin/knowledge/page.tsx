@@ -160,7 +160,7 @@ export default function KnowledgePage() {
         let data;
 
         if (isLargeFile) {
-          // 대용량 파일: RPA Worker로 직접 업로드
+          // 대용량 파일: RPA Worker로 직접 업로드 (CORS로 보호됨)
           console.log(`[Knowledge] Large file detected (${(file.size / 1024 / 1024).toFixed(2)} MB), routing to RPA Worker`);
 
           const res = await fetch(`${RPA_WORKER_URL}/rag/upload-gemini`, {
