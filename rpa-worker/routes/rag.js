@@ -408,10 +408,11 @@ router.post('/upload-gemini', upload.single('file'), async (req, res) => {
 
     res.json({
       success: true,
-      // 영구 저장소 정보
+      // 영구 저장소 정보 (Supabase Storage)
       storagePath: storageResult.storagePath,
-      storageProvider: 'local',
-      // Gemini 캐시 정보
+      storageProvider: storageResult.storageProvider,
+      storageType: storageResult.storageType,
+      // Gemini 캐시 정보 (48시간)
       fileUri: uploadResult.fileUri,
       mimeType: uploadResult.mimeType,
       fileName: uploadResult.name,
@@ -419,7 +420,7 @@ router.post('/upload-gemini', upload.single('file'), async (req, res) => {
       expiresAt: uploadResult.expiresAt,
       // 메타데이터
       processingTime,
-      message: `영구 저장 + Gemini 캐시 완료 (${processingTime}ms)`,
+      message: `Supabase 영구저장 + Gemini 캐시 완료 (${processingTime}ms)`,
     });
 
   } catch (error) {
