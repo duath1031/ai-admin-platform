@@ -179,4 +179,110 @@ export function getCurrentModelInfo(userTier: UserTier): ModelConfig {
   return getModelConfig(userTier);
 }
 
+// =============================================================================
+// Knowledge Base 연동 (Gemini File API - Long Context)
+// =============================================================================
+
+export interface FileDataPart {
+  fileData: {
+    fileUri: string;
+    mimeType: string;
+  };
+}
+
+/**
+ * Knowledge Base 문서를 포함한 Gemini 채팅
+ * - 파일 URI를 fileData로 직접 전달 (NotebookLM 방식)
+ * - Long Context로 전체 문서 내용 활용
+ */
+export async function chatWithKnowledge(
+  messages: { role: string; content: string }[],
+  systemPrompt: string,
+  knowledgeFiles: FileDataPart[] = [],
+  userTier: UserTier = 'free'
+): Promise<string> {
+  const config = getModelConfig(userTier);
+  const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
+
+  // Long Context 지원 모델 사용 (gemini-1.5-flash 권장)
+  const modelName = knowledgeFiles.length > 0 ? 'gemini-1.5-flash' : config.modelName;
+
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: enhancedPrompt,
+    generationConfig: {
+      temperature: config.temperature,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: config.maxOutputTokens,
+    }
+  });
+
+  // 마지막 사용자 메시지
+  const lastMessage = messages[messages.length - 1];
+
+  // Knowledge 파일이 있는 경우 generateContent 사용
+  if (knowledgeFiles.length > 0) {
+    console.log(`[Gemini] Knowledge 파일 ${knowledgeFiles.length}개와 함께 질의`);
+
+    // 파일 + 대화 기록 + 현재 질문 조합
+    const conversationContext = messages.slice(0, -1).length > 0
+      ? `\n\n[이전 대화]\n${messages.slice(0, -1).map(m =>
+          `${m.role === 'assistant' ? 'AI' : '사용자'}: ${m.content}`
+        ).join('\n\n')}\n\n[현재 질문]\n${lastMessage.content}`
+      : lastMessage.content;
+
+    const parts = [
+      ...knowledgeFiles,
+      { text: conversationContext },
+    ];
+
+    const result = await model.generateContent(parts);
+    return result.response.text();
+  }
+
+  // Knowledge 파일이 없는 경우 기존 채팅 방식
+  const chatHistory = messages.slice(0, -1).map(msg => ({
+    role: msg.role === "assistant" ? "model" : "user",
+    parts: [{ text: msg.content }]
+  }));
+
+  const chat = model.startChat({
+    history: chatHistory,
+  });
+
+  const result = await chat.sendMessage(lastMessage.content);
+  return result.response.text();
+}
+
+/**
+ * 단순 질의 (Knowledge 파일만으로 응답)
+ */
+export async function queryKnowledgeFiles(
+  query: string,
+  knowledgeFiles: FileDataPart[],
+  systemPrompt: string = "제공된 문서를 참고하여 질문에 정확하게 답변하세요."
+): Promise<string> {
+  if (knowledgeFiles.length === 0) {
+    return "참고할 문서가 없습니다.";
+  }
+
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-1.5-flash',
+    systemInstruction: systemPrompt,
+    generationConfig: {
+      temperature: 0.5,
+      maxOutputTokens: 4096,
+    }
+  });
+
+  const parts = [
+    ...knowledgeFiles,
+    { text: query },
+  ];
+
+  const result = await model.generateContent(parts);
+  return result.response.text();
+}
+
 export default genAI;

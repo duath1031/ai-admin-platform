@@ -1,14 +1,16 @@
 /**
  * =============================================================================
- * Knowledge Upload API
+ * Knowledge Upload API - Gemini File API 방식 (Long Context)
  * =============================================================================
  * POST /api/knowledge/upload
  *
- * 관리자 전용 - 지식 문서 업로드 및 벡터화
- * 1. 파일 업로드 (multipart/form-data)
- * 2. 텍스트 추출
- * 3. 청킹 (의미 단위 분할)
- * 4. 임베딩 생성 및 저장
+ * 관리자 전용 - 지식 문서 업로드
+ * NotebookLM과 동일한 방식으로 대용량 파일을 Google에 직접 업로드
+ *
+ * 장점:
+ * - 임베딩/청킹 불필요 → 업로드 속도 대폭 향상
+ * - 50MB+ 파일도 10초 이내 처리
+ * - 문서 전체 컨텍스트 유지 (Long Context)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,22 +18,17 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import {
-  extractTextFromFile,
-  getFileType,
-  validateFileSize,
-  cleanExtractedText,
-} from "@/lib/rag/documentProcessor";
-import { chunkText, getChunkStats, validateChunks } from "@/lib/rag/chunker";
-import { generateEmbeddings } from "@/lib/rag/embeddings";
-import { saveChunkEmbeddings } from "@/lib/rag/vectorStore";
+  uploadKnowledgeDocument,
+  SUPPORTED_MIME_TYPES,
+  MAX_FILE_SIZE_MB,
+} from "@/lib/ai/knowledge";
 
 // 관리자 이메일 목록
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").filter(Boolean);
 
-// 최대 파일 크기 (MB)
-const MAX_FILE_SIZE_MB = 50;
-
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
+
   try {
     // 세션 확인
     const session = await getServerSession(authOptions);
@@ -64,172 +61,71 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 파일 타입 확인
-    const fileType = getFileType(file.name);
-    if (!fileType) {
+    // 파일 확장자 확인
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!SUPPORTED_MIME_TYPES[ext]) {
+      const supportedFormats = Object.keys(SUPPORTED_MIME_TYPES).join(", ");
       return NextResponse.json(
-        { success: false, error: "지원하지 않는 파일 형식입니다. (PDF, HWP, DOCX, TXT 지원)" },
+        {
+          success: false,
+          error: `지원하지 않는 파일 형식입니다. 지원 형식: ${supportedFormats}`,
+        },
         { status: 400 }
       );
     }
 
     // 파일 크기 확인
-    const sizeValidation = validateFileSize(file.size, MAX_FILE_SIZE_MB);
-    if (!sizeValidation.valid) {
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > MAX_FILE_SIZE_MB) {
       return NextResponse.json(
-        { success: false, error: sizeValidation.error },
+        {
+          success: false,
+          error: `파일 크기가 너무 큽니다. 최대 ${MAX_FILE_SIZE_MB}MB까지 지원합니다. (현재: ${fileSizeMB.toFixed(1)}MB)`,
+        },
         { status: 400 }
       );
     }
 
-    console.log(`[Knowledge Upload] Processing: ${file.name} (${fileType}, ${file.size} bytes)`);
+    console.log(`[Knowledge Upload] Starting: ${file.name} (${fileSizeMB.toFixed(1)}MB)`);
 
-    // 1. DB에 문서 레코드 생성 (pending 상태)
-    const document = await prisma.knowledgeDocument.create({
-      data: {
-        fileName: file.name,
-        fileType,
-        fileSize: file.size,
-        title: title || file.name.replace(/\.[^/.]+$/, ""), // 확장자 제거
-        category,
-        description,
-        status: "processing",
-        uploadedBy: session.user.email,
+    // Gemini File API에 업로드
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const result = await uploadKnowledgeDocument(buffer, file.name, {
+      title: title || file.name.replace(/\.[^/.]+$/, ""),
+      category: category || undefined,
+      description: description || undefined,
+      uploadedBy: session.user.email,
+    });
+
+    const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[Knowledge Upload] Completed in ${elapsedTime}s: ${file.name}`);
+
+    // 문서 정보 조회
+    const document = await prisma.knowledgeDocument.findUnique({
+      where: { id: result.documentId },
+      select: {
+        id: true,
+        fileName: true,
+        fileType: true,
+        fileSize: true,
+        title: true,
+        category: true,
+        description: true,
+        status: true,
+        geminiFileUri: true,
+        geminiExpiresAt: true,
+        processingMode: true,
+        createdAt: true,
       },
     });
 
-    try {
-      // 2. 텍스트 추출
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const extractResult = await extractTextFromFile(buffer, fileType, file.name);
-
-      if (!extractResult.success || !extractResult.document) {
-        await prisma.knowledgeDocument.update({
-          where: { id: document.id },
-          data: {
-            status: "failed",
-            errorMessage: extractResult.error || "텍스트 추출 실패",
-          },
-        });
-
-        return NextResponse.json(
-          { success: false, error: extractResult.error || "텍스트 추출 실패" },
-          { status: 500 }
-        );
-      }
-
-      const cleanedText = cleanExtractedText(extractResult.document.text);
-      console.log(`[Knowledge Upload] Extracted ${cleanedText.length} characters`);
-
-      // 3. 청킹
-      const chunks = chunkText(cleanedText, {
-        chunkSize: 1000,
-        chunkOverlap: 200,
-      });
-
-      const chunkValidation = validateChunks(chunks);
-      if (!chunkValidation.valid) {
-        console.warn("[Knowledge Upload] Chunk validation issues:", chunkValidation.issues);
-      }
-
-      const chunkStats = getChunkStats(chunks);
-      console.log(`[Knowledge Upload] Created ${chunks.length} chunks`);
-
-      // 4. 청크 레코드 생성
-      const createdChunks = await prisma.$transaction(
-        chunks.map((chunk) =>
-          prisma.knowledgeChunk.create({
-            data: {
-              documentId: document.id,
-              content: chunk.content,
-              chunkIndex: chunk.index,
-              pageNumber: chunk.pageNumber,
-              sectionTitle: chunk.sectionTitle,
-              tokenCount: chunk.tokenCount,
-            },
-          })
-        )
-      );
-
-      console.log(`[Knowledge Upload] Created ${createdChunks.length} chunk records`);
-
-      // 5. 임베딩 생성 (배치 처리)
-      const chunkContents = chunks.map((c) => c.content);
-
-      try {
-        const embeddings = await generateEmbeddings(chunkContents);
-        console.log(`[Knowledge Upload] Generated ${embeddings.length} embeddings`);
-
-        // 6. 임베딩 저장
-        const chunkEmbeddings = createdChunks.map((chunk, i) => ({
-          id: chunk.id,
-          embedding: embeddings[i],
-        }));
-
-        await saveChunkEmbeddings(chunkEmbeddings);
-        console.log(`[Knowledge Upload] Saved embeddings to vector store`);
-      } catch (embeddingError) {
-        console.error("[Knowledge Upload] Embedding error:", embeddingError);
-        // 임베딩 실패해도 문서는 저장됨 (나중에 재시도 가능)
-        await prisma.knowledgeDocument.update({
-          where: { id: document.id },
-          data: {
-            status: "completed",
-            totalChunks: chunks.length,
-            totalTokens: chunkStats.estimatedTokens,
-            errorMessage: "임베딩 생성 중 일부 오류 발생. 나중에 재처리 필요.",
-          },
-        });
-
-        return NextResponse.json({
-          success: true,
-          warning: "임베딩 생성 중 오류가 발생했습니다. 검색 기능이 제한될 수 있습니다.",
-          document: {
-            id: document.id,
-            fileName: document.fileName,
-            totalChunks: chunks.length,
-          },
-        });
-      }
-
-      // 7. 문서 상태 업데이트 (완료)
-      const updatedDocument = await prisma.knowledgeDocument.update({
-        where: { id: document.id },
-        data: {
-          status: "completed",
-          totalChunks: chunks.length,
-          totalTokens: chunkStats.estimatedTokens,
-        },
-      });
-
-      return NextResponse.json({
-        success: true,
-        document: {
-          id: updatedDocument.id,
-          fileName: updatedDocument.fileName,
-          title: updatedDocument.title,
-          category: updatedDocument.category,
-          totalChunks: updatedDocument.totalChunks,
-          totalTokens: updatedDocument.totalTokens,
-          status: updatedDocument.status,
-        },
-        stats: chunkStats,
-      });
-    } catch (processingError) {
-      // 처리 중 오류 발생 시 문서 상태 업데이트
-      await prisma.knowledgeDocument.update({
-        where: { id: document.id },
-        data: {
-          status: "failed",
-          errorMessage:
-            processingError instanceof Error
-              ? processingError.message
-              : "처리 중 오류 발생",
-        },
-      });
-
-      throw processingError;
-    }
+    return NextResponse.json({
+      success: true,
+      message: `업로드 완료! (${elapsedTime}초)`,
+      document,
+      processingMode: "gemini_file",
+      elapsedSeconds: parseFloat(elapsedTime),
+    });
   } catch (error) {
     console.error("[Knowledge Upload] Error:", error);
     return NextResponse.json(
@@ -267,12 +163,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
     const status = searchParams.get("status");
+    const processingMode = searchParams.get("processingMode");
 
     // 문서 목록 조회
     const documents = await prisma.knowledgeDocument.findMany({
       where: {
         ...(category && { category }),
         ...(status && { status }),
+        ...(processingMode && { processingMode }),
       },
       orderBy: { createdAt: "desc" },
       select: {
@@ -290,13 +188,29 @@ export async function GET(req: NextRequest) {
         uploadedBy: true,
         createdAt: true,
         updatedAt: true,
+        // Gemini File API 필드
+        geminiFileUri: true,
+        geminiMimeType: true,
+        geminiExpiresAt: true,
+        processingMode: true,
       },
     });
+
+    // 통계 계산
+    const stats = {
+      total: documents.length,
+      completed: documents.filter(d => d.status === "completed").length,
+      processing: documents.filter(d => d.status === "processing" || d.status === "uploading").length,
+      failed: documents.filter(d => d.status === "failed").length,
+      expired: documents.filter(d => d.status === "expired").length,
+      geminiFileMode: documents.filter(d => d.processingMode === "gemini_file").length,
+      legacyRagMode: documents.filter(d => d.processingMode === "legacy_rag").length,
+    };
 
     return NextResponse.json({
       success: true,
       documents,
-      total: documents.length,
+      stats,
     });
   } catch (error) {
     console.error("[Knowledge List] Error:", error);

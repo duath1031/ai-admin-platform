@@ -467,9 +467,17 @@ model KnowledgeDocument {
   updatedAt    DateTime         @updatedAt
   chunks       KnowledgeChunk[]
 
+  // Gemini File API 필드 (Long Context 방식)
+  geminiFileUri    String?    // Google File API에서 반환된 URI
+  geminiMimeType   String?    // 파일 MIME 타입
+  geminiFileName   String?    // Google 내부 파일명 (삭제용)
+  geminiExpiresAt  DateTime?  // 파일 만료 시간 (48시간)
+  processingMode   String     @default("gemini_file") // 'legacy_rag' | 'gemini_file'
+
   @@index([status])
   @@index([category])
   @@index([fileType])
+  @@index([processingMode])
 }
 
 model KnowledgeChunk {

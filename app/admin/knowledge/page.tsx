@@ -2,21 +2,18 @@
 
 /**
  * =============================================================================
- * Knowledge Base Manager (The Brain)
+ * Knowledge Base Manager (The Brain) v3.0 - Gemini File API
  * =============================================================================
- * 대용량 문서 업로드 및 RAG 파이프라인 관리
- * - RPA Worker로 직접 업로드 (Vercel 10초 타임아웃 우회)
- * - 비동기 처리 + 실시간 상태 폴링
- * - 500MB 파일 지원
+ * NotebookLM과 동일한 Long Context 방식
+ * - 임베딩/청킹 불필요 → 10초 이내 업로드 완료
+ * - 50MB+ 대용량 파일 지원
+ * - Google File API로 직접 업로드
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 
-// RPA Worker URL
-const RPA_URL = process.env.NEXT_PUBLIC_RPA_URL || "https://admini-rpa-worker-production.up.railway.app";
-
-// 문서 타입
+// 문서 타입 (Gemini File API 방식)
 interface KnowledgeDocument {
   id: string;
   fileName: string;
@@ -31,27 +28,33 @@ interface KnowledgeDocument {
   errorMessage: string | null;
   uploadedBy: string | null;
   createdAt: string;
-  progress?: number;
+  // Gemini File API 필드
+  geminiFileUri: string | null;
+  geminiMimeType: string | null;
+  geminiExpiresAt: string | null;
+  processingMode: string | null;
 }
 
 // 업로드 작업 상태
 interface UploadTask {
-  documentId: string;
+  id: string;
   fileName: string;
-  status: "uploading" | "extracting" | "chunking" | "embedding" | "saving" | "completed" | "failed";
+  fileSize: number;
+  status: "uploading" | "completed" | "failed";
   progress: number;
   error?: string;
   startTime: number;
+  elapsedSeconds?: number;
 }
 
 // 카테고리 옵션
 const CATEGORIES = [
   { value: "", label: "전체" },
-  { value: "행정절차", label: "행정절차" },
   { value: "출입국", label: "출입국/비자" },
+  { value: "관광숙박", label: "관광숙박업" },
+  { value: "행정절차", label: "행정절차" },
   { value: "인허가", label: "인허가/등록" },
   { value: "부동산", label: "부동산" },
-  { value: "세무", label: "세무/회계" },
   { value: "정책자금", label: "정책자금" },
   { value: "민원편람", label: "민원편람" },
   { value: "기타", label: "기타" },
@@ -60,22 +63,28 @@ const CATEGORIES = [
 // 상태 한글 매핑
 const STATUS_LABELS: Record<string, string> = {
   uploading: "업로드 중",
-  extracting: "텍스트 추출 중",
-  chunking: "청크 분할 중",
-  embedding: "임베딩 생성 중",
-  saving: "저장 중",
   processing: "처리 중",
-  completed: "완료",
-  ready: "완료",
+  completed: "학습 완료",
+  ready: "학습 완료",
   failed: "실패",
+  expired: "만료됨",
   pending: "대기 중",
-  pending_embedding: "임베딩 대기",
 };
+
+// 지원 파일 형식
+const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xlsx", ".pptx"];
 
 export default function KnowledgePage() {
   const { data: session, status } = useSession();
 
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [stats, setStats] = useState<{
+    total: number;
+    completed: number;
+    processing: number;
+    failed: number;
+    expired: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
 
@@ -89,31 +98,6 @@ export default function KnowledgePage() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 상태 폴링 인터벌
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
-
-  // RPA Worker 헬스체크
-  const [rpaStatus, setRpaStatus] = useState<"checking" | "online" | "offline">("checking");
-
-  // RPA Worker 상태 확인
-  useEffect(() => {
-    const checkRpaHealth = async () => {
-      try {
-        const res = await fetch(`${RPA_URL}/rag/health`, {
-          headers: { "X-API-Key": "admini-rpa-worker-2024-secure-key" },
-        });
-        if (res.ok) {
-          setRpaStatus("online");
-        } else {
-          setRpaStatus("offline");
-        }
-      } catch {
-        setRpaStatus("offline");
-      }
-    };
-    checkRpaHealth();
-  }, []);
-
   // 문서 목록 조회
   const fetchDocuments = useCallback(async () => {
     try {
@@ -125,6 +109,7 @@ export default function KnowledgePage() {
 
       if (data.success) {
         setDocuments(data.documents);
+        setStats(data.stats);
       }
     } catch (error) {
       console.error("Failed to fetch documents:", error);
@@ -139,67 +124,22 @@ export default function KnowledgePage() {
     }
   }, [status, fetchDocuments]);
 
-  // 업로드 작업 상태 폴링
-  useEffect(() => {
-    const activeTasks = uploadTasks.filter(
-      (t) => !["completed", "failed"].includes(t.status)
-    );
-
-    if (activeTasks.length > 0) {
-      pollingRef.current = setInterval(async () => {
-        for (const task of activeTasks) {
-          try {
-            const res = await fetch(`${RPA_URL}/rag/status/${task.documentId}`, {
-              headers: { "X-API-Key": "admini-rpa-worker-2024-secure-key" },
-            });
-            const data = await res.json();
-
-            setUploadTasks((prev) =>
-              prev.map((t) =>
-                t.documentId === task.documentId
-                  ? {
-                      ...t,
-                      status: data.status,
-                      progress: data.progress || t.progress,
-                      error: data.taskInfo?.error,
-                    }
-                  : t
-              )
-            );
-
-            // 완료되면 문서 목록 새로고침
-            if (data.status === "completed" || data.status === "ready") {
-              fetchDocuments();
-            }
-          } catch (error) {
-            console.error("Status polling error:", error);
-          }
-        }
-      }, 2000);
-
-      return () => {
-        if (pollingRef.current) {
-          clearInterval(pollingRef.current);
-        }
-      };
-    }
-  }, [uploadTasks, fetchDocuments]);
-
-  // 파일 업로드 (RPA Worker로 직접)
+  // 파일 업로드 (Gemini File API로 직접)
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
     for (const file of selectedFiles) {
-      const taskId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
       // 업로드 작업 추가
       setUploadTasks((prev) => [
         ...prev,
         {
-          documentId: taskId,
+          id: taskId,
           fileName: file.name,
+          fileSize: file.size,
           status: "uploading",
-          progress: 0,
+          progress: 30,
           startTime: Date.now(),
         },
       ]);
@@ -210,30 +150,33 @@ export default function KnowledgePage() {
         formData.append("title", title || file.name.replace(/\.[^/.]+$/, ""));
         formData.append("category", category || "기타");
 
-        // RPA Worker로 직접 업로드
-        const res = await fetch(`${RPA_URL}/rag/upload`, {
+        // 직접 API 호출 (Gemini File API)
+        const res = await fetch("/api/knowledge/upload", {
           method: "POST",
-          headers: {
-            "X-API-Key": "admini-rpa-worker-2024-secure-key",
-          },
           body: formData,
         });
 
         const data = await res.json();
 
         if (data.success) {
-          // 실제 문서 ID로 업데이트
           setUploadTasks((prev) =>
             prev.map((t) =>
-              t.documentId === taskId
-                ? { ...t, documentId: data.documentId, status: "extracting", progress: 10 }
+              t.id === taskId
+                ? {
+                    ...t,
+                    status: "completed",
+                    progress: 100,
+                    elapsedSeconds: data.elapsedSeconds,
+                  }
                 : t
             )
           );
+          // 문서 목록 새로고침
+          fetchDocuments();
         } else {
           setUploadTasks((prev) =>
             prev.map((t) =>
-              t.documentId === taskId
+              t.id === taskId
                 ? { ...t, status: "failed", error: data.error }
                 : t
             )
@@ -242,7 +185,7 @@ export default function KnowledgePage() {
       } catch (error) {
         setUploadTasks((prev) =>
           prev.map((t) =>
-            t.documentId === taskId
+            t.id === taskId
               ? { ...t, status: "failed", error: "업로드 실패" }
               : t
           )
@@ -271,9 +214,7 @@ export default function KnowledgePage() {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files).filter((f) =>
-      [".pdf", ".docx", ".doc", ".txt"].some((ext) =>
-        f.name.toLowerCase().endsWith(ext)
-      )
+      SUPPORTED_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext))
     );
 
     if (files.length > 0) {
@@ -297,7 +238,7 @@ export default function KnowledgePage() {
 
   // 문서 삭제
   const handleDelete = async (documentId: string) => {
-    if (!confirm("이 문서를 삭제하시겠습니까?")) return;
+    if (!confirm("이 문서를 삭제하시겠습니까? Google에서도 파일이 삭제됩니다.")) return;
 
     try {
       const res = await fetch(`/api/knowledge/${documentId}`, {
@@ -313,8 +254,8 @@ export default function KnowledgePage() {
   };
 
   // 작업 제거
-  const removeTask = (documentId: string) => {
-    setUploadTasks((prev) => prev.filter((t) => t.documentId !== documentId));
+  const removeTask = (taskId: string) => {
+    setUploadTasks((prev) => prev.filter((t) => t.id !== taskId));
   };
 
   // 파일 크기 포맷
@@ -326,37 +267,46 @@ export default function KnowledgePage() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  // 소요 시간 포맷
-  const formatDuration = (startTime: number) => {
-    const seconds = Math.floor((Date.now() - startTime) / 1000);
-    if (seconds < 60) return `${seconds}초`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}분 ${seconds % 60}초`;
+  // 만료 시간 계산
+  const getExpiryStatus = (expiresAt: string | null) => {
+    if (!expiresAt) return null;
+    const expires = new Date(expiresAt);
+    const now = new Date();
+    const hoursLeft = Math.floor((expires.getTime() - now.getTime()) / (1000 * 60 * 60));
+
+    if (hoursLeft < 0) return { text: "만료됨", color: "text-red-600" };
+    if (hoursLeft < 6) return { text: `${hoursLeft}시간 남음`, color: "text-orange-600" };
+    if (hoursLeft < 24) return { text: `${hoursLeft}시간 남음`, color: "text-yellow-600" };
+    return { text: `${Math.floor(hoursLeft / 24)}일 남음`, color: "text-green-600" };
   };
 
   // 상태 배지
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, processingMode?: string | null) => {
     const colors: Record<string, string> = {
       pending: "bg-yellow-100 text-yellow-800",
-      pending_embedding: "bg-orange-100 text-orange-800",
       processing: "bg-blue-100 text-blue-800",
-      extracting: "bg-blue-100 text-blue-800",
-      chunking: "bg-indigo-100 text-indigo-800",
-      embedding: "bg-purple-100 text-purple-800",
-      saving: "bg-cyan-100 text-cyan-800",
+      uploading: "bg-blue-100 text-blue-800",
       completed: "bg-green-100 text-green-800",
       ready: "bg-green-100 text-green-800",
       failed: "bg-red-100 text-red-800",
+      expired: "bg-gray-100 text-gray-800",
     };
 
     return (
-      <span
-        className={`px-2 py-1 rounded text-xs font-medium ${
-          colors[status] || "bg-gray-100 text-gray-800"
-        }`}
-      >
-        {STATUS_LABELS[status] || status}
-      </span>
+      <div className="flex items-center gap-1">
+        <span
+          className={`px-2 py-1 rounded text-xs font-medium ${
+            colors[status] || "bg-gray-100 text-gray-800"
+          }`}
+        >
+          {STATUS_LABELS[status] || status}
+        </span>
+        {processingMode === "gemini_file" && (
+          <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">
+            Long Context
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -375,60 +325,44 @@ export default function KnowledgePage() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             🧠 The Brain - 지식 베이스
+            <span className="text-sm font-normal bg-gradient-to-r from-purple-600 to-blue-600 text-white px-2 py-0.5 rounded">
+              v3.0 Gemini Long Context
+            </span>
           </h1>
           <p className="text-gray-500 text-sm mt-1">
-            대용량 문서를 업로드하면 AI가 학습하여 상담에 활용합니다. (v2.0)
+            NotebookLM과 동일한 방식으로 대용량 문서를 즉시 학습합니다. (임베딩 불필요)
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* RPA Worker 상태 */}
-          <div
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${
-              rpaStatus === "online"
-                ? "bg-green-100 text-green-700"
-                : rpaStatus === "offline"
-                ? "bg-red-100 text-red-700"
-                : "bg-gray-100 text-gray-700"
-            }`}
-          >
-            <div
-              className={`w-2 h-2 rounded-full ${
-                rpaStatus === "online"
-                  ? "bg-green-500"
-                  : rpaStatus === "offline"
-                  ? "bg-red-500"
-                  : "bg-gray-400 animate-pulse"
-              }`}
-            />
-            {rpaStatus === "online"
-              ? "RPA 서버 정상"
-              : rpaStatus === "offline"
-              ? "RPA 서버 오프라인"
-              : "확인 중..."}
-          </div>
-          <button
-            onClick={fetchDocuments}
-            className="px-4 py-2 border rounded-lg hover:bg-gray-50 flex items-center gap-2"
-          >
-            🔄 새로고침
-          </button>
-        </div>
+        <button
+          onClick={fetchDocuments}
+          className="px-4 py-2 border rounded-lg hover:bg-gray-50 flex items-center gap-2"
+        >
+          🔄 새로고침
+        </button>
       </div>
 
-      {/* RPA 오프라인 경고 */}
-      {rpaStatus === "offline" && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-          <div className="flex items-start gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div>
-              <h3 className="font-semibold text-red-800">RPA Worker 서버에 연결할 수 없습니다</h3>
-              <p className="text-red-700 text-sm mt-1">
-                대용량 파일 업로드가 불가능합니다. Railway 배포 상태를 확인해주세요.
-              </p>
-              <code className="text-xs bg-red-100 px-2 py-1 rounded mt-2 block">
-                {RPA_URL}
-              </code>
-            </div>
+      {/* 통계 */}
+      {stats && (
+        <div className="grid grid-cols-5 gap-4 mb-6">
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <div className="text-3xl font-bold text-gray-800">{stats.total}</div>
+            <div className="text-sm text-gray-500">전체 문서</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <div className="text-3xl font-bold text-green-600">{stats.completed}</div>
+            <div className="text-sm text-gray-500">학습 완료</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <div className="text-3xl font-bold text-blue-600">{stats.processing}</div>
+            <div className="text-sm text-gray-500">처리 중</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <div className="text-3xl font-bold text-red-600">{stats.failed}</div>
+            <div className="text-sm text-gray-500">실패</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4 text-center">
+            <div className="text-3xl font-bold text-gray-400">{stats.expired}</div>
+            <div className="text-sm text-gray-500">만료</div>
           </div>
         </div>
       )}
@@ -437,7 +371,7 @@ export default function KnowledgePage() {
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           📤 문서 업로드
-          <span className="text-sm font-normal text-gray-500">(최대 500MB)</span>
+          <span className="text-sm font-normal text-gray-500">(최대 100MB, 10초 이내 완료)</span>
         </h2>
 
         {/* 드래그 앤 드롭 영역 */}
@@ -448,8 +382,8 @@ export default function KnowledgePage() {
           onClick={() => fileInputRef.current?.click()}
           className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
             isDragging
-              ? "border-blue-500 bg-blue-50"
-              : "border-gray-300 hover:border-blue-400 hover:bg-gray-50"
+              ? "border-purple-500 bg-purple-50"
+              : "border-gray-300 hover:border-purple-400 hover:bg-gray-50"
           }`}
         >
           {selectedFiles.length > 0 ? (
@@ -480,14 +414,14 @@ export default function KnowledgePage() {
                 파일을 드래그하거나 클릭하여 선택하세요
               </div>
               <div className="text-sm text-gray-400">
-                지원 형식: PDF, DOCX, TXT (최대 500MB)
+                지원 형식: PDF, DOCX, TXT, CSV, XLSX, PPTX (최대 100MB)
               </div>
             </>
           )}
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.docx,.doc,.txt"
+            accept={SUPPORTED_EXTENSIONS.join(",")}
             onChange={handleFileSelect}
             className="hidden"
             multiple
@@ -504,8 +438,8 @@ export default function KnowledgePage() {
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="2026년 민원 편람"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                  placeholder="하이코리아 사증 매뉴얼"
                 />
               </div>
               <div>
@@ -513,7 +447,7 @@ export default function KnowledgePage() {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 >
                   <option value="">선택하세요</option>
                   {CATEGORIES.slice(1).map((cat) => (
@@ -527,10 +461,9 @@ export default function KnowledgePage() {
 
             <button
               onClick={handleUpload}
-              disabled={rpaStatus !== "online"}
-              className="w-full py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium flex items-center justify-center gap-2"
+              className="w-full py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 font-medium flex items-center justify-center gap-2"
             >
-              🚀 업로드 시작
+              🚀 즉시 학습 시작
             </button>
           </div>
         )}
@@ -539,29 +472,40 @@ export default function KnowledgePage() {
       {/* 진행 중인 작업 */}
       {uploadTasks.length > 0 && (
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4">⏳ 처리 중인 작업</h2>
+          <h2 className="text-lg font-semibold mb-4">⏳ 업로드 작업</h2>
           <div className="space-y-4">
             {uploadTasks.map((task) => (
               <div
-                key={task.documentId}
+                key={task.id}
                 className={`p-4 rounded-lg border ${
                   task.status === "failed"
                     ? "bg-red-50 border-red-200"
                     : task.status === "completed"
                     ? "bg-green-50 border-green-200"
-                    : "bg-blue-50 border-blue-200"
+                    : "bg-purple-50 border-purple-200"
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
-                  <div className="font-medium">{task.fileName}</div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-500">
-                      {formatDuration(task.startTime)}
+                  <div>
+                    <span className="font-medium">{task.fileName}</span>
+                    <span className="text-gray-500 text-sm ml-2">
+                      ({formatFileSize(task.fileSize)})
                     </span>
-                    {getStatusBadge(task.status)}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {task.status === "completed" && task.elapsedSeconds && (
+                      <span className="text-green-600 text-sm font-medium">
+                        ✓ {task.elapsedSeconds}초 완료
+                      </span>
+                    )}
+                    {task.status === "uploading" && (
+                      <span className="text-purple-600 text-sm animate-pulse">
+                        Google에 업로드 중...
+                      </span>
+                    )}
                     {["completed", "failed"].includes(task.status) && (
                       <button
-                        onClick={() => removeTask(task.documentId)}
+                        onClick={() => removeTask(task.id)}
                         className="text-gray-400 hover:text-gray-600"
                       >
                         ✕
@@ -571,10 +515,10 @@ export default function KnowledgePage() {
                 </div>
 
                 {/* 진행률 바 */}
-                {!["completed", "failed"].includes(task.status) && (
+                {task.status === "uploading" && (
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                      className="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-500 animate-pulse"
                       style={{ width: `${task.progress}%` }}
                     />
                   </div>
@@ -594,7 +538,7 @@ export default function KnowledgePage() {
       <div className="bg-white rounded-lg shadow">
         <div className="p-4 border-b flex justify-between items-center">
           <h2 className="text-lg font-semibold">
-            📚 업로드된 문서 ({documents.length})
+            📚 학습된 문서 ({documents.length})
           </h2>
           <select
             value={filterCategory}
@@ -623,10 +567,10 @@ export default function KnowledgePage() {
                   크기
                 </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
-                  청크
+                  상태
                 </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
-                  상태
+                  유효기간
                 </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">
                   업로드
@@ -637,47 +581,52 @@ export default function KnowledgePage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {documents.map((doc) => (
-                <tr key={doc.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{doc.title || doc.fileName}</div>
-                    {doc.description && (
-                      <div className="text-xs text-gray-500 truncate max-w-xs">
-                        {doc.description}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm">{doc.category || "-"}</td>
-                  <td className="px-4 py-3 text-sm">
-                    {formatFileSize(doc.fileSize)}
-                  </td>
-                  <td className="px-4 py-3 text-sm">{doc.totalChunks}</td>
-                  <td className="px-4 py-3">
-                    {getStatusBadge(doc.status)}
-                    {doc.errorMessage && (
-                      <div className="text-xs text-red-500 mt-1">
-                        {doc.errorMessage}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(doc.createdAt).toLocaleDateString("ko-KR")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => handleDelete(doc.id)}
-                      className="text-red-500 hover:text-red-700 text-sm"
-                    >
-                      삭제
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {documents.map((doc) => {
+                const expiry = getExpiryStatus(doc.geminiExpiresAt);
+                return (
+                  <tr key={doc.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{doc.title || doc.fileName}</div>
+                      <div className="text-xs text-gray-400">{doc.fileName}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm">{doc.category || "-"}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {formatFileSize(doc.fileSize)}
+                    </td>
+                    <td className="px-4 py-3">
+                      {getStatusBadge(doc.status, doc.processingMode)}
+                      {doc.errorMessage && (
+                        <div className="text-xs text-red-500 mt-1 max-w-xs truncate">
+                          {doc.errorMessage}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {expiry ? (
+                        <span className={expiry.color}>{expiry.text}</span>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">
+                      {new Date(doc.createdAt).toLocaleDateString("ko-KR")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleDelete(doc.id)}
+                        className="text-red-500 hover:text-red-700 text-sm"
+                      >
+                        삭제
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {documents.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                     <div className="text-4xl mb-2">📭</div>
-                    업로드된 문서가 없습니다.
+                    학습된 문서가 없습니다. 매뉴얼을 업로드해보세요!
                   </td>
                 </tr>
               )}
@@ -687,13 +636,13 @@ export default function KnowledgePage() {
       </div>
 
       {/* 사용 안내 */}
-      <div className="mt-6 p-4 bg-gray-50 rounded-lg text-sm text-gray-600">
-        <h3 className="font-semibold mb-2">💡 사용 안내</h3>
+      <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg text-sm text-gray-600 border border-purple-100">
+        <h3 className="font-semibold mb-2 text-purple-800">💡 Gemini Long Context 방식</h3>
         <ul className="list-disc list-inside space-y-1">
-          <li>PDF, DOCX, TXT 파일을 최대 500MB까지 업로드할 수 있습니다.</li>
-          <li>업로드된 문서는 자동으로 텍스트 추출 → 청크 분할 → 임베딩 생성 과정을 거칩니다.</li>
-          <li>처리가 완료되면 AI 상담 시 해당 문서의 내용을 참조하여 답변합니다.</li>
-          <li>대용량 파일(100MB 이상)은 처리에 수 분이 소요될 수 있습니다.</li>
+          <li><strong>초고속 처리:</strong> 임베딩/청킹 없이 파일을 Google에 직접 업로드합니다.</li>
+          <li><strong>대용량 지원:</strong> 최대 100MB 파일까지 10초 이내에 학습 완료됩니다.</li>
+          <li><strong>전체 컨텍스트:</strong> 문서 전체가 AI에게 전달되어 정확한 답변이 가능합니다.</li>
+          <li><strong>유효기간:</strong> 파일은 Google 서버에 48시간 보관됩니다. 만료 후 재업로드가 필요합니다.</li>
         </ul>
       </div>
     </div>
