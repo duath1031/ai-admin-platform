@@ -13,8 +13,9 @@ const WORKER_API_KEY = process.env.WORKER_API_KEY || '';
 
 /**
  * Gemini 캐시가 유효한지 확인
+ * - 버퍼를 60분으로 설정하여 만료 직전 파일 사용 방지
  */
-function isGeminiCacheValid(expiresAt: Date | null, bufferMinutes: number = 30): boolean {
+function isGeminiCacheValid(expiresAt: Date | null, bufferMinutes: number = 60): boolean {
   if (!expiresAt) return false;
   const now = new Date();
   const bufferMs = bufferMinutes * 60 * 1000;
@@ -95,6 +96,7 @@ async function renewGeminiCache(document: {
 
 /**
  * 활성 문서 목록 조회 (Auto-Renewal 포함)
+ * - DB 조회 실패 시 빈 배열 반환 (채팅 계속 진행)
  */
 export async function getActiveKnowledgeDocuments(category?: string): Promise<Array<{
   id: string;
@@ -104,28 +106,29 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
   mimeType: string;
   expiresAt: Date | null;
 }>> {
-  const where: Record<string, unknown> = {
-    status: "completed",
-    processingMode: "gemini_file",
-  };
+  try {
+    const where: Record<string, unknown> = {
+      status: "completed",
+      processingMode: "gemini_file",
+    };
 
-  if (category) {
-    where.category = category;
-  }
+    if (category) {
+      where.category = category;
+    }
 
-  const documents = await prisma.knowledgeDocument.findMany({
-    where,
-    select: {
-      id: true,
-      title: true,
-      category: true,
-      fileName: true,
-      storagePath: true,
-      geminiFileUri: true,
-      geminiMimeType: true,
-      geminiExpiresAt: true,
-    },
-  });
+    const documents = await prisma.knowledgeDocument.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        category: true,
+        fileName: true,
+        storagePath: true,
+        geminiFileUri: true,
+        geminiMimeType: true,
+        geminiExpiresAt: true,
+      },
+    });
 
   const activeDocuments: Array<{
     id: string;
@@ -183,8 +186,12 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
     });
   }
 
-  console.log(`[Knowledge] 총 ${documents.length}개 중 유효한 문서 ${activeDocuments.length}개`);
-  return activeDocuments;
+    console.log(`[Knowledge] 총 ${documents.length}개 중 유효한 문서 ${activeDocuments.length}개`);
+    return activeDocuments;
+  } catch (error) {
+    console.error("[Knowledge] getActiveKnowledgeDocuments 오류:", error);
+    return [];
+  }
 }
 
 /**

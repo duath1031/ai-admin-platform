@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DB에 문서 저장
+    // DB에 문서 저장 (storagePath 포함 - 자동 갱신에 필요)
     const document = await prisma.knowledgeDocument.create({
       data: {
         fileName: file.name,
@@ -71,6 +71,10 @@ export async function POST(request: NextRequest) {
         category: category,
         status: "completed",
         processingMode: "gemini_file",
+        // 영구 저장소 경로 (자동 갱신에 필수!)
+        storagePath: workerData.storagePath || null,
+        storageProvider: workerData.storageProvider || 'supabase',
+        // Gemini 캐시 (48시간 후 만료)
         geminiFileUri: workerData.fileUri,
         geminiMimeType: workerData.mimeType,
         geminiFileName: workerData.fileName,

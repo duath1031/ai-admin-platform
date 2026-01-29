@@ -410,8 +410,14 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
     // Knowledge 파일이 있으면 Long Context 방식으로 호출
     let assistantMessage: string;
     if (knowledgeFiles.length > 0) {
-      console.log(`[Chat] Gemini Long Context 호출 (${knowledgeFiles.length}개 문서)`);
-      assistantMessage = await chatWithKnowledge(messages, enhancedPrompt, knowledgeFiles);
+      try {
+        console.log(`[Chat] Gemini Long Context 호출 (${knowledgeFiles.length}개 문서)`);
+        assistantMessage = await chatWithKnowledge(messages, enhancedPrompt, knowledgeFiles);
+      } catch (knowledgeError) {
+        // 만료된 파일 등의 오류 시 일반 채팅으로 폴백
+        console.error("[Chat] Knowledge 연동 Gemini 호출 실패, 일반 모드로 전환:", knowledgeError);
+        assistantMessage = await chatWithGemini(messages, enhancedPrompt);
+      }
     } else {
       assistantMessage = await chatWithGemini(messages, enhancedPrompt);
     }
