@@ -291,9 +291,13 @@ export async function POST(req: NextRequest) {
         knowledgeTitles = kbResult.documentTitles;
         console.log(`[Chat] Knowledge Base 연동: ${knowledgeTitles.join(', ')} (${knowledgeFiles.length}개 파일)`);
 
-        additionalContext += `\n\n[참고 매뉴얼 - 아래 문서 내용을 기반으로 답변하세요]
-📚 학습된 문서: ${knowledgeTitles.join(', ')}
-⚠️ 문서 내용과 질문이 관련 있으면 문서의 정확한 내용을 인용하여 답변하세요.
+        additionalContext += `\n\n🔴🔴🔴 [최우선 지침 - Knowledge Base 문서 기반 답변 필수!] 🔴🔴🔴
+📚 첨부된 문서: ${knowledgeTitles.join(', ')}
+
+⚠️ 중요: 이 질문에 대한 답변은 반드시 첨부된 PDF 문서의 내용만을 기반으로 작성하세요!
+- 문서에 있는 내용을 정확하게 인용하여 답변하세요.
+- 문서에 없는 내용은 "문서에서 해당 내용을 찾을 수 없습니다"라고 답변하세요.
+- 시스템 프롬프트의 일반 지식보다 첨부 문서 내용을 우선하세요.
 `;
       } else {
         console.log("[Chat] Knowledge Base: 유효한 문서 없음 (만료 또는 미등록)");
