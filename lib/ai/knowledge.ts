@@ -377,7 +377,6 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       title: true,
       category: true,
       fileName: true,
-      storagePath: true,
       geminiFileUri: true,
       geminiMimeType: true,
       geminiExpiresAt: true,
@@ -400,62 +399,15 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       continue;
     }
 
-    // 캐시 유효성 확인
-    if (isGeminiCacheValid(doc.geminiExpiresAt)) {
-      // HIT: 캐시가 유효함
-      activeDocuments.push({
-        id: doc.id,
-        title: doc.title || "제목 없음",
-        category: doc.category,
-        fileUri: doc.geminiFileUri,
-        mimeType: doc.geminiMimeType,
-        expiresAt: doc.geminiExpiresAt,
-      });
-    } else if (doc.storagePath) {
-      // MISS: 캐시 만료 - 자동 갱신 시도
-      console.log(`[Knowledge] Cache expired for ${doc.id}, attempting renewal...`);
-      try {
-        const renewed = await renewGeminiCache({
-          id: doc.id,
-          storagePath: doc.storagePath,
-          fileName: doc.fileName,
-          title: doc.title,
-        });
-
-        if (renewed) {
-          activeDocuments.push({
-            id: doc.id,
-            title: doc.title || "제목 없음",
-            category: doc.category,
-            fileUri: renewed.fileUri,
-            mimeType: renewed.mimeType,
-            expiresAt: renewed.expiresAt,
-          });
-        }
-      } catch (renewError) {
-        console.error(`[Knowledge] Renewal failed for ${doc.id}:`, renewError);
-        // 갱신 실패해도 기존 URI로 시도
-        activeDocuments.push({
-          id: doc.id,
-          title: doc.title || "제목 없음",
-          category: doc.category,
-          fileUri: doc.geminiFileUri,
-          mimeType: doc.geminiMimeType,
-          expiresAt: doc.geminiExpiresAt,
-        });
-      }
-    } else {
-      // 영구 저장소 없이 만료된 문서 - 기존 URI로 시도
-      console.warn(`[Knowledge] No storage for ${doc.id}, using existing URI`);
-      activeDocuments.push({
-        id: doc.id,
-        title: doc.title || "제목 없음",
-        category: doc.category,
-        fileUri: doc.geminiFileUri,
-        mimeType: doc.geminiMimeType,
-        expiresAt: doc.geminiExpiresAt,
-      });
-    }
+    // 유효한 문서만 추가 (갱신 로직은 나중에)
+    activeDocuments.push({
+      id: doc.id,
+      title: doc.title || "제목 없음",
+      category: doc.category,
+      fileUri: doc.geminiFileUri,
+      mimeType: doc.geminiMimeType,
+      expiresAt: doc.geminiExpiresAt,
+    });
   }
 
   return activeDocuments;
