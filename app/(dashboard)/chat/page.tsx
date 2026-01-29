@@ -35,8 +35,12 @@ export default function ChatPage() {
     addMessage({ role: "user", content: userMessage });
     setLoading(true);
 
+    // 스트리밍 응답을 위한 임시 메시지 ID
+    const tempId = `temp-${Date.now()}`;
+    addMessage({ role: "assistant", content: "", id: tempId });
+
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -46,18 +50,50 @@ export default function ChatPage() {
         }),
       });
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error("스트리밍 응답 실패");
+      }
 
-      if (data.error) {
-        addMessage({ role: "assistant", content: `오류가 발생했습니다: ${data.error}` });
-      } else {
-        addMessage({ role: "assistant", content: data.message });
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.text) {
+                  fullContent += parsed.text;
+                  // 실시간으로 메시지 업데이트
+                  useChatStore.getState().updateMessage(tempId, fullContent);
+                }
+                if (parsed.error) {
+                  fullContent = `오류가 발생했습니다: ${parsed.error}`;
+                  useChatStore.getState().updateMessage(tempId, fullContent);
+                }
+              } catch {
+                // JSON 파싱 실패는 무시
+              }
+            }
+          }
+        }
       }
     } catch (error) {
-      addMessage({
-        role: "assistant",
-        content: "죄송합니다. 서버 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요.",
-      });
+      useChatStore.getState().updateMessage(
+        tempId,
+        "죄송합니다. 서버 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요."
+      );
     } finally {
       setLoading(false);
     }

@@ -11,7 +11,8 @@ interface ChatState {
   messages: Message[];
   isLoading: boolean;
   currentChatId: string | null;
-  addMessage: (message: Omit<Message, "id" | "createdAt">) => void;
+  addMessage: (message: Omit<Message, "createdAt"> & { id?: string }) => void;
+  updateMessage: (id: string, content: string) => void;
   setMessages: (messages: Message[]) => void;
   setLoading: (loading: boolean) => void;
   setCurrentChatId: (id: string | null) => void;
@@ -28,10 +29,16 @@ export const useChatStore = create<ChatState>((set) => ({
         ...state.messages,
         {
           ...message,
-          id: crypto.randomUUID(),
+          id: message.id || crypto.randomUUID(),
           createdAt: new Date(),
         },
       ],
+    })),
+  updateMessage: (id, content) =>
+    set((state) => ({
+      messages: state.messages.map((msg) =>
+        msg.id === id ? { ...msg, content } : msg
+      ),
     })),
   setMessages: (messages) => set({ messages }),
   setLoading: (isLoading) => set({ isLoading }),

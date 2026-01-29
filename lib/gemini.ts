@@ -285,4 +285,79 @@ export async function queryKnowledgeFiles(
   return result.response.text();
 }
 
+/**
+ * Knowledge Base 문서를 포함한 Gemini 스트리밍 채팅
+ * - 실시간으로 응답을 스트리밍
+ */
+export async function* chatWithKnowledgeStream(
+  messages: { role: string; content: string }[],
+  systemPrompt: string,
+  knowledgeFiles: FileDataPart[] = [],
+  userTier: UserTier = 'free'
+): AsyncGenerator<string, void, unknown> {
+  const config = getModelConfig(userTier);
+  const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
+
+  // Long Context 지원 모델 사용
+  const modelName = knowledgeFiles.length > 0 ? 'gemini-2.0-flash' : config.modelName;
+
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    systemInstruction: enhancedPrompt,
+    generationConfig: {
+      temperature: config.temperature,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: config.maxOutputTokens,
+    }
+  });
+
+  const lastMessage = messages[messages.length - 1];
+
+  // Knowledge 파일이 있는 경우
+  if (knowledgeFiles.length > 0) {
+    console.log(`[Gemini Stream] Knowledge 파일 ${knowledgeFiles.length}개와 함께 스트리밍 질의`);
+
+    const conversationContext = messages.slice(0, -1).length > 0
+      ? `\n\n[이전 대화]\n${messages.slice(0, -1).map(m =>
+          `${m.role === 'assistant' ? 'AI' : '사용자'}: ${m.content}`
+        ).join('\n\n')}\n\n[현재 질문]\n${lastMessage.content}`
+      : lastMessage.content;
+
+    const parts = [
+      ...knowledgeFiles,
+      { text: conversationContext },
+    ];
+
+    const result = await model.generateContentStream(parts);
+
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) {
+        yield text;
+      }
+    }
+    return;
+  }
+
+  // Knowledge 파일이 없는 경우
+  const chatHistory = messages.slice(0, -1).map(msg => ({
+    role: msg.role === "assistant" ? "model" : "user",
+    parts: [{ text: msg.content }]
+  }));
+
+  const chat = model.startChat({
+    history: chatHistory,
+  });
+
+  const result = await chat.sendMessageStream(lastMessage.content);
+
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) {
+      yield text;
+    }
+  }
+}
+
 export default genAI;
