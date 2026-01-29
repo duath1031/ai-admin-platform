@@ -39,15 +39,16 @@ export default function ChatPage() {
     const tempId = `temp-${Date.now()}`;
     addMessage({ role: "assistant", content: "", id: tempId });
 
+    const allMessages = [...messages, { role: "user", content: userMessage }].map(
+      (m) => ({ role: m.role, content: m.content })
+    );
+
     try {
+      // 먼저 스트리밍 시도
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: [...messages, { role: "user", content: userMessage }].map(
-            (m) => ({ role: m.role, content: m.content })
-          ),
-        }),
+        body: JSON.stringify({ messages: allMessages }),
       });
 
       if (!response.ok) {
@@ -75,25 +76,49 @@ export default function ChatPage() {
                 const parsed = JSON.parse(data);
                 if (parsed.text) {
                   fullContent += parsed.text;
-                  // 실시간으로 메시지 업데이트
                   useChatStore.getState().updateMessage(tempId, fullContent);
                 }
                 if (parsed.error) {
-                  fullContent = `오류가 발생했습니다: ${parsed.error}`;
-                  useChatStore.getState().updateMessage(tempId, fullContent);
+                  throw new Error(parsed.error);
                 }
-              } catch {
-                // JSON 파싱 실패는 무시
+              } catch (parseError) {
+                if (parseError instanceof Error && parseError.message !== "Unexpected end of JSON input") {
+                  throw parseError;
+                }
               }
             }
           }
         }
       }
-    } catch (error) {
-      useChatStore.getState().updateMessage(
-        tempId,
-        "죄송합니다. 서버 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요."
-      );
+
+      // 스트리밍이 빈 응답이면 폴백
+      if (!fullContent) {
+        throw new Error("빈 응답");
+      }
+    } catch (streamError) {
+      console.log("스트리밍 실패, 기존 API로 폴백:", streamError);
+
+      // 기존 API로 폴백
+      try {
+        const fallbackResponse = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: allMessages }),
+        });
+
+        const data = await fallbackResponse.json();
+
+        if (data.error) {
+          useChatStore.getState().updateMessage(tempId, `오류가 발생했습니다: ${data.error}`);
+        } else {
+          useChatStore.getState().updateMessage(tempId, data.message);
+        }
+      } catch (fallbackError) {
+        useChatStore.getState().updateMessage(
+          tempId,
+          "죄송합니다. 서버 연결에 문제가 발생했습니다. 잠시 후 다시 시도해주세요."
+        );
+      }
     } finally {
       setLoading(false);
     }
