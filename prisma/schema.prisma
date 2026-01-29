@@ -467,7 +467,11 @@ model KnowledgeDocument {
   updatedAt    DateTime         @updatedAt
   chunks       KnowledgeChunk[]
 
-  // Gemini File API 필드 (Long Context 방식)
+  // 영구 저장소 (The Vault) - 원본 파일 영구 보존
+  storagePath      String?    // 로컬/S3 저장 경로 (예: storage/abc123.pdf)
+  storageProvider  String     @default("local") // 'local' | 's3' | 'gcs'
+
+  // Gemini File API 필드 (임시 캐시 - 48시간 만료)
   geminiFileUri    String?    // Google File API에서 반환된 URI
   geminiMimeType   String?    // 파일 MIME 타입
   geminiFileName   String?    // Google 내부 파일명 (삭제용)

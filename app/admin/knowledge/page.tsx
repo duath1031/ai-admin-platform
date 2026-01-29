@@ -169,9 +169,12 @@ export default function KnowledgePage() {
           });
           data = await res.json();
 
-          // RPA Worker 업로드 성공 시 DB에 저장
+          // RPA Worker 업로드 성공 시 DB에 저장 (영구 저장소 + Gemini 캐시)
           if (data.success && data.fileUri) {
             console.log(`[Knowledge] RPA Worker upload success, saving to DB...`);
+            console.log(`[Knowledge] - Storage: ${data.storagePath}`);
+            console.log(`[Knowledge] - Gemini: ${data.fileUri}`);
+
             const saveRes = await fetch("/api/knowledge/save-gemini", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -181,6 +184,10 @@ export default function KnowledgePage() {
                 fileSize: file.size,
                 title: title || file.name.replace(/\.[^/.]+$/, ""),
                 category: category || "기타",
+                // 영구 저장소 정보 (The Vault)
+                storagePath: data.storagePath,
+                storageProvider: data.storageProvider || "local",
+                // Gemini 캐시 정보
                 fileUri: data.fileUri,
                 mimeType: data.mimeType,
                 geminiFileName: data.fileName,

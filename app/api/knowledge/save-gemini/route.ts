@@ -17,6 +17,10 @@ export async function POST(request: NextRequest) {
       fileSize,
       title,
       category,
+      // 영구 저장소 정보
+      storagePath,
+      storageProvider,
+      // Gemini 캐시 정보
       fileUri,
       mimeType,
       geminiFileName,
@@ -31,7 +35,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DB에 문서 레코드 생성
+    // DB에 문서 레코드 생성 (영구 저장소 + Gemini 캐시)
     const document = await prisma.knowledgeDocument.create({
       data: {
         fileName,
@@ -41,6 +45,10 @@ export async function POST(request: NextRequest) {
         category: category || '기타',
         status: "completed",
         processingMode: "gemini_file",
+        // 영구 저장소 (The Vault)
+        storagePath: storagePath || null,
+        storageProvider: storageProvider || 'local',
+        // Gemini 캐시 (48시간)
         geminiFileUri: fileUri,
         geminiMimeType: mimeType,
         geminiFileName: geminiFileName,

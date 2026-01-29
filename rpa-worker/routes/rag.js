@@ -337,12 +337,15 @@ router.post('/search', async (req, res) => {
 
 /**
  * POST /rag/upload-gemini
- * Gemini File API를 사용한 대용량 문서 업로드 (Long Context 방식)
- * - 임베딩/청킹 없이 10초 이내 완료
- * - 최대 100MB 지원
+ * 엔터프라이즈 아키텍처: 영구 저장소 + Gemini 캐시
+ *
+ * 1. 파일을 영구 저장소(The Vault)에 먼저 저장
+ * 2. Gemini File API에 업로드 (48시간 캐시)
+ * 3. 두 경로를 모두 반환
  */
 router.post('/upload-gemini', upload.single('file'), async (req, res) => {
   const startTime = Date.now();
+  const { saveToStorage } = require('../services/storageService');
 
   try {
     // 파일 검증
@@ -359,7 +362,17 @@ router.post('/upload-gemini', upload.single('file'), async (req, res) => {
 
     console.log(`[RAG Gemini] Starting: ${file.originalname} (${fileSizeMB.toFixed(2)} MB)`);
 
-    // Gemini File API에 업로드
+    // ============================================
+    // Step 1: 영구 저장소에 먼저 저장 (The Vault)
+    // ============================================
+    console.log(`[RAG Gemini] Step 1: Saving to permanent storage...`);
+    const storageResult = await saveToStorage(file.buffer, file.originalname);
+    console.log(`[RAG Gemini] Saved to storage: ${storageResult.storagePath}`);
+
+    // ============================================
+    // Step 2: Gemini File API에 업로드 (Cache)
+    // ============================================
+    console.log(`[RAG Gemini] Step 2: Uploading to Gemini File API...`);
     const uploadResult = await uploadToGemini(
       file.buffer,
       file.originalname,
@@ -367,7 +380,9 @@ router.post('/upload-gemini', upload.single('file'), async (req, res) => {
     );
 
     const processingTime = Date.now() - startTime;
-    console.log(`[RAG Gemini] Completed in ${processingTime}ms: ${uploadResult.fileUri}`);
+    console.log(`[RAG Gemini] Completed in ${processingTime}ms`);
+    console.log(`[RAG Gemini] - Storage: ${storageResult.storagePath}`);
+    console.log(`[RAG Gemini] - Gemini: ${uploadResult.fileUri}`);
 
     // DB 업데이트 (documentId가 있으면)
     if (documentId) {
@@ -375,6 +390,8 @@ router.post('/upload-gemini', upload.single('file'), async (req, res) => {
         await updateKnowledgeDocument(documentId, {
           status: 'completed',
           metadata: {
+            storagePath: storageResult.storagePath,
+            storageProvider: 'local',
             geminiFileUri: uploadResult.fileUri,
             geminiMimeType: uploadResult.mimeType,
             geminiFileName: uploadResult.name,
@@ -386,23 +403,100 @@ router.post('/upload-gemini', upload.single('file'), async (req, res) => {
         });
       } catch (dbError) {
         console.error('[RAG Gemini] DB update failed:', dbError.message);
-        // DB 업데이트 실패해도 업로드는 성공이므로 계속 진행
       }
     }
+
+    res.json({
+      success: true,
+      // 영구 저장소 정보
+      storagePath: storageResult.storagePath,
+      storageProvider: 'local',
+      // Gemini 캐시 정보
+      fileUri: uploadResult.fileUri,
+      mimeType: uploadResult.mimeType,
+      fileName: uploadResult.name,
+      displayName: uploadResult.displayName,
+      expiresAt: uploadResult.expiresAt,
+      // 메타데이터
+      processingTime,
+      message: `영구 저장 + Gemini 캐시 완료 (${processingTime}ms)`,
+    });
+
+  } catch (error) {
+    console.error('[RAG Gemini] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * POST /rag/renew-gemini
+ * 만료된 Gemini 캐시 자동 갱신 (Smart Renewal)
+ * - 영구 저장소에서 파일을 읽어 Gemini에 재업로드
+ */
+router.post('/renew-gemini', async (req, res) => {
+  const startTime = Date.now();
+  const { readFromStorage } = require('../services/storageService');
+
+  try {
+    const { storagePath, originalName, title } = req.body;
+
+    if (!storagePath) {
+      return res.status(400).json({
+        success: false,
+        error: 'storagePath가 필요합니다.',
+      });
+    }
+
+    console.log(`[RAG Renew] Renewing Gemini cache for: ${storagePath}`);
+
+    // 영구 저장소에서 파일 읽기
+    const buffer = await readFromStorage(storagePath);
+    const fileName = originalName || storagePath.split('_').pop();
+
+    // Gemini에 재업로드
+    const uploadResult = await uploadToGemini(buffer, fileName, title || fileName);
+
+    const processingTime = Date.now() - startTime;
+    console.log(`[RAG Renew] Renewed in ${processingTime}ms: ${uploadResult.fileUri}`);
 
     res.json({
       success: true,
       fileUri: uploadResult.fileUri,
       mimeType: uploadResult.mimeType,
       fileName: uploadResult.name,
-      displayName: uploadResult.displayName,
       expiresAt: uploadResult.expiresAt,
       processingTime,
-      message: `업로드 완료 (${processingTime}ms)`,
+      message: `캐시 갱신 완료 (${processingTime}ms)`,
     });
 
   } catch (error) {
-    console.error('[RAG Gemini] Error:', error);
+    console.error('[RAG Renew] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /rag/storage/stats
+ * 영구 저장소 통계 조회
+ */
+router.get('/storage/stats', async (req, res) => {
+  try {
+    const { getStorageStats } = require('../services/storageService');
+    const stats = await getStorageStats();
+
+    res.json({
+      success: true,
+      ...stats,
+    });
+
+  } catch (error) {
+    console.error('[RAG Storage Stats] Error:', error);
     res.status(500).json({
       success: false,
       error: error.message,
