@@ -394,6 +394,12 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
   }> = [];
 
   for (const doc of documents) {
+    // geminiFileUri가 없는 문서는 건너뜀
+    if (!doc.geminiFileUri || !doc.geminiMimeType) {
+      console.warn(`[Knowledge] Skipping ${doc.id} - no Gemini file URI`);
+      continue;
+    }
+
     // 캐시 유효성 확인
     if (isGeminiCacheValid(doc.geminiExpiresAt)) {
       // HIT: 캐시가 유효함
@@ -401,33 +407,54 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
         id: doc.id,
         title: doc.title || "제목 없음",
         category: doc.category,
-        fileUri: doc.geminiFileUri!,
-        mimeType: doc.geminiMimeType!,
+        fileUri: doc.geminiFileUri,
+        mimeType: doc.geminiMimeType,
         expiresAt: doc.geminiExpiresAt,
       });
     } else if (doc.storagePath) {
       // MISS: 캐시 만료 - 자동 갱신 시도
       console.log(`[Knowledge] Cache expired for ${doc.id}, attempting renewal...`);
-      const renewed = await renewGeminiCache({
-        id: doc.id,
-        storagePath: doc.storagePath,
-        fileName: doc.fileName,
-        title: doc.title,
-      });
+      try {
+        const renewed = await renewGeminiCache({
+          id: doc.id,
+          storagePath: doc.storagePath,
+          fileName: doc.fileName,
+          title: doc.title,
+        });
 
-      if (renewed) {
+        if (renewed) {
+          activeDocuments.push({
+            id: doc.id,
+            title: doc.title || "제목 없음",
+            category: doc.category,
+            fileUri: renewed.fileUri,
+            mimeType: renewed.mimeType,
+            expiresAt: renewed.expiresAt,
+          });
+        }
+      } catch (renewError) {
+        console.error(`[Knowledge] Renewal failed for ${doc.id}:`, renewError);
+        // 갱신 실패해도 기존 URI로 시도
         activeDocuments.push({
           id: doc.id,
           title: doc.title || "제목 없음",
           category: doc.category,
-          fileUri: renewed.fileUri,
-          mimeType: renewed.mimeType,
-          expiresAt: renewed.expiresAt,
+          fileUri: doc.geminiFileUri,
+          mimeType: doc.geminiMimeType,
+          expiresAt: doc.geminiExpiresAt,
         });
       }
     } else {
-      // 영구 저장소가 없는 레거시 문서 - 건너뜀
-      console.warn(`[Knowledge] Skipping ${doc.id} - no permanent storage`);
+      // 영구 저장소 없이 만료된 문서 - 기존 URI로 시도
+      console.warn(`[Knowledge] No storage for ${doc.id}, using existing URI`);
+      activeDocuments.push({
+        id: doc.id,
+        title: doc.title || "제목 없음",
+        category: doc.category,
+        fileUri: doc.geminiFileUri,
+        mimeType: doc.geminiMimeType,
+        expiresAt: doc.geminiExpiresAt,
+      });
     }
   }
 
