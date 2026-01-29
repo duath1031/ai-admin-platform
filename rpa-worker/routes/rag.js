@@ -26,6 +26,8 @@ const {
   searchByVector,
   testConnection,
 } = require('../services/supabaseService');
+// Gemini File API (Long Context)
+const { uploadToGemini, deleteFromGemini, SUPPORTED_MIME_TYPES } = require('../services/geminiFileService');
 
 const router = express.Router();
 
@@ -334,6 +336,136 @@ router.post('/search', async (req, res) => {
 });
 
 /**
+ * POST /rag/upload-gemini
+ * Gemini File API를 사용한 대용량 문서 업로드 (Long Context 방식)
+ * - 임베딩/청킹 없이 10초 이내 완료
+ * - 최대 100MB 지원
+ */
+router.post('/upload-gemini', upload.single('file'), async (req, res) => {
+  const startTime = Date.now();
+
+  try {
+    // 파일 검증
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: '파일이 업로드되지 않았습니다.',
+      });
+    }
+
+    const { title, category = 'general', documentId } = req.body;
+    const file = req.file;
+    const fileSizeMB = getFileSizeMB(file.buffer);
+
+    console.log(`[RAG Gemini] Starting: ${file.originalname} (${fileSizeMB.toFixed(2)} MB)`);
+
+    // Gemini File API에 업로드
+    const uploadResult = await uploadToGemini(
+      file.buffer,
+      file.originalname,
+      title || file.originalname
+    );
+
+    const processingTime = Date.now() - startTime;
+    console.log(`[RAG Gemini] Completed in ${processingTime}ms: ${uploadResult.fileUri}`);
+
+    // DB 업데이트 (documentId가 있으면)
+    if (documentId) {
+      try {
+        await updateKnowledgeDocument(documentId, {
+          status: 'completed',
+          metadata: {
+            geminiFileUri: uploadResult.fileUri,
+            geminiMimeType: uploadResult.mimeType,
+            geminiFileName: uploadResult.name,
+            geminiExpiresAt: uploadResult.expiresAt,
+            processingMode: 'gemini_file',
+            processingTime,
+            uploadedAt: new Date().toISOString(),
+          },
+        });
+      } catch (dbError) {
+        console.error('[RAG Gemini] DB update failed:', dbError.message);
+        // DB 업데이트 실패해도 업로드는 성공이므로 계속 진행
+      }
+    }
+
+    res.json({
+      success: true,
+      fileUri: uploadResult.fileUri,
+      mimeType: uploadResult.mimeType,
+      fileName: uploadResult.name,
+      displayName: uploadResult.displayName,
+      expiresAt: uploadResult.expiresAt,
+      processingTime,
+      message: `업로드 완료 (${processingTime}ms)`,
+    });
+
+  } catch (error) {
+    console.error('[RAG Gemini] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * DELETE /rag/gemini/:fileName
+ * Gemini File API에서 파일 삭제
+ */
+router.delete('/gemini/:fileName', async (req, res) => {
+  try {
+    const { fileName } = req.params;
+
+    if (!fileName) {
+      return res.status(400).json({
+        success: false,
+        error: '파일명이 필요합니다.',
+      });
+    }
+
+    await deleteFromGemini(fileName);
+
+    res.json({
+      success: true,
+      message: `파일 삭제 완료: ${fileName}`,
+    });
+
+  } catch (error) {
+    console.error('[RAG Gemini Delete] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /rag/gemini/files
+ * 업로드된 Gemini 파일 목록 조회
+ */
+router.get('/gemini/files', async (req, res) => {
+  try {
+    const { listGeminiFiles } = require('../services/geminiFileService');
+    const files = await listGeminiFiles();
+
+    res.json({
+      success: true,
+      files,
+      count: files.length,
+    });
+
+  } catch (error) {
+    console.error('[RAG Gemini List] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
  * GET /rag/health
  * RAG 서비스 헬스체크
  */
@@ -345,10 +477,18 @@ router.get('/health', async (req, res) => {
       success: true,
       status: 'ok',
       database: dbConnected ? 'connected' : 'disconnected',
+      // Legacy RAG (임베딩 방식)
       embeddingModel: 'gemini-embedding-001',
       embeddingDimension: 3072,
+      // Gemini File API (Long Context 방식)
+      geminiFileApi: {
+        enabled: true,
+        maxFileSize: '100MB',
+        supportedFormats: Object.keys(SUPPORTED_MIME_TYPES),
+        expiresIn: '48 hours',
+      },
       maxFileSize: '500MB',
-      supportedFormats: ['.pdf', '.docx', '.txt'],
+      supportedFormats: ['.pdf', '.docx', '.doc', '.txt', '.html', '.csv', '.xlsx', '.pptx'],
     });
 
   } catch (error) {

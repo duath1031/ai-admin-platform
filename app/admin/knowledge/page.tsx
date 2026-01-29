@@ -13,6 +13,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 
+// RPA Worker URL (대용량 파일 처리용)
+const RPA_WORKER_URL = process.env.NEXT_PUBLIC_RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
+// Vercel 파일 크기 제한 (4.5MB - 안전 마진)
+const VERCEL_SIZE_LIMIT = 4.5 * 1024 * 1024;
+
 // 문서 타입 (Gemini File API 방식)
 interface KnowledgeDocument {
   id: string;
@@ -125,11 +130,13 @@ export default function KnowledgePage() {
   }, [status, fetchDocuments]);
 
   // 파일 업로드 (Gemini File API로 직접)
+  // 4.5MB 이상 파일은 RPA Worker로 라우팅 (Vercel 제한 우회)
   const handleUpload = async () => {
     if (selectedFiles.length === 0) return;
 
     for (const file of selectedFiles) {
       const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const isLargeFile = file.size > VERCEL_SIZE_LIMIT;
 
       // 업로드 작업 추가
       setUploadTasks((prev) => [
@@ -150,13 +157,54 @@ export default function KnowledgePage() {
         formData.append("title", title || file.name.replace(/\.[^/.]+$/, ""));
         formData.append("category", category || "기타");
 
-        // 직접 API 호출 (Gemini File API)
-        const res = await fetch("/api/knowledge/upload", {
-          method: "POST",
-          body: formData,
-        });
+        let data;
 
-        const data = await res.json();
+        if (isLargeFile) {
+          // 대용량 파일: RPA Worker로 직접 업로드
+          console.log(`[Knowledge] Large file detected (${(file.size / 1024 / 1024).toFixed(2)} MB), routing to RPA Worker`);
+
+          const res = await fetch(`${RPA_WORKER_URL}/rag/upload-gemini`, {
+            method: "POST",
+            body: formData,
+          });
+          data = await res.json();
+
+          // RPA Worker 업로드 성공 시 DB에 저장
+          if (data.success && data.fileUri) {
+            console.log(`[Knowledge] RPA Worker upload success, saving to DB...`);
+            const saveRes = await fetch("/api/knowledge/save-gemini", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                fileName: file.name,
+                fileType: file.name.split('.').pop()?.toLowerCase(),
+                fileSize: file.size,
+                title: title || file.name.replace(/\.[^/.]+$/, ""),
+                category: category || "기타",
+                fileUri: data.fileUri,
+                mimeType: data.mimeType,
+                geminiFileName: data.fileName,
+                expiresAt: data.expiresAt,
+              }),
+            });
+            const saveData = await saveRes.json();
+            if (saveData.success) {
+              data.documentId = saveData.documentId;
+            }
+          }
+
+          // RPA Worker 응답 형식을 Vercel API 응답 형식으로 변환
+          if (data.success && data.processingTime) {
+            data.elapsedSeconds = Math.round(data.processingTime / 1000);
+          }
+        } else {
+          // 소형 파일: Vercel API로 업로드
+          const res = await fetch("/api/knowledge/upload", {
+            method: "POST",
+            body: formData,
+          });
+          data = await res.json();
+        }
 
         if (data.success) {
           setUploadTasks((prev) =>
@@ -183,6 +231,7 @@ export default function KnowledgePage() {
           );
         }
       } catch (error) {
+        console.error("[Knowledge] Upload error:", error);
         setUploadTasks((prev) =>
           prev.map((t) =>
             t.id === taskId
@@ -395,6 +444,11 @@ export default function KnowledgePage() {
                   <span className="text-gray-500 text-sm">
                     ({formatFileSize(file.size)})
                   </span>
+                  {file.size > VERCEL_SIZE_LIMIT && (
+                    <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                      RPA Worker
+                    </span>
+                  )}
                 </div>
               ))}
               <button
@@ -641,6 +695,7 @@ export default function KnowledgePage() {
         <ul className="list-disc list-inside space-y-1">
           <li><strong>초고속 처리:</strong> 임베딩/청킹 없이 파일을 Google에 직접 업로드합니다.</li>
           <li><strong>대용량 지원:</strong> 최대 100MB 파일까지 10초 이내에 학습 완료됩니다.</li>
+          <li><strong>자동 라우팅:</strong> 4.5MB 이상 파일은 자동으로 RPA Worker를 통해 업로드됩니다.</li>
           <li><strong>전체 컨텍스트:</strong> 문서 전체가 AI에게 전달되어 정확한 답변이 가능합니다.</li>
           <li><strong>유효기간:</strong> 파일은 Google 서버에 48시간 보관됩니다. 만료 후 재업로드가 필요합니다.</li>
         </ul>

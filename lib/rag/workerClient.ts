@@ -182,6 +182,60 @@ export async function searchKnowledge(
 }
 
 /**
+ * Gemini File API로 대용량 문서 업로드 (Long Context 방식)
+ * - 임베딩/청킹 없이 즉시 완료
+ * - RPA Worker의 /rag/upload-gemini 엔드포인트 사용
+ */
+export async function uploadViaGeminiFileApi(
+  file: File,
+  title: string,
+  category: string = 'general'
+): Promise<{
+  success: boolean;
+  fileUri?: string;
+  mimeType?: string;
+  fileName?: string;
+  displayName?: string;
+  expiresAt?: string;
+  processingTime?: number;
+  error?: string;
+}> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title);
+    formData.append('category', category);
+
+    console.log(`[WorkerClient] Uploading to Gemini File API: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+
+    const response = await fetch(`${WORKER_URL}/rag/upload-gemini`, {
+      method: 'POST',
+      headers: {
+        'X-API-Key': WORKER_API_KEY,
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `HTTP ${response.status}`,
+      };
+    }
+
+    return data;
+  } catch (error) {
+    console.error('[WorkerClient] Gemini upload error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
  * RAG 서비스 헬스체크
  * @returns 서비스 상태
  */
