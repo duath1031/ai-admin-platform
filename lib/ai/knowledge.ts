@@ -350,8 +350,8 @@ async function renewGeminiCache(document: {
 }
 
 /**
- * 활성 문서 목록 조회 (Smart Caching 적용)
- * - 만료된 캐시는 자동으로 갱신
+ * 활성 문서 목록 조회 (Smart Caching + Auto-Renewal)
+ * - 만료된 캐시는 자동으로 갱신 (storagePath가 있는 경우)
  */
 export async function getActiveKnowledgeDocuments(category?: string): Promise<Array<{
   id: string;
@@ -377,6 +377,7 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       title: true,
       category: true,
       fileName: true,
+      storagePath: true,
       geminiFileUri: true,
       geminiMimeType: true,
       geminiExpiresAt: true,
@@ -399,7 +400,33 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       continue;
     }
 
-    // 유효한 문서만 추가 (갱신 로직은 나중에)
+    // 캐시 만료 확인 (30분 버퍼)
+    const isExpired = !isGeminiCacheValid(doc.geminiExpiresAt, 30);
+
+    if (isExpired && doc.storagePath) {
+      // 만료되었고 영구 저장소 경로가 있으면 갱신 시도
+      console.log(`[Knowledge] Auto-renewing expired cache for: ${doc.id}`);
+      const renewed = await renewGeminiCache({
+        id: doc.id,
+        storagePath: doc.storagePath,
+        fileName: doc.fileName,
+        title: doc.title,
+      });
+
+      if (renewed) {
+        activeDocuments.push({
+          id: doc.id,
+          title: doc.title || "제목 없음",
+          category: doc.category,
+          fileUri: renewed.fileUri,
+          mimeType: renewed.mimeType,
+          expiresAt: renewed.expiresAt,
+        });
+        continue;
+      }
+      // 갱신 실패 시 기존 URI 사용 (만료되었지만 아직 동작할 수도 있음)
+    }
+
     activeDocuments.push({
       id: doc.id,
       title: doc.title || "제목 없음",
