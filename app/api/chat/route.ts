@@ -378,7 +378,16 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
 
     return NextResponse.json({ message: assistantMessage });
   } catch (error: unknown) {
-    console.error("Chat API error:", error);
+    // 상세 에러 로깅
+    console.error("=== Chat API Error ===");
+    console.error("Error type:", typeof error);
+    console.error("Error:", error);
+    if (error instanceof Error) {
+      console.error("Error name:", error.name);
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+    }
+    console.error("=== End Error ===");
 
     if (error instanceof Error && error.message.includes("API key")) {
       return NextResponse.json(
@@ -387,8 +396,13 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
       );
     }
 
+    // 개발 환경에서는 상세 에러 반환
+    const errorMessage = error instanceof Error ? error.message : "알 수 없는 오류";
     return NextResponse.json(
-      { error: "서버 오류가 발생했습니다." },
+      {
+        error: "서버 오류가 발생했습니다.",
+        details: process.env.NODE_ENV !== 'production' ? errorMessage : undefined
+      },
       { status: 500 }
     );
   }
