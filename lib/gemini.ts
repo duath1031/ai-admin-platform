@@ -204,8 +204,8 @@ export async function chatWithKnowledge(
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
 
-  // Long Context 지원 모델 사용 (gemini-1.5-flash 권장)
-  const modelName = knowledgeFiles.length > 0 ? 'gemini-1.5-flash' : config.modelName;
+  // Long Context 지원 모델 사용 (gemini-2.0-flash)
+  const modelName = knowledgeFiles.length > 0 ? 'gemini-2.0-flash' : config.modelName;
 
   const model = genAI.getGenerativeModel({
     model: modelName,
@@ -268,7 +268,7 @@ export async function queryKnowledgeFiles(
   }
 
   const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.0-flash',
     systemInstruction: systemPrompt,
     generationConfig: {
       temperature: 0.5,
