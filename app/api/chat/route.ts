@@ -267,7 +267,7 @@ export async function POST(req: NextRequest) {
       console.warn("[Chat] RAG 검색 오류 (무시하고 계속):", ragError);
     }
 
-    // Knowledge Base - Gemini File API 방식 (Long Context)
+    // Knowledge Base - Gemini File API 방식 (Long Context) + 자동 갱신
     let knowledgeFiles: FileDataPart[] = [];
     let knowledgeTitles: string[] = [];
 
@@ -282,6 +282,7 @@ export async function POST(req: NextRequest) {
         targetCategory = "인허가";
       }
 
+      // 자동 갱신 포함된 Knowledge Context 조회
       const kbResult = await getKnowledgeContext(targetCategory, 3);
 
       if (kbResult.fileParts.length > 0) {
@@ -293,10 +294,12 @@ export async function POST(req: NextRequest) {
 📚 학습된 문서: ${knowledgeTitles.join(', ')}
 ⚠️ 문서 내용과 질문이 관련 있으면 문서의 정확한 내용을 인용하여 답변하세요.
 `;
+      } else {
+        console.log("[Chat] Knowledge Base: 유효한 문서 없음 (만료 또는 미등록)");
       }
     } catch (error) {
-      console.error("[Chat] Knowledge Base 오류:", error);
-      // 오류 시 기본 채팅으로 진행
+      console.error("[Chat] Knowledge Base 오류 (무시하고 계속):", error);
+      // 오류 시에도 기본 채팅으로 진행 - 절대 전체 에러를 내지 않음
     }
 
     // 문서 생성 템플릿 감지 시 AI에게 정보 제공
