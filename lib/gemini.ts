@@ -308,7 +308,8 @@ export async function* chatWithKnowledgeStream(
   messages: { role: string; content: string }[],
   systemPrompt: string,
   knowledgeFiles: FileDataPart[] = [],
-  userTier: UserTier = 'free'
+  userTier: UserTier = 'free',
+  enableGrounding: boolean = false
 ): AsyncGenerator<string, void, unknown> {
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
@@ -324,7 +325,8 @@ export async function* chatWithKnowledgeStream(
       topK: 40,
       topP: 0.95,
       maxOutputTokens: config.maxOutputTokens,
-    }
+    },
+    ...(enableGrounding && { tools: [GOOGLE_SEARCH_TOOL] }),
   });
 
   const lastMessage = messages[messages.length - 1];

@@ -543,7 +543,9 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
           const generator = chatWithKnowledgeStream(
             messages,
             enhancedPrompt,
-            knowledgeFiles
+            knowledgeFiles,
+            'free',
+            true // Google Search Grounding 활성화 (하이브리드 모드)
           );
 
           for await (const chunk of generator) {
