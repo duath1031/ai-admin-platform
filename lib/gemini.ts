@@ -1,6 +1,17 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, DynamicRetrievalMode } from "@google/generative-ai";
+import type { Tool } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
+
+// Google Search Grounding 도구 (MODE_DYNAMIC: Gemini가 필요 시에만 검색)
+const GOOGLE_SEARCH_TOOL: Tool = {
+  googleSearchRetrieval: {
+    dynamicRetrievalConfig: {
+      mode: DynamicRetrievalMode.MODE_DYNAMIC,
+      dynamicThreshold: 0.3,
+    },
+  },
+} as Tool;
 
 // =============================================================================
 // AI 모델 설정
@@ -71,7 +82,8 @@ function enhanceSystemPrompt(systemPrompt: string, userTier: UserTier): string {
 export async function chatWithGemini(
   messages: { role: string; content: string }[],
   systemPrompt: string,
-  userTier: UserTier = 'free'
+  userTier: UserTier = 'free',
+  enableGrounding: boolean = false
 ): Promise<string> {
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
@@ -85,7 +97,8 @@ export async function chatWithGemini(
       topK: 40,
       topP: 0.95,
       maxOutputTokens: config.maxOutputTokens,
-    }
+    },
+    ...(enableGrounding && { tools: [GOOGLE_SEARCH_TOOL] }),
   });
 
   // 대화 내역을 Gemini 형식으로 변환
@@ -199,7 +212,8 @@ export async function chatWithKnowledge(
   messages: { role: string; content: string }[],
   systemPrompt: string,
   knowledgeFiles: FileDataPart[] = [],
-  userTier: UserTier = 'free'
+  userTier: UserTier = 'free',
+  enableGrounding: boolean = false
 ): Promise<string> {
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
@@ -215,7 +229,8 @@ export async function chatWithKnowledge(
       topK: 40,
       topP: 0.95,
       maxOutputTokens: config.maxOutputTokens,
-    }
+    },
+    ...(enableGrounding && { tools: [GOOGLE_SEARCH_TOOL] }),
   });
 
   // 마지막 사용자 메시지

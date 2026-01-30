@@ -34,6 +34,69 @@ async function withTimeout<T>(
   ]);
 }
 
+// =============================================================================
+// Knowledge Base 문서 관련성 필터 (Agentic RAG)
+// =============================================================================
+
+const KB_RELEVANCE_THRESHOLD = 0.2;
+
+/** 질문에서 주제 키워드 추출 */
+function extractTopicKeywords(message: string): string[] {
+  const topicMap: Record<string, string[]> = {
+    "숙박": ["숙박", "호텔", "호스텔", "모텔", "펜션", "게스트하우스", "민박", "리조트", "관광숙박"],
+    "비자": ["비자", "사증", "출입국", "체류", "외국인", "하이코리아", "영주권"],
+    "음식점": ["음식점", "식당", "카페", "휴게음식", "일반음식", "위생", "식품"],
+    "조달": ["공공조달", "조달", "입찰", "낙찰", "계약", "나라장터"],
+    "건축": ["건축", "건물", "건축물대장", "용도변경", "건폐율", "용적률"],
+    "토지": ["토지", "용도지역", "개발행위", "토지이용"],
+    "사업자": ["사업자등록", "창업", "개업", "폐업"],
+    "공장": ["공장", "제조업", "제조시설", "생산시설"],
+    "학원": ["학원", "교습소", "학원설립"],
+    "광고": ["옥외광고", "간판", "현수막", "광고물"],
+    "미용": ["미용업", "미용실", "헤어샵", "네일샵"],
+    "정책자금": ["정책자금", "중진공", "소진공", "융자", "지원금"],
+    "법인": ["법인설립", "법인", "주식회사", "유한회사"],
+    "허가": ["허가", "인허가", "신고", "등록", "면허"],
+  };
+
+  const found: string[] = [];
+  for (const [topic, keywords] of Object.entries(topicMap)) {
+    if (keywords.some(k => message.includes(k))) {
+      found.push(topic);
+      // 매칭된 키워드도 추가
+      keywords.forEach(k => { if (message.includes(k)) found.push(k); });
+    }
+  }
+  return [...new Set(found)];
+}
+
+/** 문서 제목 vs 질문 키워드 매칭으로 관련성 점수 (0~1) 반환 */
+function scoreDocumentRelevance(docTitle: string, userMessage: string): number {
+  const titleLower = docTitle.toLowerCase();
+  const messageLower = userMessage.toLowerCase();
+  const topicKeywords = extractTopicKeywords(messageLower);
+
+  if (topicKeywords.length === 0) return 0;
+
+  let matchCount = 0;
+  for (const keyword of topicKeywords) {
+    if (titleLower.includes(keyword)) {
+      matchCount++;
+    }
+  }
+
+  // 직접 제목 키워드가 메시지에 포함되는지도 체크
+  const titleWords = titleLower.split(/[\s·\-_,./()]+/).filter(w => w.length >= 2);
+  for (const word of titleWords) {
+    if (messageLower.includes(word)) {
+      matchCount++;
+    }
+  }
+
+  const totalChecks = topicKeywords.length + titleWords.length;
+  return totalChecks > 0 ? matchCount / totalChecks : 0;
+}
+
 // 문서 생성 가능한 템플릿 매칭
 function detectDocumentTemplate(message: string): string | undefined {
   const templateKeywords: Record<string, string[]> = {
@@ -275,30 +338,57 @@ export async function POST(req: NextRequest) {
       let targetCategory: string | undefined;
       if (/비자|사증|출입국|하이코리아|체류|외국인/i.test(lastUserMessage)) {
         targetCategory = "출입국";
-      } else if (/숙박|호텔|모텔|펜션|게스트하우스|관광숙박/i.test(lastUserMessage)) {
+      } else if (/숙박|호텔|호스텔|모텔|펜션|게스트하우스|관광숙박/i.test(lastUserMessage)) {
         targetCategory = "관광숙박";
       } else if (/음식점|식품|휴게음식|일반음식|위생/i.test(lastUserMessage)) {
         targetCategory = "인허가";
+      } else if (/공공조달|조달|입찰|낙찰|계약|기업행정/i.test(lastUserMessage)) {
+        targetCategory = "기업행정";
+      }
+
+      // 카테고리 매칭되지 않으면 지식베이스 스킵 (관련 없는 문서 주입 방지)
+      if (!targetCategory) {
+        console.log("[Chat] Knowledge Base: 카테고리 매칭 없음 - 스킵");
       }
 
       // Fast Path: DB 쿼리만 수행 (자동 갱신 없음, 만료 문서 제외)
+      // 후보 5개까지 가져와서 관련성 필터링
       // 3초 타임아웃 - 실패 시 빈 배열로 폴백
-      const kbResult = await withTimeout(
-        getKnowledgeContextFast(targetCategory, 1),
+      const kbResult = targetCategory ? await withTimeout(
+        getKnowledgeContextFast(targetCategory, 5),
         3000,
         { fileParts: [], documentTitles: [] }
-      );
+      ) : { fileParts: [], documentTitles: [] };
 
       if (kbResult.fileParts.length > 0) {
-        knowledgeFiles = kbResult.fileParts;
-        console.log(`[Chat] Knowledge Base 연동: ${kbResult.documentTitles.join(', ')} (${knowledgeFiles.length}개 파일)`);
+        // 관련성 필터: 각 문서의 제목과 질문의 키워드 매칭 점수 계산
+        const scoredDocs = kbResult.documentTitles.map((title, idx) => ({
+          title,
+          filePart: kbResult.fileParts[idx],
+          score: scoreDocumentRelevance(title, lastUserMessage),
+        }));
 
-        additionalContext += `\n\n[Knowledge Base 문서 참고]
-📚 첨부된 문서: ${kbResult.documentTitles.join(', ')}
-- 첨부된 PDF 문서의 내용을 우선 참고하여 답변하세요.
-- 문서에 관련 내용이 있으면 인용하여 답변하세요.
-- 문서에 없는 내용은 시스템 프롬프트 기반으로 답변하세요.
+        // 점수 내림차순 정렬
+        scoredDocs.sort((a, b) => b.score - a.score);
+
+        // 임계값 이상인 문서만 선택 (최대 1개)
+        const relevantDocs = scoredDocs.filter(d => d.score >= KB_RELEVANCE_THRESHOLD);
+
+        console.log(`[Chat] KB 관련성 점수: ${scoredDocs.map(d => `${d.title}=${d.score.toFixed(2)}`).join(', ')}`);
+
+        if (relevantDocs.length > 0) {
+          const bestDoc = relevantDocs[0];
+          knowledgeFiles = [bestDoc.filePart];
+          console.log(`[Chat] Knowledge Base 연동: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
+
+          additionalContext += `\n\n[Knowledge Base 문서 참고]
+📚 첨부된 문서: ${bestDoc.title}
+- 질문과 직접 관련된 내용이 있는 경우에만 인용하세요. 관련 없으면 무시하세요.
+- 문서에 없는 내용은 시스템 프롬프트와 전문 지식 기반으로 답변하세요.
 `;
+        } else {
+          console.log(`[Chat] Knowledge Base: 관련 문서 없음 (임계값 ${KB_RELEVANCE_THRESHOLD} 미만) - 스킵`);
+        }
       } else {
         console.log("[Chat] Knowledge Base: 유효한 문서 없음 - 시스템 프롬프트만 사용");
       }
@@ -412,18 +502,19 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
     const enhancedPrompt = baseSystemPrompt + additionalContext;
 
     // Knowledge 파일이 있으면 Long Context 방식으로 호출
+    // enableGrounding=true: Google Search Grounding 활성화 (MODE_DYNAMIC)
     let assistantMessage: string;
     if (knowledgeFiles.length > 0) {
       try {
-        console.log(`[Chat] Gemini Long Context 호출 (${knowledgeFiles.length}개 문서)`);
-        assistantMessage = await chatWithKnowledge(messages, enhancedPrompt, knowledgeFiles);
+        console.log(`[Chat] Gemini Long Context 호출 (${knowledgeFiles.length}개 문서, Grounding 활성화)`);
+        assistantMessage = await chatWithKnowledge(messages, enhancedPrompt, knowledgeFiles, 'free', true);
       } catch (knowledgeError) {
         // 만료된 파일 등의 오류 시 일반 채팅으로 폴백
         console.error("[Chat] Knowledge 연동 Gemini 호출 실패, 일반 모드로 전환:", knowledgeError);
-        assistantMessage = await chatWithGemini(messages, enhancedPrompt);
+        assistantMessage = await chatWithGemini(messages, enhancedPrompt, 'free', true);
       }
     } else {
-      assistantMessage = await chatWithGemini(messages, enhancedPrompt);
+      assistantMessage = await chatWithGemini(messages, enhancedPrompt, 'free', true);
     }
 
     // Save to database if chatId is provided
