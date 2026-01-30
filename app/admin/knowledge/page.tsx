@@ -61,6 +61,7 @@ const CATEGORIES = [
   { value: "인허가", label: "인허가/등록" },
   { value: "부동산", label: "부동산" },
   { value: "정책자금", label: "정책자금" },
+  { value: "기업행정", label: "기업행정" },
   { value: "민원편람", label: "민원편람" },
   { value: "기타", label: "기타" },
 ];
@@ -77,7 +78,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 // 지원 파일 형식
-const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xlsx", ".pptx"];
+const SUPPORTED_EXTENSIONS = [".pdf", ".docx", ".doc", ".txt", ".csv", ".xlsx", ".pptx", ".hwp"];
 
 export default function KnowledgePage() {
   const { data: session, status } = useSession();
@@ -475,7 +476,7 @@ export default function KnowledgePage() {
                 파일을 드래그하거나 클릭하여 선택하세요
               </div>
               <div className="text-sm text-gray-400">
-                지원 형식: PDF, DOCX, TXT, CSV, XLSX, PPTX (최대 100MB)
+                지원 형식: PDF, DOCX, TXT, CSV, XLSX, PPTX, HWP (최대 100MB)
               </div>
             </>
           )}

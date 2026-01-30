@@ -24,6 +24,7 @@ const SUPPORTED_MIME_TYPES = {
   "csv": "text/csv",
   "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "hwp": "application/x-hwp",
 };
 
 /**
