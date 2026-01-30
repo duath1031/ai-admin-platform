@@ -96,7 +96,6 @@ async function saveToStorage(buffer, originalName) {
   console.log(`[Storage] Uploading: ${originalName} -> ${storagePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
 
   // MIME 타입 추출
-  const ext = path.extname(originalName).toLowerCase();
   const mimeTypes = {
     '.pdf': 'application/pdf',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
