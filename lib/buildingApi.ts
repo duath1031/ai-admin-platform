@@ -57,17 +57,45 @@ async function parseAddressToCode(address: string): Promise<AddressSearchResult>
       key: VWORLD_KEY,
     });
 
-    let response = await fetch(`${geoUrl}?${params}`);
-    let data = await response.json();
+    // 구/군으로 시작하는 주소에 시/도 접두사 추가 (V-World 검색 정확도 향상)
+    const guToCity: Record<string, string> = {
+      "계양구": "인천광역시", "미추홀구": "인천광역시", "남동구": "인천광역시", "연수구": "인천광역시",
+      "부평구": "인천광역시", "서구": "인천광역시", "중구": "인천광역시", "동구": "인천광역시",
+      "강남구": "서울특별시", "강동구": "서울특별시", "강북구": "서울특별시", "강서구": "서울특별시",
+      "관악구": "서울특별시", "광진구": "서울특별시", "구로구": "서울특별시", "금천구": "서울특별시",
+      "노원구": "서울특별시", "도봉구": "서울특별시", "동대문구": "서울특별시", "동작구": "서울특별시",
+      "마포구": "서울특별시", "서대문구": "서울특별시", "서초구": "서울특별시", "성동구": "서울특별시",
+      "성북구": "서울특별시", "송파구": "서울특별시", "양천구": "서울특별시", "영등포구": "서울특별시",
+      "용산구": "서울특별시", "은평구": "서울특별시", "종로구": "서울특별시", "중랑구": "서울특별시",
+      "해운대구": "부산광역시", "수영구": "부산광역시", "사하구": "부산광역시",
+      "달서구": "대구광역시", "수성구": "대구광역시",
+      "유성구": "대전광역시", "광산구": "광주광역시",
+    };
 
-    // 도로명주소 실패 시 지번주소로 재시도
-    if (data.response?.status !== "OK") {
+    const addressVariants = [address];
+    const guMatch = address.match(/^([가-힣]+(?:구|군))/);
+    if (guMatch && guToCity[guMatch[1]]) {
+      addressVariants.push(`${guToCity[guMatch[1]]} ${address}`);
+    }
+
+    let data: any = null;
+    for (const addr of addressVariants) {
+      params.set("address", addr);
+      params.set("type", "road");
+      let response = await fetch(`${geoUrl}?${params}`);
+      data = await response.json();
+
+      if (data.response?.status === "OK") break;
+
+      // 지번주소로 재시도
       params.set("type", "parcel");
       response = await fetch(`${geoUrl}?${params}`);
       data = await response.json();
+
+      if (data.response?.status === "OK") break;
     }
 
-    if (data.response?.status !== "OK") {
+    if (data?.response?.status !== "OK") {
       return { success: false, error: "주소를 찾을 수 없습니다." };
     }
 

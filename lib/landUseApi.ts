@@ -43,37 +43,68 @@ export async function geocodeAddress(address: string): Promise<{
       key: VWORLD_KEY,
     });
 
-    const response = await fetch(`${geoUrl}?${params}`);
-    const data = await response.json();
+    // 도로명 → 지번 → 시도 접두사 보완 순서로 재시도
+    const addressVariants = [address];
 
-    if (data.response?.status !== "OK") {
+    // 구/군으로 시작하는 주소에 시/도 접두사 추가 (V-World 검색 정확도 향상)
+    const guToCity: Record<string, string> = {
+      "계양구": "인천광역시", "미추홀구": "인천광역시", "남동구": "인천광역시", "연수구": "인천광역시",
+      "부평구": "인천광역시", "서구": "인천광역시", "중구": "인천광역시", "동구": "인천광역시",
+      "강남구": "서울특별시", "강동구": "서울특별시", "강북구": "서울특별시", "강서구": "서울특별시",
+      "관악구": "서울특별시", "광진구": "서울특별시", "구로구": "서울특별시", "금천구": "서울특별시",
+      "노원구": "서울특별시", "도봉구": "서울특별시", "동대문구": "서울특별시", "동작구": "서울특별시",
+      "마포구": "서울특별시", "서대문구": "서울특별시", "서초구": "서울특별시", "성동구": "서울특별시",
+      "성북구": "서울특별시", "송파구": "서울특별시", "양천구": "서울특별시", "영등포구": "서울특별시",
+      "용산구": "서울특별시", "은평구": "서울특별시", "종로구": "서울특별시", "중랑구": "서울특별시",
+      "해운대구": "부산광역시", "수영구": "부산광역시", "사하구": "부산광역시", "북구": "부산광역시",
+      "남구": "부산광역시", "금정구": "부산광역시", "연제구": "부산광역시", "사상구": "부산광역시",
+      "달서구": "대구광역시", "수성구": "대구광역시", "달성군": "대구광역시",
+      "유성구": "대전광역시", "대덕구": "대전광역시",
+      "광산구": "광주광역시",
+      "울주군": "울산광역시",
+    };
+
+    const guMatch = address.match(/^([가-힣]+(?:구|군))/);
+    if (guMatch && guToCity[guMatch[1]]) {
+      addressVariants.push(`${guToCity[guMatch[1]]} ${address}`);
+    }
+
+    for (const addr of addressVariants) {
+      params.set("address", addr);
+      params.set("type", "road");
+
+      const response = await fetch(`${geoUrl}?${params}`);
+      const data = await response.json();
+
+      if (data.response?.status === "OK") {
+        const result = data.response.result;
+        return {
+          success: true,
+          x: parseFloat(result.point.x),
+          y: parseFloat(result.point.y),
+          refinedAddress: result.text,
+        };
+      }
+
       // 지번 주소로 재시도
       params.set("type", "parcel");
       const retryResponse = await fetch(`${geoUrl}?${params}`);
       const retryData = await retryResponse.json();
 
-      if (retryData.response?.status !== "OK") {
+      if (retryData.response?.status === "OK") {
+        const result = retryData.response.result;
         return {
-          success: false,
-          error: retryData.response?.error?.text || "주소를 찾을 수 없습니다.",
+          success: true,
+          x: parseFloat(result.point.x),
+          y: parseFloat(result.point.y),
+          refinedAddress: result.text,
         };
       }
-
-      const result = retryData.response.result;
-      return {
-        success: true,
-        x: parseFloat(result.point.x),
-        y: parseFloat(result.point.y),
-        refinedAddress: result.text,
-      };
     }
 
-    const result = data.response.result;
     return {
-      success: true,
-      x: parseFloat(result.point.x),
-      y: parseFloat(result.point.y),
-      refinedAddress: result.text,
+      success: false,
+      error: "주소를 찾을 수 없습니다. 전체 주소(시/도 포함)를 입력해주세요.",
     };
   } catch (error: any) {
     console.error("지오코딩 오류:", error);
