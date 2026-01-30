@@ -87,11 +87,11 @@ async function saveToStorage(buffer, originalName) {
 
   await ensureBucket();
 
-  // 경로 형식: knowledge/{uuid}/{filename}
+  // 경로 형식: knowledge/{uuid}/{uuid}.{ext}
+  // 한글 파일명은 Supabase Storage key에서 지원하지 않으므로 UUID로 대체
   const uuid = generateUUID();
-  // 한글 파일명 처리 (URL 인코딩)
-  const safeFileName = encodeURIComponent(originalName);
-  const storagePath = `knowledge/${uuid}/${safeFileName}`;
+  const ext = path.extname(originalName).toLowerCase() || '.pdf';
+  const storagePath = `knowledge/${uuid}/${uuid}${ext}`;
 
   console.log(`[Storage] Uploading: ${originalName} -> ${storagePath} (${(buffer.length / 1024 / 1024).toFixed(2)} MB)`);
 
