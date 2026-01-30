@@ -57,6 +57,8 @@ function extractTopicKeywords(message: string): string[] {
     "정책자금": ["정책자금", "중진공", "소진공", "융자", "지원금"],
     "법인": ["법인설립", "법인", "주식회사", "유한회사"],
     "허가": ["허가", "인허가", "신고", "등록", "면허"],
+    "공유재산": ["공유재산", "국유재산", "행정재산", "일반재산", "공공재산", "재산관리", "편람"],
+    "행정": ["행정사", "행정업무", "행정절차", "민원", "관공서"],
   };
 
   const found: string[] = [];
@@ -183,7 +185,8 @@ function detectIntent(message: string): {
 
   // 주소가 있으면 토지이용계획 조회 필요 (인허가 관련 질문일 가능성 높음)
   const hasLandKeyword = landKeywords.some(k => message.includes(k));
-  const needsLandUse = addressMatch !== null && hasLandKeyword;
+  // 주소가 감지되면 항상 토지이용계획 조회 (행정 AI 특성상 주소 제공 = 부동산 정보 필요)
+  const needsLandUse = addressMatch !== null;
 
   // 건축물대장 조회가 필요한 키워드 (허가/용도변경 관련)
   const buildingKeywords = [
@@ -193,7 +196,8 @@ function detectIntent(message: string): {
     "음식점", "카페", "식당", "공장", "창고", "사무실", "상가"
   ];
   const hasBuildingKeyword = buildingKeywords.some(k => message.includes(k));
-  const needsBuildingInfo = addressMatch !== null && hasBuildingKeyword;
+  // 주소가 감지되면 항상 건축물대장 조회
+  const needsBuildingInfo = addressMatch !== null;
 
   // 목표 업종 추출
   const businessTypes: Record<string, string[]> = {
@@ -261,6 +265,35 @@ export async function POST(req: NextRequest) {
     // 마지막 사용자 메시지에서 의도 파악
     const lastUserMessage = messages[messages.length - 1]?.content || "";
     const intent = detectIntent(lastUserMessage);
+
+    // Multi-turn context: 마지막 메시지만으로 주소/키워드가 부족할 때 최근 3개 메시지 종합 분석
+    if (!intent.address || (!intent.needsLandUse && !intent.needsBuildingInfo)) {
+      const recentUserMsgs = messages
+        .filter((m: any) => m.role === 'user')
+        .slice(-3)
+        .map((m: any) => m.content)
+        .join(' ');
+      const multiTurnIntent = detectIntent(recentUserMsgs);
+
+      if (!intent.address && multiTurnIntent.address) {
+        intent.address = multiTurnIntent.address;
+        console.log(`[Chat] Multi-turn: 이전 메시지에서 주소 보완 → ${intent.address}`);
+      }
+      if (intent.address) {
+        if (!intent.needsLandUse && multiTurnIntent.needsLandUse) {
+          intent.needsLandUse = true;
+          console.log(`[Chat] Multi-turn: 토지이용계획 조회 활성화`);
+        }
+        if (!intent.needsBuildingInfo && multiTurnIntent.needsBuildingInfo) {
+          intent.needsBuildingInfo = true;
+          console.log(`[Chat] Multi-turn: 건축물대장 조회 활성화`);
+        }
+      }
+      if (!intent.targetBusiness && multiTurnIntent.targetBusiness) {
+        intent.targetBusiness = multiTurnIntent.targetBusiness;
+        console.log(`[Chat] Multi-turn: 목표업종 보완 → ${intent.targetBusiness}`);
+      }
+    }
 
     // 추가 컨텍스트 정보 수집
     let additionalContext = "";
@@ -363,33 +396,35 @@ export async function POST(req: NextRequest) {
       ) : { fileParts: [], documentTitles: [] };
 
       if (kbResult.fileParts.length > 0) {
-        // 관련성 필터: 각 문서의 제목과 질문의 키워드 매칭 점수 계산
         const scoredDocs = kbResult.documentTitles.map((title, idx) => ({
           title,
           filePart: kbResult.fileParts[idx],
           score: scoreDocumentRelevance(title, lastUserMessage),
         }));
 
-        // 점수 내림차순 정렬
         scoredDocs.sort((a, b) => b.score - a.score);
-
-        // 임계값 이상인 문서만 선택 (최대 1개)
-        const relevantDocs = scoredDocs.filter(d => d.score >= KB_RELEVANCE_THRESHOLD);
 
         console.log(`[Chat] KB 관련성 점수: ${scoredDocs.map(d => `${d.title}=${d.score.toFixed(2)}`).join(', ')}`);
 
-        if (relevantDocs.length > 0) {
-          const bestDoc = relevantDocs[0];
-          knowledgeFiles = [bestDoc.filePart];
-          console.log(`[Chat] Knowledge Base 연동: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
+        // 카테고리 매칭된 경우 최상위 문서는 항상 포함 (AI가 관련성 최종 판단)
+        const bestDoc = scoredDocs[0];
+        knowledgeFiles = [bestDoc.filePart];
+        console.log(`[Chat] Knowledge Base 연동: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
 
-          additionalContext += `\n\n[Knowledge Base 문서 참고]
+        const isHighRelevance = bestDoc.score >= KB_RELEVANCE_THRESHOLD;
+        if (isHighRelevance) {
+          additionalContext += `\n\n[Knowledge Base 문서 참고 - 높은 관련성]
 📚 첨부된 문서: ${bestDoc.title}
-- 질문과 직접 관련된 내용이 있는 경우에만 인용하세요. 관련 없으면 무시하세요.
-- 문서에 없는 내용은 시스템 프롬프트와 전문 지식 기반으로 답변하세요.
+- 이 문서는 질문과 관련성이 높습니다. 문서 내용을 적극적으로 인용하여 답변하세요.
+- 인용 시 "[출처: ${bestDoc.title}]" 형식으로 출처를 명시하세요.
 `;
         } else {
-          console.log(`[Chat] Knowledge Base: 관련 문서 없음 (임계값 ${KB_RELEVANCE_THRESHOLD} 미만) - 스킵`);
+          additionalContext += `\n\n[Knowledge Base 문서 참고 - 참고용]
+📚 첨부된 문서: ${bestDoc.title}
+- 이 문서는 "${targetCategory}" 카테고리 매칭으로 첨부되었습니다.
+- 질문과 직접 관련된 내용이 있으면 적극 인용하고, 관련 없으면 무시하세요.
+- 관련 없는 내용을 억지로 인용하지 마세요.
+`;
         }
       } else {
         console.log("[Chat] Knowledge Base: 유효한 문서 없음 - 시스템 프롬프트만 사용");
