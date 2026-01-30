@@ -12,7 +12,7 @@ import { searchBusinessTypes } from "@/lib/formDatabase";
 import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawService";
 import { quickClassify } from "@/lib/rag/intentClassifier";
 // Knowledge Base - 경량 버전 사용 (서버 전용 import 제거)
-import { getKnowledgeContext } from "@/lib/ai/knowledgeQuery";
+import { getKnowledgeContextFast } from "@/lib/ai/knowledgeQuery";
 // 문서 생성 시스템
 import { FORM_TEMPLATES, findTemplate } from "@/lib/document/templates";
 import { GOV24_SERVICES } from "@/lib/document/gov24Links";
@@ -267,10 +267,44 @@ export async function POST(req: NextRequest) {
       console.warn("[Chat] RAG 검색 오류 (무시하고 계속):", ragError);
     }
 
-    // Knowledge Base 임시 비활성화 (성능 문제로 인해)
-    // TODO: NotebookLM API 또는 RAG 방식으로 대체 예정
-    const knowledgeFiles: FileDataPart[] = [];
-    console.log("[Chat] Knowledge Base 비활성화 상태 - 시스템 프롬프트만 사용");
+    // Knowledge Base - Gemini File URI 방식 (Fast Path - 자동 갱신 없음)
+    let knowledgeFiles: FileDataPart[] = [];
+
+    try {
+      // 카테고리 자동 감지 (질문 내용 기반)
+      let targetCategory: string | undefined;
+      if (/비자|사증|출입국|하이코리아|체류|외국인/i.test(lastUserMessage)) {
+        targetCategory = "출입국";
+      } else if (/숙박|호텔|모텔|펜션|게스트하우스|관광숙박/i.test(lastUserMessage)) {
+        targetCategory = "관광숙박";
+      } else if (/음식점|식품|휴게음식|일반음식|위생/i.test(lastUserMessage)) {
+        targetCategory = "인허가";
+      }
+
+      // Fast Path: DB 쿼리만 수행 (자동 갱신 없음, 만료 문서 제외)
+      // 3초 타임아웃 - 실패 시 빈 배열로 폴백
+      const kbResult = await withTimeout(
+        getKnowledgeContextFast(targetCategory, 1),
+        3000,
+        { fileParts: [], documentTitles: [] }
+      );
+
+      if (kbResult.fileParts.length > 0) {
+        knowledgeFiles = kbResult.fileParts;
+        console.log(`[Chat] Knowledge Base 연동: ${kbResult.documentTitles.join(', ')} (${knowledgeFiles.length}개 파일)`);
+
+        additionalContext += `\n\n[Knowledge Base 문서 참고]
+📚 첨부된 문서: ${kbResult.documentTitles.join(', ')}
+- 첨부된 PDF 문서의 내용을 우선 참고하여 답변하세요.
+- 문서에 관련 내용이 있으면 인용하여 답변하세요.
+- 문서에 없는 내용은 시스템 프롬프트 기반으로 답변하세요.
+`;
+      } else {
+        console.log("[Chat] Knowledge Base: 유효한 문서 없음 - 시스템 프롬프트만 사용");
+      }
+    } catch (error) {
+      console.error("[Chat] Knowledge Base 오류 (무시하고 계속):", error);
+    }
 
     // 문서 생성 템플릿 감지 시 AI에게 정보 제공
     if (intent.documentTemplate) {

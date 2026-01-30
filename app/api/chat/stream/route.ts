@@ -3,10 +3,24 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { chatWithKnowledgeStream, FileDataPart } from "@/lib/gemini";
 import { getActiveSystemPrompt } from "@/lib/systemPromptService";
-import { getKnowledgeContext } from "@/lib/ai/knowledgeQuery";
+import { getKnowledgeContextFast } from "@/lib/ai/knowledgeQuery";
 
 // Vercel 서버리스 함수 타임아웃 설정
 export const maxDuration = 60;
+
+// 외부 API 타임아웃 헬퍼 함수
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) =>
+      setTimeout(() => resolve(fallback), timeoutMs)
+    ),
+  ]);
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,11 +44,43 @@ export async function POST(req: NextRequest) {
 
     const lastUserMessage = messages[messages.length - 1]?.content || "";
 
-    // Knowledge Base 임시 비활성화 (성능 문제로 인해)
-    // TODO: NotebookLM API 또는 RAG 방식으로 대체 예정
-    const knowledgeFiles: FileDataPart[] = [];
-    const additionalContext = "";
-    console.log("[Chat Stream] Knowledge Base 비활성화 상태 - 시스템 프롬프트만 사용");
+    // Knowledge Base - Gemini File URI 방식 (Fast Path - 자동 갱신 없음)
+    let knowledgeFiles: FileDataPart[] = [];
+    let additionalContext = "";
+
+    try {
+      // 카테고리 자동 감지
+      let targetCategory: string | undefined;
+      if (/비자|사증|출입국|하이코리아|체류|외국인/i.test(lastUserMessage)) {
+        targetCategory = "출입국";
+      } else if (/숙박|호텔|모텔|펜션|게스트하우스|관광숙박/i.test(lastUserMessage)) {
+        targetCategory = "관광숙박";
+      } else if (/음식점|식품|휴게음식|일반음식|위생/i.test(lastUserMessage)) {
+        targetCategory = "인허가";
+      }
+
+      const kbResult = await withTimeout(
+        getKnowledgeContextFast(targetCategory, 1),
+        3000,
+        { fileParts: [], documentTitles: [] }
+      );
+
+      if (kbResult.fileParts.length > 0) {
+        knowledgeFiles = kbResult.fileParts;
+        console.log(`[Chat Stream] Knowledge Base 연동: ${kbResult.documentTitles.join(', ')}`);
+
+        additionalContext = `\n\n[Knowledge Base 문서 참고]
+📚 첨부된 문서: ${kbResult.documentTitles.join(', ')}
+- 첨부된 PDF 문서의 내용을 우선 참고하여 답변하세요.
+- 문서에 관련 내용이 있으면 인용하여 답변하세요.
+- 문서에 없는 내용은 시스템 프롬프트 기반으로 답변하세요.
+`;
+      } else {
+        console.log("[Chat Stream] Knowledge Base: 유효한 문서 없음");
+      }
+    } catch (error) {
+      console.error("[Chat Stream] Knowledge Base 오류:", error);
+    }
 
     // 시스템 프롬프트
     const baseSystemPrompt = await getActiveSystemPrompt();

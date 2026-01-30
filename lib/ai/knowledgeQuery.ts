@@ -228,3 +228,65 @@ export async function getKnowledgeContext(
     };
   }
 }
+
+/**
+ * Fast Knowledge Context (채팅 요청 전용 - 자동 갱신 없음)
+ * - DB WHERE 조건으로 만료 전 문서만 조회 (geminiExpiresAt > NOW + 30분 버퍼)
+ * - 네트워크 호출 0회, DB 쿼리 1회만 실행
+ * - 만료된 문서는 건너뜀 (별도 관리자 재업로드 또는 cron으로 처리)
+ * - 예상 소요: 50~100ms
+ */
+export async function getKnowledgeContextFast(
+  category?: string,
+  maxDocuments: number = 1
+): Promise<{
+  fileParts: Array<{ fileData: { fileUri: string; mimeType: string } }>;
+  documentTitles: string[];
+}> {
+  try {
+    const bufferMs = 30 * 60 * 1000;
+    const cutoffTime = new Date(Date.now() + bufferMs);
+
+    const where: Record<string, unknown> = {
+      status: "completed",
+      processingMode: "gemini_file",
+      geminiFileUri: { not: null },
+      geminiMimeType: { not: null },
+      geminiExpiresAt: { gt: cutoffTime },
+    };
+
+    if (category) {
+      where.category = category;
+    }
+
+    const documents = await prisma.knowledgeDocument.findMany({
+      where,
+      select: {
+        id: true,
+        title: true,
+        geminiFileUri: true,
+        geminiMimeType: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: maxDocuments,
+    });
+
+    console.log(`[Knowledge Fast] 유효 문서 ${documents.length}개 (카테고리: ${category || '전체'}, 최대: ${maxDocuments})`);
+
+    return {
+      fileParts: documents.map(doc => ({
+        fileData: {
+          fileUri: doc.geminiFileUri!,
+          mimeType: doc.geminiMimeType!,
+        },
+      })),
+      documentTitles: documents.map(doc => doc.title || "제목 없음"),
+    };
+  } catch (error) {
+    console.error("[Knowledge Fast] DB 쿼리 오류:", error);
+    return {
+      fileParts: [],
+      documentTitles: [],
+    };
+  }
+}
