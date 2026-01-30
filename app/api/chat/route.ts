@@ -395,39 +395,52 @@ export async function POST(req: NextRequest) {
         { fileParts: [], documentTitles: [] }
       ) : { fileParts: [], documentTitles: [] };
 
-      if (kbResult.fileParts.length > 0) {
-        const scoredDocs = kbResult.documentTitles.map((title, idx) => ({
+      // KB 문서 관련성 필터링 함수
+      const findBestRelevantDoc = (fileParts: FileDataPart[], documentTitles: string[], source: string) => {
+        const scoredDocs = documentTitles.map((title, idx) => ({
           title,
-          filePart: kbResult.fileParts[idx],
+          filePart: fileParts[idx],
           score: scoreDocumentRelevance(title, lastUserMessage),
         }));
-
         scoredDocs.sort((a, b) => b.score - a.score);
+        console.log(`[Chat] KB 관련성 점수 (${source}): ${scoredDocs.map(d => `${d.title}=${d.score.toFixed(2)}`).join(', ')}`);
+        return scoredDocs.length > 0 && scoredDocs[0].score >= KB_RELEVANCE_THRESHOLD ? scoredDocs[0] : null;
+      };
 
-        console.log(`[Chat] KB 관련성 점수: ${scoredDocs.map(d => `${d.title}=${d.score.toFixed(2)}`).join(', ')}`);
+      let bestDoc: { title: string; filePart: FileDataPart; score: number } | null = null;
 
-        // 카테고리 매칭된 경우 최상위 문서는 항상 포함 (AI가 관련성 최종 판단)
-        const bestDoc = scoredDocs[0];
+      if (kbResult.fileParts.length > 0) {
+        bestDoc = findBestRelevantDoc(kbResult.fileParts, kbResult.documentTitles, "카테고리");
+      }
+
+      // Fallback: 카테고리 검색에서 관련 문서 못 찾으면 전체 문서에서 검색
+      if (!bestDoc && extractTopicKeywords(lastUserMessage).length > 0) {
+        console.log("[Chat] KB fallback: 전체 문서에서 관련 문서 검색...");
+        try {
+          const allDocsResult = await withTimeout(
+            getKnowledgeContextFast(undefined, 10),
+            3000,
+            { fileParts: [], documentTitles: [] }
+          );
+          if (allDocsResult.fileParts.length > 0) {
+            bestDoc = findBestRelevantDoc(allDocsResult.fileParts, allDocsResult.documentTitles, "전체");
+          }
+        } catch (fallbackErr) {
+          console.warn("[Chat] KB fallback 오류:", fallbackErr);
+        }
+      }
+
+      if (bestDoc) {
         knowledgeFiles = [bestDoc.filePart];
         console.log(`[Chat] Knowledge Base 연동: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
-
-        const isHighRelevance = bestDoc.score >= KB_RELEVANCE_THRESHOLD;
-        if (isHighRelevance) {
-          additionalContext += `\n\n[Knowledge Base 문서 참고 - 높은 관련성]
+        additionalContext += `\n\n[Knowledge Base 문서 참고]
 📚 첨부된 문서: ${bestDoc.title}
 - 이 문서는 질문과 관련성이 높습니다. 문서 내용을 적극적으로 인용하여 답변하세요.
 - 인용 시 "[출처: ${bestDoc.title}]" 형식으로 출처를 명시하세요.
+- 문서에 없는 내용은 전문 지식과 Google 검색을 활용하세요.
 `;
-        } else {
-          additionalContext += `\n\n[Knowledge Base 문서 참고 - 참고용]
-📚 첨부된 문서: ${bestDoc.title}
-- 이 문서는 "${targetCategory}" 카테고리 매칭으로 첨부되었습니다.
-- 질문과 직접 관련된 내용이 있으면 적극 인용하고, 관련 없으면 무시하세요.
-- 관련 없는 내용을 억지로 인용하지 마세요.
-`;
-        }
       } else {
-        console.log("[Chat] Knowledge Base: 유효한 문서 없음 - 시스템 프롬프트만 사용");
+        console.log("[Chat] Knowledge Base: 관련 문서 없음 - 시스템 프롬프트만 사용");
       }
     } catch (error) {
       console.error("[Chat] Knowledge Base 오류 (무시하고 계속):", error);

@@ -107,7 +107,7 @@ export async function getLandUseInfo(x: number, y: number): Promise<{
       geometry: "false",
       attribute: "true",
       crs: "EPSG:4326",
-      domain: "localhost",  // V-World API는 localhost 허용
+      domain: process.env.VWORLD_DOMAIN || "localhost",
       geomFilter: `POINT(${x} ${y})`,
       buffer: "1",  // 버퍼를 1m로 최소화하여 정확한 조회
     });
@@ -220,7 +220,7 @@ async function getLandUseInfoFallback(x: number, y: number, apiKey: string): Pro
         geometry: "false",
         attribute: "true",
         crs: "EPSG:4326",
-        domain: "localhost",
+        domain: process.env.VWORLD_DOMAIN || "localhost",
         geomFilter: `POINT(${x} ${y})`,
         buffer: "10",  // 버퍼를 10m로 줄여서 정확도 향상
       });

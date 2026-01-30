@@ -121,7 +121,7 @@ async function getBjdongCodeByCoord(x: number, y: number, apiKey: string): Promi
       geometry: "false",
       attribute: "true",
       crs: "EPSG:4326",
-      domain: "localhost",
+      domain: process.env.VWORLD_DOMAIN || "localhost",
       geomFilter: `POINT(${x} ${y})`,
       buffer: "1",
     });
