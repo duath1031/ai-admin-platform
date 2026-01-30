@@ -539,8 +539,14 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
       }
     }
 
-    // 시스템 프롬프트
-    const baseSystemPrompt = await getActiveSystemPrompt();
+    // 시스템 프롬프트 (DB 오류 시 기본 프롬프트 사용)
+    let baseSystemPrompt: string;
+    try {
+      baseSystemPrompt = await getActiveSystemPrompt();
+    } catch (promptError) {
+      console.warn("[Chat Stream] 시스템 프롬프트 로드 실패, 기본값 사용:", promptError);
+      baseSystemPrompt = "당신은 대한민국 행정업무 전문 AI 어시스턴트입니다. 행정사, 정부기관, 기업의 행정업무를 지원합니다.";
+    }
     const enhancedPrompt = baseSystemPrompt + additionalContext;
 
     // 스트리밍 응답 생성

@@ -1,17 +1,9 @@
-import { GoogleGenerativeAI, DynamicRetrievalMode } from "@google/generative-ai";
-import type { Tool } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
-// Google Search Grounding 도구 (MODE_DYNAMIC: Gemini가 필요 시에만 검색)
-const GOOGLE_SEARCH_TOOL: Tool = {
-  googleSearchRetrieval: {
-    dynamicRetrievalConfig: {
-      mode: DynamicRetrievalMode.MODE_DYNAMIC,
-      dynamicThreshold: 0.3,
-    },
-  },
-} as Tool;
+// Google Search Grounding 도구 (Gemini 2.0 호환 형식)
+const GOOGLE_SEARCH_TOOL = { googleSearch: {} } as any;
 
 // =============================================================================
 // AI 모델 설정
@@ -313,66 +305,76 @@ export async function* chatWithKnowledgeStream(
 ): AsyncGenerator<string, void, unknown> {
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
-
-  // Long Context 지원 모델 사용
   const modelName = knowledgeFiles.length > 0 ? 'gemini-2.0-flash' : config.modelName;
-
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    systemInstruction: enhancedPrompt,
-    generationConfig: {
-      temperature: config.temperature,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: config.maxOutputTokens,
-    },
-    ...(enableGrounding && { tools: [GOOGLE_SEARCH_TOOL] }),
-  });
-
   const lastMessage = messages[messages.length - 1];
 
-  // Knowledge 파일이 있는 경우
-  if (knowledgeFiles.length > 0) {
-    console.log(`[Gemini Stream] Knowledge 파일 ${knowledgeFiles.length}개와 함께 스트리밍 질의`);
+  // Grounding 활성화 시도 → 실패 시 grounding 없이 재시도
+  const attempts = enableGrounding ? [true, false] : [false];
 
-    const conversationContext = messages.slice(0, -1).length > 0
-      ? `\n\n[이전 대화]\n${messages.slice(0, -1).map(m =>
-          `${m.role === 'assistant' ? 'AI' : '사용자'}: ${m.content}`
-        ).join('\n\n')}\n\n[현재 질문]\n${lastMessage.content}`
-      : lastMessage.content;
+  for (const useGrounding of attempts) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: enhancedPrompt,
+        generationConfig: {
+          temperature: config.temperature,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: config.maxOutputTokens,
+        },
+        ...(useGrounding && { tools: [GOOGLE_SEARCH_TOOL] }),
+      });
 
-    const parts = [
-      ...knowledgeFiles,
-      { text: conversationContext },
-    ];
+      if (knowledgeFiles.length > 0) {
+        console.log(`[Gemini Stream] Knowledge ${knowledgeFiles.length}개 + Grounding=${useGrounding}`);
 
-    const result = await model.generateContentStream(parts);
+        const conversationContext = messages.slice(0, -1).length > 0
+          ? `\n\n[이전 대화]\n${messages.slice(0, -1).map(m =>
+              `${m.role === 'assistant' ? 'AI' : '사용자'}: ${m.content}`
+            ).join('\n\n')}\n\n[현재 질문]\n${lastMessage.content}`
+          : lastMessage.content;
 
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
-      if (text) {
-        yield text;
+        const parts = [
+          ...knowledgeFiles,
+          { text: conversationContext },
+        ];
+
+        const result = await model.generateContentStream(parts);
+
+        for await (const chunk of result.stream) {
+          const text = chunk.text();
+          if (text) {
+            yield text;
+          }
+        }
+        return;
       }
-    }
-    return;
-  }
 
-  // Knowledge 파일이 없는 경우
-  const chatHistory = messages.slice(0, -1).map(msg => ({
-    role: msg.role === "assistant" ? "model" : "user",
-    parts: [{ text: msg.content }]
-  }));
+      // Knowledge 파일이 없는 경우
+      const chatHistory = messages.slice(0, -1).map(msg => ({
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: msg.content }]
+      }));
 
-  const chat = model.startChat({
-    history: chatHistory,
-  });
+      const chat = model.startChat({
+        history: chatHistory,
+      });
 
-  const result = await chat.sendMessageStream(lastMessage.content);
+      const result = await chat.sendMessageStream(lastMessage.content);
 
-  for await (const chunk of result.stream) {
-    const text = chunk.text();
-    if (text) {
-      yield text;
+      for await (const chunk of result.stream) {
+        const text = chunk.text();
+        if (text) {
+          yield text;
+        }
+      }
+      return; // 성공하면 종료
+    } catch (error) {
+      if (useGrounding && attempts.length > 1) {
+        console.warn(`[Gemini Stream] Grounding 실패, grounding 없이 재시도:`, error);
+        continue; // 다음 시도 (grounding 없이)
+      }
+      throw error; // 마지막 시도도 실패하면 에러 전파
     }
   }
 }

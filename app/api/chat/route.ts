@@ -548,8 +548,14 @@ ${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') |
       }
     }
 
-    // DB에서 시스템 프롬프트 가져오기 (없으면 기본 프롬프트 사용)
-    const baseSystemPrompt = await getActiveSystemPrompt();
+    // DB에서 시스템 프롬프트 가져오기 (실패 시 기본값 사용)
+    let baseSystemPrompt: string;
+    try {
+      baseSystemPrompt = await getActiveSystemPrompt();
+    } catch (promptError) {
+      console.warn("[Chat] 시스템 프롬프트 로드 실패, 기본값 사용:", promptError);
+      baseSystemPrompt = "당신은 대한민국 행정업무 전문 AI 어시스턴트입니다. 행정사, 정부기관, 기업의 행정업무를 지원합니다.";
+    }
 
     // 시스템 프롬프트에 추가 컨텍스트 포함
     const enhancedPrompt = baseSystemPrompt + additionalContext;
