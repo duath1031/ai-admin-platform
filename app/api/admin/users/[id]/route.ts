@@ -1,19 +1,8 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "Lawyeom@naver.com").split(",");
-
-async function checkAdminAuth() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
-    return { authorized: false, session: null };
-  }
-  return { authorized: true, session };
-}
+import { checkAdminAuth } from "@/lib/admin-auth";
 
 // GET: 특정 사용자 상세 조회
 export async function GET(
@@ -75,7 +64,7 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const { plan, credits, phone } = body;
+    const { plan, credits, phone, role } = body;
 
     const existing = await prisma.user.findUnique({
       where: { id: params.id },
@@ -113,6 +102,10 @@ export async function PATCH(
       updateData.phone = phone;
     }
 
+    if (role !== undefined && (role === "USER" || role === "ADMIN")) {
+      updateData.role = role;
+    }
+
     const user = await prisma.user.update({
       where: { id: params.id },
       data: updateData,
@@ -122,5 +115,43 @@ export async function PATCH(
   } catch (error: any) {
     console.error("[Admin Users API] 수정 오류:", error);
     return NextResponse.json({ error: "수정 중 오류가 발생했습니다." }, { status: 500 });
+  }
+}
+
+// DELETE: 사용자 강제 탈퇴
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { authorized, session } = await checkAdminAuth();
+    if (!authorized) {
+      return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
+    }
+
+    // 자기 자신 삭제 방지
+    if (session?.user?.id === params.id) {
+      return NextResponse.json({ error: "자기 자신은 삭제할 수 없습니다." }, { status: 400 });
+    }
+
+    const existing = await prisma.user.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    // Cascade 삭제 (Account, Session 등 관련 레코드 포함)
+    await prisma.user.delete({
+      where: { id: params.id },
+    });
+
+    console.log(`[Admin] User deleted: ${existing.email} by ${session?.user?.email}`);
+
+    return NextResponse.json({ success: true, message: "사용자가 삭제되었습니다." });
+  } catch (error: any) {
+    console.error("[Admin Users API] 삭제 오류:", error);
+    return NextResponse.json({ error: "삭제 중 오류가 발생했습니다." }, { status: 500 });
   }
 }

@@ -10,6 +10,12 @@ const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || "Lawyeom@naver.com
   .split(",")
   .map(email => email.toLowerCase().trim());
 
+function isAdminUser(session: { user?: { email?: string | null; role?: string } } | null): boolean {
+  if (!session?.user) return false;
+  if (session.user.role === "ADMIN") return true;
+  return !!(session.user.email && ADMIN_EMAILS.includes(session.user.email.toLowerCase()));
+}
+
 const adminMenuItems = [
   { name: "대시보드", href: "/admin", icon: "📊" },
   { name: "신청 관리", href: "/admin/submissions", icon: "📋" },
@@ -36,7 +42,7 @@ export default function AdminLayout({
     );
   }
 
-  if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
+  if (!isAdminUser(session)) {
     redirect("/");
   }
 
@@ -56,7 +62,7 @@ export default function AdminLayout({
             <Link href="/" className="text-sm text-gray-300 hover:text-white">
               사용자 페이지로 →
             </Link>
-            <span className="text-sm text-gray-400">{session.user.email}</span>
+            <span className="text-sm text-gray-400">{session?.user?.email}</span>
           </div>
         </div>
       </header>

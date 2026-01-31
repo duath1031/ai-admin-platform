@@ -7,6 +7,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  USER
+  ADMIN
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String
@@ -50,6 +55,9 @@ model User {
   phone                   String?
   credits                 Int                      @default(0)
   plan                    String                   @default("none")
+  role                    Role                     @default(USER)
+  marketingConsent        Boolean                  @default(false)
+  lastLoginAt             DateTime?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   accounts                Account[]
@@ -318,6 +326,8 @@ model Payment {
   cancelledAt    DateTime?
   failReason     String?
   metadata       String?
+  impUid         String?
+  receiptUrl     String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   subscription   Subscription? @relation(fields: [subscriptionId], references: [id])

@@ -1,19 +1,8 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "Lawyeom@naver.com").split(",");
-
-async function checkAdminAuth() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email || !ADMIN_EMAILS.includes(session.user.email)) {
-    return { authorized: false, session: null };
-  }
-  return { authorized: true, session };
-}
+import { checkAdminAuth } from "@/lib/admin-auth";
 
 // GET: 사용자 목록 조회
 export async function GET(request: NextRequest) {
@@ -28,6 +17,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const search = searchParams.get("search") || "";
     const plan = searchParams.get("plan") || "";
+    const role = searchParams.get("role") || "";
 
     const where: any = {};
 
@@ -42,6 +32,10 @@ export async function GET(request: NextRequest) {
       where.plan = plan;
     }
 
+    if (role) {
+      where.role = role;
+    }
+
     const [users, total] = await Promise.all([
       prisma.user.findMany({
         where,
@@ -53,6 +47,8 @@ export async function GET(request: NextRequest) {
           phone: true,
           credits: true,
           plan: true,
+          role: true,
+          lastLoginAt: true,
           createdAt: true,
           updatedAt: true,
           _count: {

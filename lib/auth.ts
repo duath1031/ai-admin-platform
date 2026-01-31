@@ -99,6 +99,7 @@ export const authOptions: NextAuthOptions = {
             credits: true,
             plan: true,
             phone: true,
+            role: true,
           },
         });
 
@@ -106,6 +107,7 @@ export const authOptions: NextAuthOptions = {
           session.user.credits = dbUser.credits;
           session.user.plan = dbUser.plan;
           session.user.phone = dbUser.phone;
+          session.user.role = dbUser.role;
         }
       }
       return session;
@@ -128,13 +130,23 @@ export const authOptions: NextAuthOptions = {
 
   events: {
     async createUser({ user }) {
-      // Log new user creation
       console.log("[Auth] New user created:", user.email);
     },
 
-    async signIn({ user, account, isNewUser }) {
+    async signIn({ user, isNewUser }) {
       if (isNewUser) {
         console.log("[Auth] New user signed in:", user.email);
+      }
+      // lastLoginAt 업데이트
+      if (user.id) {
+        try {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { lastLoginAt: new Date() },
+          });
+        } catch (e) {
+          console.error("[Auth] lastLoginAt update failed:", e);
+        }
       }
     },
   },

@@ -10,6 +10,8 @@ interface User {
   phone: string | null;
   credits: number;
   plan: string;
+  role: string;
+  lastLoginAt: string | null;
   createdAt: string;
   updatedAt: string;
   _count: {
@@ -30,25 +32,33 @@ const PLAN_OPTIONS = [
   { value: "enterprise", label: "기업", color: "orange" },
 ];
 
+const ROLE_OPTIONS = [
+  { value: "USER", label: "사용자" },
+  { value: "ADMIN", label: "관리자" },
+];
+
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [search, setSearch] = useState("");
   const [planFilter, setPlanFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 0 });
   const [stats, setStats] = useState<Stats>({});
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const [editData, setEditData] = useState({
     plan: "",
     credits: 0,
     phone: "",
+    role: "USER",
   });
 
   useEffect(() => {
     fetchUsers();
-  }, [search, planFilter, pagination.page]);
+  }, [search, planFilter, roleFilter, pagination.page]);
 
   const fetchUsers = async () => {
     try {
@@ -56,6 +66,7 @@ export default function AdminUsers() {
       const params = new URLSearchParams();
       if (search) params.append("search", search);
       if (planFilter) params.append("plan", planFilter);
+      if (roleFilter) params.append("role", roleFilter);
       params.append("page", pagination.page.toString());
       params.append("limit", "20");
 
@@ -83,6 +94,7 @@ export default function AdminUsers() {
       plan: user.plan,
       credits: user.credits,
       phone: user.phone || "",
+      role: user.role,
     });
   };
 
@@ -112,6 +124,36 @@ export default function AdminUsers() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!selectedUser) return;
+
+    const confirmed = window.confirm(
+      `정말로 "${selectedUser.name || selectedUser.email}" 사용자를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 해당 사용자의 모든 데이터가 삭제됩니다.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setSelectedUser(null);
+        await fetchUsers();
+      } else {
+        alert(data.error || "삭제 중 오류가 발생했습니다.");
+      }
+    } catch (error) {
+      console.error("삭제 실패:", error);
+      alert("삭제 중 오류가 발생했습니다.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const getPlanBadge = (plan: string) => {
     const option = PLAN_OPTIONS.find((o) => o.value === plan);
     const colorMap: Record<string, string> = {
@@ -123,6 +165,21 @@ export default function AdminUsers() {
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${colorMap[option?.color || "gray"]}`}>
         {option?.label || plan}
+      </span>
+    );
+  };
+
+  const getRoleBadge = (role: string) => {
+    if (role === "ADMIN") {
+      return (
+        <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+          관리자
+        </span>
+      );
+    }
+    return (
+      <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+        사용자
       </span>
     );
   };
@@ -170,6 +227,16 @@ export default function AdminUsers() {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg"
+        >
+          <option value="">전체 역할</option>
+          {ROLE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-6">
@@ -186,6 +253,7 @@ export default function AdminUsers() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">사용자</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">역할</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">플랜</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">크레딧</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">활동</th>
@@ -195,7 +263,7 @@ export default function AdminUsers() {
                   <tbody className="divide-y divide-gray-200">
                     {users.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                           사용자가 없습니다.
                         </td>
                       </tr>
@@ -227,6 +295,7 @@ export default function AdminUsers() {
                               </div>
                             </div>
                           </td>
+                          <td className="px-4 py-3">{getRoleBadge(user.role)}</td>
                           <td className="px-4 py-3">{getPlanBadge(user.plan)}</td>
                           <td className="px-4 py-3">
                             <span className="font-medium">{user.credits.toLocaleString()}</span>
@@ -305,6 +374,19 @@ export default function AdminUsers() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">역할</label>
+                <select
+                  value={editData.role}
+                  onChange={(e) => setEditData({ ...editData, role: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                >
+                  {ROLE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">플랜</label>
                 <select
                   value={editData.plan}
@@ -354,26 +436,39 @@ export default function AdminUsers() {
                     <p className="font-medium">{selectedUser._count.subscriptions}개</p>
                   </div>
                   <div className="bg-gray-50 p-2 rounded">
-                    <p className="text-gray-500">가입일</p>
-                    <p className="font-medium">{new Date(selectedUser.createdAt).toLocaleDateString("ko-KR")}</p>
+                    <p className="text-gray-500">마지막 로그인</p>
+                    <p className="font-medium">
+                      {selectedUser.lastLoginAt
+                        ? new Date(selectedUser.lastLoginAt).toLocaleDateString("ko-KR")
+                        : "-"}
+                    </p>
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 flex justify-end gap-3">
+              <div className="pt-4 flex justify-between">
                 <button
-                  onClick={() => setSelectedUser(null)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm"
                 >
-                  취소
+                  {deleting ? "삭제 중..." : "강제 탈퇴"}
                 </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving ? "저장 중..." : "저장"}
-                </button>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelectedUser(null)}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {saving ? "저장 중..." : "저장"}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

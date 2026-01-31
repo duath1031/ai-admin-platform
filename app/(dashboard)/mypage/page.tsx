@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Card, CardContent, Button } from "@/components/ui";
+import Link from "next/link";
 
 interface Stats {
   totalDocuments: number;
@@ -181,6 +182,32 @@ export default function MyPage() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* 결제 내역 */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-900">결제 내역</h3>
+                <Link
+                  href="/mypage/payments"
+                  className="text-sm text-primary-600 hover:text-primary-800 font-medium"
+                >
+                  전체 보기
+                </Link>
+              </div>
+              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                <div className="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center text-primary-600">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">결제 및 구매 내역 확인</p>
+                  <p className="text-sm text-gray-500">영수증 조회 및 결제 관리</p>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

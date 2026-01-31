@@ -7,6 +7,7 @@ declare module "next-auth" {
       credits?: number;
       plan?: string;
       phone?: string | null;
+      role?: string;
     } & DefaultSession["user"];
   }
 }
@@ -16,5 +17,6 @@ declare module "next-auth/jwt" {
     id?: string;
     credits?: number;
     plan?: string;
+    role?: string;
   }
 }
