@@ -219,7 +219,8 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
 
   const operation = operationMap[params.bidType || 'service'];
   const today = new Date();
-  const defaultStart = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+  // 나라장터 API는 동일 월 내 검색만 안정적으로 지원
+  const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
   const queryParams: Record<string, string> = {
     pageNo: String(params.pageNo || 1),
@@ -309,7 +310,7 @@ export async function searchPreSpecs(params: {
   // 사전규격정보서비스는 별도 활용신청 필요
   // 공공데이터포털: https://www.data.go.kr/data/15129437/openapi.do
   const today = new Date();
-  const defaultStart = new Date(today.getTime() - 60 * 24 * 60 * 60 * 1000);
+  const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
   const queryParams: Record<string, string> = {
     pageNo: String(params.pageNo || 1),
@@ -398,7 +399,8 @@ export async function searchWinningBids(params: {
 
   const operation = operationMap[params.bidType || 'service'];
   const today = new Date();
-  const defaultStart = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+  // 나라장터 API는 동일 월 내 검색만 안정적으로 지원
+  const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
   const queryParams: Record<string, string> = {
     pageNo: String(params.pageNo || 1),
@@ -470,7 +472,7 @@ export async function searchWinningBids(params: {
   };
 
   const recommendation = rates.length > 0
-    ? `최근 90일 낙찰 ${totalCount}건 분석: 평균 낙찰률 ${summary.avgRate}%, 평균 낙찰금액 ${formatKRW(summary.avgAmount)}. ${
+    ? `이번 달 낙찰 ${totalCount}건 분석: 평균 낙찰률 ${summary.avgRate}%, 평균 낙찰금액 ${formatKRW(summary.avgAmount)}. ${
         summary.avgRate > 85
           ? '투찰률이 높은 편이므로 적극적 참여를 권장합니다.'
           : summary.avgRate > 70
