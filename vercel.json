@@ -3,7 +3,16 @@
   "buildCommand": "rm -rf .next && prisma generate && next build",
   "framework": "nextjs",
   "regions": ["icn1"],
+  "crons": [
+    {
+      "path": "/api/cron/renew-knowledge",
+      "schedule": "0 */6 * * *"
+    }
+  ],
   "functions": {
+    "app/api/cron/**/*.ts": {
+      "maxDuration": 60
+    },
     "app/api/**/*.ts": {
       "maxDuration": 30
     }

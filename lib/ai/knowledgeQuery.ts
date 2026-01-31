@@ -8,8 +8,8 @@
 import { prisma } from "@/lib/prisma";
 
 // RPA Worker URL (Smart Renewal용)
-const RPA_WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
-const WORKER_API_KEY = process.env.WORKER_API_KEY || '';
+const RPA_WORKER_URL = process.env.RPA_WORKER_URL || process.env.NEXT_PUBLIC_RPA_URL || 'https://admini-rpa-worker-production.up.railway.app';
+const WORKER_API_KEY = process.env.RPA_WORKER_API_KEY || process.env.WORKER_API_KEY || '';
 
 /**
  * Gemini 캐시가 유효한지 확인

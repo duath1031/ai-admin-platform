@@ -12,7 +12,7 @@ import { searchBusinessTypes } from "@/lib/formDatabase";
 import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawService";
 import { quickClassify } from "@/lib/rag/intentClassifier";
 // Knowledge Base - 경량 버전 사용 (서버 전용 import 제거)
-import { getKnowledgeContextFast, getKnowledgeByTags } from "@/lib/ai/knowledgeQuery";
+import { getKnowledgeContextFast, getKnowledgeByTags, getActiveKnowledgeDocuments } from "@/lib/ai/knowledgeQuery";
 // 문서 생성 시스템
 import { FORM_TEMPLATES, findTemplate } from "@/lib/document/templates";
 import { GOV24_SERVICES } from "@/lib/document/gov24Links";
@@ -431,6 +431,48 @@ export async function POST(req: NextRequest) {
           }
         } catch (fallbackErr) {
           console.warn("[Chat] KB fallback 오류:", fallbackErr);
+        }
+      }
+
+      // 3차 Fallback: fast 쿼리 모두 0건 → 만료 문서 자동 갱신 시도
+      if (!bestDoc && searchKeywords.length > 0) {
+        try {
+          console.log("[Chat] KB 갱신 fallback: 만료 문서 자동 갱신 시도...");
+          const renewedDocs = await withTimeout(
+            getActiveKnowledgeDocuments(),
+            8000,
+            []
+          );
+          if (renewedDocs.length > 0) {
+            // 갱신된 문서 중 키워드 매칭
+            for (const doc of renewedDocs) {
+              const titleLower = (doc.title || "").toLowerCase();
+              const matchCount = searchKeywords.filter(kw =>
+                titleLower.includes(kw.toLowerCase())
+              ).length;
+              const score = matchCount / searchKeywords.length;
+              if (score > 0 && (!bestDoc || score > bestDoc.score)) {
+                bestDoc = {
+                  title: doc.title,
+                  filePart: { fileData: { fileUri: doc.fileUri, mimeType: doc.mimeType } },
+                  score,
+                };
+              }
+            }
+            // 매칭 없으면 첫 번째 문서라도 사용
+            if (!bestDoc && renewedDocs.length > 0) {
+              bestDoc = {
+                title: renewedDocs[0].title,
+                filePart: { fileData: { fileUri: renewedDocs[0].fileUri, mimeType: renewedDocs[0].mimeType } },
+                score: 0.1,
+              };
+            }
+            if (bestDoc) {
+              console.log(`[Chat] 갱신 fallback 성공: ${bestDoc.title}`);
+            }
+          }
+        } catch (renewErr) {
+          console.warn("[Chat] KB 갱신 fallback 오류:", renewErr);
         }
       }
 
