@@ -299,7 +299,8 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
 }
 
 // ─────────────────────────────────────────
-// 2. 사전규격 검색 (별도 활용신청 필요)
+// 2. 사전규격 검색 (ao/HrcspSsstndrdInfoService)
+//    주의: type=json 미지원 → XML 응답을 fast-xml-parser로 파싱
 // ─────────────────────────────────────────
 
 export async function searchPreSpecs(params: {
@@ -307,78 +308,93 @@ export async function searchPreSpecs(params: {
   pageNo?: number;
   numOfRows?: number;
 }): Promise<PreSpecAnalysis> {
-  // 사전규격정보서비스는 별도 활용신청 필요
-  // 공공데이터포털: https://www.data.go.kr/data/15129437/openapi.do
+  const apiKey = process.env.PUBLIC_DATA_KEY;
+  if (!apiKey) throw new Error('PUBLIC_DATA_KEY 환경변수가 설정되지 않았습니다.');
+
   const today = new Date();
   const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  const queryParams: Record<string, string> = {
-    pageNo: String(params.pageNo || 1),
-    numOfRows: String(params.numOfRows || 20),
-    inqryBgnDt: formatDate(defaultStart) + '0000',
-    inqryEndDt: formatDate(today) + '2359',
-    type: 'json',
-  };
+  // 키워드 있으면 PPSSrch 엔드포인트 사용
+  const operation = params.keyword
+    ? 'getPublicPrcureThngInfoServcPPSSrch'
+    : 'getPublicPrcureThngInfoServc';
+
+  const queryParts = [
+    `serviceKey=${apiKey}`,
+    `pageNo=${params.pageNo || 1}`,
+    `numOfRows=${params.numOfRows || 20}`,
+    `inqryDiv=1`,
+    `inqryBgnDt=${formatDate(defaultStart)}0000`,
+    `inqryEndDt=${formatDate(today)}2359`,
+  ];
 
   if (params.keyword) {
-    queryParams.prcureReqstNm = params.keyword;
+    queryParts.push(`prdctClsfcNoNm=${encodeURIComponent(params.keyword)}`);
   }
 
-  // 여러 경로 시도 (서비스 경로가 변경될 수 있음)
-  const servicePaths = [
-    'ao/PrcureReqsInfoService',
-    'ad/PrcureReqsInfoService',
-    'PrcureReqsInfoService',
-  ];
-  const operations = [
-    'getPreSpcListInfoServc',
-    'getPrcureReqsListInfoServc',
-  ];
+  // type=json 사용 불가 → XML 응답
+  const url = `${G2B_BASE}/ao/HrcspSsstndrdInfoService/${operation}?${queryParts.join('&')}`;
+  console.log(`[G2B] PreSpec request: ${operation}`);
 
-  let lastError: Error | null = null;
-  for (const sp of servicePaths) {
-    for (const op of operations) {
-      try {
-        const { totalCount, items: rawItems } = await fetchG2B(sp, op, queryParams);
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  const text = await res.text();
 
-        const items: PreSpecItem[] = rawItems.map((item) => {
-          const opninCloseDate = parseDateString(String(item.opninRgstClseDt || ''));
-          const daysRemaining = opninCloseDate
-            ? Math.ceil((opninCloseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-            : -1;
+  // XML 파싱
+  const parsed = xmlParser.parse(text);
 
-          return {
-            prcureReqstNo: String(item.prcureReqstNo || item.preStdRegNo || ''),
-            prcureReqstNm: String(item.prcureReqstNm || item.prdctNm || ''),
-            rlDminsttNm: String(item.rlDminsttNm || item.dminsttNm || ''),
-            rgstDt: String(item.rgstDt || ''),
-            opninRgstClseDt: String(item.opninRgstClseDt || ''),
-            prcureReqstUrl: `https://www.g2b.go.kr:8081/ep/preparation/prestd/preStdDtl.do?preStdRegNo=${item.prcureReqstNo || item.preStdRegNo || ''}`,
-            asignBdgtAmt: Number(item.asignBdgtAmt) || 0,
-            daysRemaining,
-          };
-        });
+  // nkoneps 에러 형식
+  const errResp = parsed['nkoneps.com.response.ResponseError'];
+  if (errResp) {
+    const code = errResp.header?.resultCode;
+    const msg = errResp.header?.resultMsg;
+    throw new Error(`사전규격 API 오류 (${code}): ${msg}`);
+  }
 
-        const budgets = items.map((i) => i.asignBdgtAmt).filter((a) => a > 0);
-        return {
-          items,
-          totalCount,
-          summary: {
-            avgBudget: budgets.length > 0 ? Math.round(budgets.reduce((a, b) => a + b, 0) / budgets.length) : 0,
-            totalBudget: budgets.reduce((a, b) => a + b, 0),
-          },
-        };
-      } catch (e) {
-        lastError = e instanceof Error ? e : new Error(String(e));
-        continue;
-      }
+  const response = parsed?.response;
+  if (!response) {
+    if (text.includes('Unexpected') || res.status === 500) {
+      throw new Error('사전규격정보서비스에 접근할 수 없습니다. 공공데이터포털(data.go.kr)에서 "나라장터 사전규격정보서비스" 활용신청이 필요합니다.');
     }
+    throw new Error('사전규격 API 응답 형식 오류');
   }
 
-  throw new Error(
-    '사전규격정보서비스에 접근할 수 없습니다. 공공데이터포털(data.go.kr)에서 "나라장터 사전규격정보서비스" 활용신청이 필요합니다. ' +
-    `(${lastError?.message || '알 수 없는 오류'})`,
-  );
+  const resultCode = response.header?.resultCode;
+  if (resultCode && String(resultCode) !== '00') {
+    throw new Error(`사전규격 API 오류 (${resultCode}): ${response.header?.resultMsg}`);
+  }
+
+  const body = response.body;
+  const totalCount = Number(body?.totalCount) || 0;
+  const rawItems = body?.items?.item;
+  const itemArray: Record<string, string | number>[] = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
+
+  const items: PreSpecItem[] = itemArray.map((item) => {
+    const opninCloseDate = parseDateString(String(item.opninRgstClseDt || ''));
+    const daysRemaining = opninCloseDate
+      ? Math.ceil((opninCloseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      : -1;
+
+    return {
+      prcureReqstNo: String(item.bfSpecRgstNo || ''),
+      prcureReqstNm: String(item.prdctClsfcNoNm || ''),
+      rlDminsttNm: String(item.rlDminsttNm || item.orderInsttNm || ''),
+      rgstDt: String(item.rgstDt || item.rcptDt || ''),
+      opninRgstClseDt: String(item.opninRgstClseDt || ''),
+      prcureReqstUrl: `https://www.g2b.go.kr:8081/ep/preparation/prestd/preStdDtl.do?preStdRegNo=${item.bfSpecRgstNo || ''}`,
+      asignBdgtAmt: Number(item.asignBdgtAmt) || 0,
+      daysRemaining,
+    };
+  });
+
+  const budgets = items.map((i) => i.asignBdgtAmt).filter((a) => a > 0);
+  return {
+    items,
+    totalCount,
+    summary: {
+      avgBudget: budgets.length > 0 ? Math.round(budgets.reduce((a, b) => a + b, 0) / budgets.length) : 0,
+      totalBudget: budgets.reduce((a, b) => a + b, 0),
+    },
+  };
 }
 
 // ─────────────────────────────────────────
