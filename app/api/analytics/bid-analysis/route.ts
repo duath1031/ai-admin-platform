@@ -76,9 +76,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, action: 'search', ...result });
   } catch (error) {
     console.error('[Bid Analysis API] Error:', error);
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    // 나라장터 API 오류(활용신청 미완료 등)는 200 + success:false로 반환
+    const isApiError = message.includes('나라장터') || message.includes('활용신청') || message.includes('PUBLIC_DATA_KEY');
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 },
+      { success: false, error: message },
+      { status: isApiError ? 200 : 500 },
     );
   }
 }

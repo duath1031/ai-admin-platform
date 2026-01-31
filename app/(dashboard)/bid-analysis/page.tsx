@@ -141,7 +141,6 @@ export default function BidAnalysisPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error(`API 응답 오류 (${res.status})`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || "검색 실패");
         setBidResult(data);
@@ -155,7 +154,6 @@ export default function BidAnalysisPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error(`API 응답 오류 (${res.status})`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || "검색 실패");
         setPreSpecResult(data);
@@ -169,7 +167,6 @@ export default function BidAnalysisPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!res.ok) throw new Error(`API 응답 오류 (${res.status})`);
         const data = await res.json();
         if (!data.success) throw new Error(data.error || "검색 실패");
         setWinningResult(data);
