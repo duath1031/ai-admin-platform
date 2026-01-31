@@ -1,10 +1,10 @@
 /**
  * 나라장터 (G2B) 입찰 분석기
  *
- * 공공데이터포털 나라장터 OpenAPI 연동
- * - BidPublicInfoService05: 입찰공고 조회 (물품/공사/용역)
- * - ScsbidInfoService04: 낙찰정보 조회
- * - PrcureReqsInfoService01: 사전규격 조회
+ * 공공데이터포털 나라장터 OpenAPI 연동 (verified endpoints)
+ * - /ad/BidPublicInfoService: 입찰공고 조회
+ * - /as/ScsbidInfoService: 낙찰정보 조회
+ * - /ao/PrcureReqsInfoService: 사전규격 조회 (별도 활용신청 필요)
  *
  * API: https://www.data.go.kr (조달청 나라장터)
  */
@@ -17,10 +17,8 @@ const xmlParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   textNodeName: '#text',
-  isArray: (_name: string, jpath: string) => {
-    // items.item 은 항상 배열로 처리
-    return jpath === 'response.body.items.item';
-  },
+  isArray: (_name: string, jpath: string) =>
+    jpath === 'response.body.items.item',
 });
 
 // ─────────────────────────────────────────
@@ -32,7 +30,7 @@ export interface BidSearchParams {
   bidType?: 'goods' | 'construction' | 'service';
   startDate?: string;        // YYYYMMDD
   endDate?: string;
-  minAmount?: number;        // 만원 단위 → 원으로 변환
+  minAmount?: number;        // 만원 단위
   maxAmount?: number;
   region?: string;
   pageNo?: number;
@@ -70,14 +68,13 @@ export interface BidAnalysis {
 }
 
 export interface PreSpecItem {
-  prcureReqstNo: string;      // 사전규격등록번호
-  prcureReqstNm: string;      // 사전규격명
-  rlDminsttNm: string;        // 수요기관명
-  rgstDt: string;              // 등록일시
-  opninRgstClseDt: string;    // 의견등록마감일시
-  refNo: string;               // 참조번호
-  prcureReqstUrl: string;     // 상세 URL
-  asignBdgtAmt: number;       // 배정예산액
+  prcureReqstNo: string;
+  prcureReqstNm: string;
+  rlDminsttNm: string;
+  rgstDt: string;
+  opninRgstClseDt: string;
+  prcureReqstUrl: string;
+  asignBdgtAmt: number;
   daysRemaining: number;
 }
 
@@ -88,14 +85,15 @@ export interface PreSpecAnalysis {
 }
 
 export interface WinningBidItem {
-  bidNtceNo: string;           // 입찰공고번호
-  bidNtceNm: string;           // 공고명
-  ntceInsttNm: string;         // 공고기관
-  sucsfbidAmt: number;         // 낙찰금액
-  sucsfbidRate: number;        // 낙찰률 (%)
-  sucsfbidCorpNm: string;     // 낙찰업체명
-  presmptPrce: number;         // 추정가격
-  opengDt: string;             // 개찰일시
+  bidNtceNo: string;
+  bidNtceNm: string;
+  ntceInsttNm: string;
+  sucsfbidAmt: number;
+  sucsfbidRate: number;       // API가 직접 제공 (예: 90 = 90%)
+  sucsfbidCorpNm: string;
+  presmptPrce: number;
+  opengDt: string;
+  prtcptCnum: number;         // 참가업체수
   bidMethdNm: string;
   sucsfbidMthdNm: string;
 }
@@ -104,7 +102,7 @@ export interface WinningBidAnalysis {
   items: WinningBidItem[];
   totalCount: number;
   summary: {
-    avgRate: number;           // 평균 낙찰률
+    avgRate: number;
     minRate: number;
     maxRate: number;
     avgAmount: number;
@@ -115,11 +113,11 @@ export interface WinningBidAnalysis {
 }
 
 // ─────────────────────────────────────────
-// Core: XML fetch + parse
+// Core: API 호출 + 파싱
 // ─────────────────────────────────────────
 
 async function fetchG2B(
-  service: string,
+  servicePath: string,
   operation: string,
   params: Record<string, string>,
 ): Promise<{ totalCount: number; items: Record<string, string | number>[] }> {
@@ -128,82 +126,98 @@ async function fetchG2B(
     throw new Error('PUBLIC_DATA_KEY 환경변수가 설정되지 않았습니다.');
   }
 
-  // serviceKey를 수동으로 붙여서 이중인코딩 방지
+  // serviceKey를 수동으로 붙여 이중인코딩 방지
   const queryParts = [`serviceKey=${apiKey}`];
   for (const [k, v] of Object.entries(params)) {
     queryParts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
   }
 
-  const url = `${G2B_BASE}/${service}/${operation}?${queryParts.join('&')}`;
-  console.log(`[G2B] Request: ${service}/${operation}`);
+  const url = `${G2B_BASE}/${servicePath}/${operation}?${queryParts.join('&')}`;
+  console.log(`[G2B] Request: ${servicePath}/${operation}`);
 
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(20000),
-    headers: { Accept: 'application/xml' },
-  });
-
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
   const text = await res.text();
 
   // HTML 에러 페이지 감지
   if (text.includes('<html') || text.includes('<!DOCTYPE')) {
-    console.error('[G2B] HTML error page returned');
     throw new Error('나라장터 API가 에러 페이지를 반환했습니다. API 키 또는 서비스 활성화를 확인하세요.');
   }
 
-  // JSON 먼저 시도 (일부 API는 JSON 반환)
-  try {
-    const json = JSON.parse(text);
-    const body = json?.response?.body;
-    if (body) {
-      const rawItems = body.items || [];
-      const items = Array.isArray(rawItems)
-        ? rawItems
-        : rawItems.item
-          ? Array.isArray(rawItems.item) ? rawItems.item : [rawItems.item]
-          : [];
-      return { totalCount: body.totalCount || 0, items };
-    }
-  } catch {
-    // JSON 실패 → XML 파싱
+  // 단순 텍스트 에러
+  if (res.status === 500 && text.includes('Unexpected')) {
+    throw new Error('나라장터 API 서비스에 접근할 수 없습니다. 공공데이터포털에서 해당 서비스의 활용신청이 필요합니다.');
   }
 
-  // XML 파싱
+  if (res.status === 404) {
+    throw new Error('API 엔드포인트를 찾을 수 없습니다. 서비스 경로를 확인하세요.');
+  }
+
+  // JSON 파싱 시도
+  try {
+    const json = JSON.parse(text);
+
+    // nkoneps 에러 형식 처리
+    const errResp = json['nkoneps.com.response.ResponseError'];
+    if (errResp) {
+      const code = errResp.header?.resultCode;
+      const msg = errResp.header?.resultMsg;
+      throw new Error(`나라장터 API 오류 (${code}): ${msg}`);
+    }
+
+    const response = json.response;
+    if (response) {
+      const resultCode = response.header?.resultCode;
+      if (resultCode && resultCode !== '00') {
+        throw new Error(`나라장터 API 오류 (${resultCode}): ${response.header?.resultMsg}`);
+      }
+
+      const body = response.body;
+      const totalCount = Number(body?.totalCount) || 0;
+      const rawItems = body?.items;
+      const items = Array.isArray(rawItems)
+        ? rawItems
+        : rawItems?.item
+          ? Array.isArray(rawItems.item) ? rawItems.item : [rawItems.item]
+          : [];
+      return { totalCount, items };
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('나라장터')) throw e;
+    // JSON 파싱 실패 → XML 시도
+  }
+
+  // XML 파싱 폴백
   const parsed = xmlParser.parse(text);
   const response = parsed?.response;
-
   if (!response) {
-    console.error('[G2B] Unexpected response format:', text.slice(0, 300));
+    console.error('[G2B] Unexpected response:', text.slice(0, 300));
     throw new Error('나라장터 API 응답 형식 오류');
   }
 
-  // 에러 코드 체크
-  const resultCode = response?.header?.resultCode;
+  const resultCode = response.header?.resultCode;
   if (resultCode && resultCode !== '00') {
-    const msg = response?.header?.resultMsg || 'Unknown error';
-    console.error(`[G2B] API Error: ${resultCode} - ${msg}`);
-    throw new Error(`나라장터 API 오류 (${resultCode}): ${msg}`);
+    throw new Error(`나라장터 API 오류 (${resultCode}): ${response.header?.resultMsg}`);
   }
 
-  const body = response?.body;
+  const body = response.body;
   const totalCount = Number(body?.totalCount) || 0;
   const rawItems = body?.items?.item;
   const items = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
-
   return { totalCount, items };
 }
 
 // ─────────────────────────────────────────
-// 1. 입찰공고 검색 (BidPublicInfoService05)
+// 1. 입찰공고 검색 (ad/BidPublicInfoService)
 // ─────────────────────────────────────────
 
 export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> {
-  const endpointMap: Record<string, string> = {
-    goods: 'getBidPblancListInfoThngPPSSrch05',
-    construction: 'getBidPblancListInfoCnstwkPPSSrch05',
-    service: 'getBidPblancListInfoServcPPSSrch05',
+  const operationMap: Record<string, string> = {
+    goods: 'getBidPblancListInfoThng',
+    construction: 'getBidPblancListInfoCnstwk',
+    service: 'getBidPblancListInfoServc',
   };
 
-  const operation = endpointMap[params.bidType || 'service'];
+  const operation = operationMap[params.bidType || 'service'];
   const today = new Date();
   const defaultStart = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
@@ -221,7 +235,7 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
   }
 
   const { totalCount, items: rawItems } = await fetchG2B(
-    'BidPublicInfoService05',
+    'ad/BidPublicInfoService',
     operation,
     queryParams,
   );
@@ -238,20 +252,20 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
       bidNtceNo: String(item.bidNtceNo || ''),
       bidNtceNm: String(item.bidNtceNm || ''),
       ntceInsttNm: String(item.ntceInsttNm || ''),
-      demandInsttNm: String(item.dminsttNm || item.demandInsttNm || ''),
+      demandInsttNm: String(item.dminsttNm || ''),
       bidNtceDt: String(item.bidNtceDt || ''),
       bidClseDt,
       presmptPrce,
-      bidNtceUrl: `https://www.g2b.go.kr:8081/ep/invitation/publish/bidInfoDtl.do?bidno=${item.bidNtceNo}`,
-      bidMethdNm: String(item.bidMethdNm || ''),
+      bidNtceUrl: String(item.bidNtceDtlUrl || item.bidNtceUrl || `https://www.g2b.go.kr:8081/ep/invitation/publish/bidInfoDtl.do?bidno=${item.bidNtceNo}`),
+      bidMethdNm: String(item.cntrctCnclsMthdNm || item.bidMethdNm || ''),
       sucsfbidMthdNm: String(item.sucsfbidMthdNm || ''),
       ntceKindNm: String(item.ntceKindNm || ''),
-      region: extractRegion(String(item.ntceInsttNm || '')),
+      region: extractRegion(String(item.dminsttNm || item.ntceInsttNm || '')),
       daysRemaining,
     };
   });
 
-  // 금액 필터 (프론트에서 만원 단위로 입력)
+  // 금액 필터 (프론트에서 만원 단위 입력)
   let filtered = items;
   if (params.minAmount) {
     const minWon = params.minAmount * 10000;
@@ -284,7 +298,7 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
 }
 
 // ─────────────────────────────────────────
-// 2. 사전규격 검색 (PrcureReqsInfoService01)
+// 2. 사전규격 검색 (별도 활용신청 필요)
 // ─────────────────────────────────────────
 
 export async function searchPreSpecs(params: {
@@ -292,6 +306,8 @@ export async function searchPreSpecs(params: {
   pageNo?: number;
   numOfRows?: number;
 }): Promise<PreSpecAnalysis> {
+  // 사전규격정보서비스는 별도 활용신청 필요
+  // 공공데이터포털: https://www.data.go.kr/data/15129437/openapi.do
   const today = new Date();
   const defaultStart = new Date(today.getTime() - 60 * 24 * 60 * 60 * 1000);
 
@@ -307,42 +323,65 @@ export async function searchPreSpecs(params: {
     queryParams.prcureReqstNm = params.keyword;
   }
 
-  const { totalCount, items: rawItems } = await fetchG2B(
-    'PrcureReqsInfoService01',
-    'getPreStndrdPrcureInfoPPSSrch01',
-    queryParams,
+  // 여러 경로 시도 (서비스 경로가 변경될 수 있음)
+  const servicePaths = [
+    'ao/PrcureReqsInfoService',
+    'ad/PrcureReqsInfoService',
+    'PrcureReqsInfoService',
+  ];
+  const operations = [
+    'getPreSpcListInfoServc',
+    'getPrcureReqsListInfoServc',
+  ];
+
+  let lastError: Error | null = null;
+  for (const sp of servicePaths) {
+    for (const op of operations) {
+      try {
+        const { totalCount, items: rawItems } = await fetchG2B(sp, op, queryParams);
+
+        const items: PreSpecItem[] = rawItems.map((item) => {
+          const opninCloseDate = parseDateString(String(item.opninRgstClseDt || ''));
+          const daysRemaining = opninCloseDate
+            ? Math.ceil((opninCloseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            : -1;
+
+          return {
+            prcureReqstNo: String(item.prcureReqstNo || item.preStdRegNo || ''),
+            prcureReqstNm: String(item.prcureReqstNm || item.prdctNm || ''),
+            rlDminsttNm: String(item.rlDminsttNm || item.dminsttNm || ''),
+            rgstDt: String(item.rgstDt || ''),
+            opninRgstClseDt: String(item.opninRgstClseDt || ''),
+            prcureReqstUrl: `https://www.g2b.go.kr:8081/ep/preparation/prestd/preStdDtl.do?preStdRegNo=${item.prcureReqstNo || item.preStdRegNo || ''}`,
+            asignBdgtAmt: Number(item.asignBdgtAmt) || 0,
+            daysRemaining,
+          };
+        });
+
+        const budgets = items.map((i) => i.asignBdgtAmt).filter((a) => a > 0);
+        return {
+          items,
+          totalCount,
+          summary: {
+            avgBudget: budgets.length > 0 ? Math.round(budgets.reduce((a, b) => a + b, 0) / budgets.length) : 0,
+            totalBudget: budgets.reduce((a, b) => a + b, 0),
+          },
+        };
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        continue;
+      }
+    }
+  }
+
+  throw new Error(
+    '사전규격정보서비스에 접근할 수 없습니다. 공공데이터포털(data.go.kr)에서 "나라장터 사전규격정보서비스" 활용신청이 필요합니다. ' +
+    `(${lastError?.message || '알 수 없는 오류'})`,
   );
-
-  const items: PreSpecItem[] = rawItems.map((item) => {
-    const opninCloseDate = parseDateString(String(item.opninRgstClseDt || ''));
-    const daysRemaining = opninCloseDate
-      ? Math.ceil((opninCloseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-      : -1;
-
-    return {
-      prcureReqstNo: String(item.prcureReqstNo || ''),
-      prcureReqstNm: String(item.prcureReqstNm || ''),
-      rlDminsttNm: String(item.rlDminsttNm || item.dminsttNm || ''),
-      rgstDt: String(item.rgstDt || ''),
-      opninRgstClseDt: String(item.opninRgstClseDt || ''),
-      refNo: String(item.refNo || ''),
-      prcureReqstUrl: `https://www.g2b.go.kr:8081/ep/preparation/prestd/preStdDtl.do?preStdRegNo=${item.prcureReqstNo}`,
-      asignBdgtAmt: Number(item.asignBdgtAmt) || 0,
-      daysRemaining,
-    };
-  });
-
-  const budgets = items.map((i) => i.asignBdgtAmt).filter((a) => a > 0);
-  const summary = {
-    avgBudget: budgets.length > 0 ? Math.round(budgets.reduce((a, b) => a + b, 0) / budgets.length) : 0,
-    totalBudget: budgets.reduce((a, b) => a + b, 0),
-  };
-
-  return { items, totalCount, summary };
 }
 
 // ─────────────────────────────────────────
-// 3. 낙찰정보 검색 (ScsbidInfoService04)
+// 3. 낙찰정보 검색 (as/ScsbidInfoService)
 // ─────────────────────────────────────────
 
 export async function searchWinningBids(params: {
@@ -351,19 +390,20 @@ export async function searchWinningBids(params: {
   pageNo?: number;
   numOfRows?: number;
 }): Promise<WinningBidAnalysis> {
-  const endpointMap: Record<string, string> = {
-    goods: 'getScsbidListSrchThng04',
-    construction: 'getScsbidListSrchCnstwk04',
-    service: 'getScsbidListSrchServc04',
+  const operationMap: Record<string, string> = {
+    goods: 'getScsbidListSttusThng',
+    construction: 'getScsbidListSttusCnstwk',
+    service: 'getScsbidListSttusServc',
   };
 
-  const operation = endpointMap[params.bidType || 'service'];
+  const operation = operationMap[params.bidType || 'service'];
   const today = new Date();
   const defaultStart = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
 
   const queryParams: Record<string, string> = {
     pageNo: String(params.pageNo || 1),
     numOfRows: String(params.numOfRows || 20),
+    inqryDiv: '1',
     inqryBgnDt: formatDate(defaultStart) + '0000',
     inqryEndDt: formatDate(today) + '2359',
     type: 'json',
@@ -374,27 +414,26 @@ export async function searchWinningBids(params: {
   }
 
   const { totalCount, items: rawItems } = await fetchG2B(
-    'ScsbidInfoService04',
+    'as/ScsbidInfoService',
     operation,
     queryParams,
   );
 
   const items: WinningBidItem[] = rawItems.map((item) => {
     const sucsfbidAmt = Number(item.sucsfbidAmt) || 0;
-    const presmptPrce = Number(item.presmptPrce) || Number(item.bsisAmt) || 0;
-    const sucsfbidRate = presmptPrce > 0
-      ? Math.round((sucsfbidAmt / presmptPrce) * 10000) / 100
-      : 0;
+    // API가 낙찰률을 직접 제공 (예: "90" = 90%)
+    const sucsfbidRate = Number(item.sucsfbidRate) || 0;
 
     return {
       bidNtceNo: String(item.bidNtceNo || ''),
       bidNtceNm: String(item.bidNtceNm || ''),
-      ntceInsttNm: String(item.ntceInsttNm || item.dminsttNm || ''),
+      ntceInsttNm: String(item.dminsttNm || ''),
       sucsfbidAmt,
       sucsfbidRate,
-      sucsfbidCorpNm: String(item.sucsfbidCorpNm || item.bidwnnrNm || ''),
-      presmptPrce,
-      opengDt: String(item.opengDt || ''),
+      sucsfbidCorpNm: String(item.bidwinnrNm || ''),
+      presmptPrce: Number(item.presmptPrce) || 0,
+      opengDt: String(item.rlOpengDt || item.opengDt || ''),
+      prtcptCnum: Number(item.prtcptCnum) || 0,
       bidMethdNm: String(item.bidMethdNm || ''),
       sucsfbidMthdNm: String(item.sucsfbidMthdNm || ''),
     };
@@ -407,7 +446,7 @@ export async function searchWinningBids(params: {
   // 낙찰방식별 평균 낙찰률
   const byMethod: Record<string, { count: number; avgRate: number }> = {};
   for (const item of items) {
-    const method = item.sucsfbidMthdNm || '기타';
+    const method = item.sucsfbidMthdNm || item.bidMethdNm || '기타';
     if (!byMethod[method]) byMethod[method] = { count: 0, avgRate: 0 };
     byMethod[method].count++;
     if (item.sucsfbidRate > 0 && item.sucsfbidRate < 200) {
@@ -416,7 +455,8 @@ export async function searchWinningBids(params: {
   }
   for (const method of Object.keys(byMethod)) {
     if (byMethod[method].count > 0) {
-      byMethod[method].avgRate = Math.round((byMethod[method].avgRate / byMethod[method].count) * 100) / 100;
+      byMethod[method].avgRate =
+        Math.round((byMethod[method].avgRate / byMethod[method].count) * 100) / 100;
     }
   }
 
