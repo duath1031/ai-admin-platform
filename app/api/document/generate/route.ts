@@ -23,6 +23,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { generateDocx, validateFormData, FormData } from "@/lib/document/generator";
 import { FORM_TEMPLATES } from "@/lib/document/templates";
+import prisma from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,26 +49,33 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 템플릿 확인
+    // 템플릿 확인 (레거시 또는 DB)
     const template = FORM_TEMPLATES[templateKey];
     if (!template) {
-      return NextResponse.json(
-        { success: false, error: `템플릿을 찾을 수 없습니다: ${templateKey}` },
-        { status: 404 }
-      );
-    }
-
-    // 필수 필드 검증
-    const validation = validateFormData(template, formData as FormData);
-    if (!validation.valid) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "필수 항목이 누락되었습니다.",
-          missingFields: validation.missingFields,
-        },
-        { status: 400 }
-      );
+      // DB 템플릿 확인
+      const dbTemplate = await prisma.formTemplate.findUnique({
+        where: { code: templateKey },
+      });
+      if (!dbTemplate || dbTemplate.status !== "active") {
+        return NextResponse.json(
+          { success: false, error: `템플릿을 찾을 수 없습니다: ${templateKey}` },
+          { status: 404 }
+        );
+      }
+      // DB 템플릿은 generator.ts 내부에서 검증하므로 바로 생성 진행
+    } else {
+      // 레거시 템플릿 필수 필드 검증
+      const validation = validateFormData(template, formData as FormData);
+      if (!validation.valid) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "필수 항목이 누락되었습니다.",
+            missingFields: validation.missingFields,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     console.log(`[Document Generate] Template: ${templateKey}, User: ${session?.user?.email || "anonymous"}`);
@@ -121,8 +129,8 @@ export async function GET(req: NextRequest) {
     const templateKey = searchParams.get("templateKey");
 
     if (!templateKey) {
-      // 전체 템플릿 목록 반환
-      const templates = Object.entries(FORM_TEMPLATES).map(([key, template]) => ({
+      // 레거시 템플릿 목록
+      const legacyTemplates = Object.entries(FORM_TEMPLATES).map(([key, template]) => ({
         key,
         id: template.id,
         name: template.name,
@@ -130,30 +138,93 @@ export async function GET(req: NextRequest) {
         description: template.description,
         fieldCount: template.fields.length,
         requiredFieldCount: template.fields.filter((f) => f.required).length,
+        source: "legacy" as const,
       }));
+
+      // DB 템플릿 목록
+      let dbTemplates: Array<{
+        key: string;
+        id: string;
+        name: string;
+        category: string;
+        description: string;
+        fieldCount: number;
+        requiredFieldCount: number;
+        source: string;
+      }> = [];
+      try {
+        const dbResults = await prisma.formTemplate.findMany({
+          where: { status: "active" },
+          orderBy: { name: "asc" },
+        });
+        dbTemplates = dbResults.map((t) => {
+          const fields = JSON.parse(t.fields);
+          return {
+            key: t.code,
+            id: t.id,
+            name: t.name,
+            category: t.category,
+            description: t.description || "",
+            fieldCount: fields.length,
+            requiredFieldCount: fields.filter((f: { required?: boolean }) => f.required).length,
+            source: "db" as const,
+          };
+        });
+      } catch (e) {
+        console.warn("[Document Generate GET] DB 조회 실패:", e);
+      }
+
+      // DB 템플릿이 레거시를 override (같은 code)
+      const dbCodes = new Set(dbTemplates.map((t) => t.key));
+      const merged = [
+        ...dbTemplates,
+        ...legacyTemplates.filter((t) => !dbCodes.has(t.key)),
+      ];
 
       return NextResponse.json({
         success: true,
-        templates,
+        templates: merged,
       });
     }
 
     // 특정 템플릿 상세 정보
     const template = FORM_TEMPLATES[templateKey];
-    if (!template) {
-      return NextResponse.json(
-        { success: false, error: `템플릿을 찾을 수 없습니다: ${templateKey}` },
-        { status: 404 }
-      );
+    if (template) {
+      return NextResponse.json({
+        success: true,
+        template: { key: templateKey, ...template, source: "legacy" },
+      });
     }
 
-    return NextResponse.json({
-      success: true,
-      template: {
-        key: templateKey,
-        ...template,
-      },
-    });
+    // DB 템플릿 fallback
+    try {
+      const dbTemplate = await prisma.formTemplate.findUnique({
+        where: { code: templateKey },
+      });
+      if (dbTemplate && dbTemplate.status === "active") {
+        return NextResponse.json({
+          success: true,
+          template: {
+            key: dbTemplate.code,
+            id: dbTemplate.id,
+            name: dbTemplate.name,
+            category: dbTemplate.category,
+            description: dbTemplate.description,
+            fields: JSON.parse(dbTemplate.fields),
+            gov24ServiceKey: dbTemplate.gov24ServiceKey,
+            outputFileName: dbTemplate.outputFileName,
+            source: "db",
+          },
+        });
+      }
+    } catch (e) {
+      console.warn("[Document Generate GET] DB 조회 실패:", e);
+    }
+
+    return NextResponse.json(
+      { success: false, error: `템플릿을 찾을 수 없습니다: ${templateKey}` },
+      { status: 404 }
+    );
   } catch (error) {
     console.error("[Document Generate GET] Error:", error);
     return NextResponse.json(

@@ -68,3 +68,40 @@ export async function readFromSupabase(storagePath: string): Promise<Buffer> {
 
   return Buffer.from(await data.arrayBuffer());
 }
+
+// ============= Templates Bucket =============
+const TEMPLATES_BUCKET = "templates";
+
+/**
+ * 템플릿 파일을 Supabase Storage에 업로드
+ */
+export async function saveTemplateToSupabase(
+  fileBuffer: Buffer,
+  fileName: string,
+  mimeType: string
+): Promise<{ storagePath: string; storageProvider: string }> {
+  const supabase = getClient();
+  const uuid = randomUUID();
+  const storagePath = `${uuid}/${fileName}`;
+
+  const { error } = await supabase.storage
+    .from(TEMPLATES_BUCKET)
+    .upload(storagePath, fileBuffer, {
+      contentType: mimeType,
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`템플릿 Storage 업로드 실패: ${error.message}`);
+  }
+
+  console.log(`[Storage] 템플릿 저장 완료: ${TEMPLATES_BUCKET}/${storagePath}`);
+  return { storagePath: `${TEMPLATES_BUCKET}/${storagePath}`, storageProvider: "supabase" };
+}
+
+/**
+ * Supabase Storage에서 템플릿 파일 다운로드
+ */
+export async function readTemplateFromSupabase(storagePath: string): Promise<Buffer> {
+  return readFromSupabase(storagePath);
+}

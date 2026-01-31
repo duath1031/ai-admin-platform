@@ -20,6 +20,10 @@ const {
   submitGov24Service,
 } = require('./gov24Logic');
 
+// BullMQ 큐 시스템
+const { addJob, getJobStatus, isQueueAvailable } = require('./src/queue');
+const { startWorker, stopWorker } = require('./src/queueWorker');
+
 // RAG 라우터
 const ragRoutes = require('./routes/rag');
 
@@ -80,8 +84,9 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '1.1.0',
-    features: ['gov24-rpa', 'rag-pipeline'],
+    version: '1.2.0',
+    features: ['gov24-rpa', 'rag-pipeline', 'bullmq-queue', 'stealth-browser'],
+    queue: isQueueAvailable() ? 'connected' : 'direct-mode',
   });
 });
 
@@ -344,16 +349,48 @@ app.get('/screenshots/:filename', validateApiKey, (req, res) => {
  * 작업 상태 조회 (향후 확장용)
  * GET /tasks/:taskId
  */
-app.get('/tasks/:taskId', validateApiKey, (req, res) => {
+app.get('/tasks/:taskId', validateApiKey, async (req, res) => {
   const { taskId } = req.params;
 
-  // TODO: Redis나 DB에서 작업 상태 조회
+  // BullMQ 큐에서 작업 상태 조회
+  const jobStatus = await getJobStatus(taskId);
+  if (jobStatus) {
+    return res.json({ success: true, ...jobStatus });
+  }
+
   res.json({
     success: true,
     taskId,
     status: 'unknown',
-    message: 'Task status tracking not implemented yet',
+    message: 'Task not found in queue',
   });
+});
+
+/**
+ * 큐에 작업 등록 (비동기 처리)
+ * POST /queue/add
+ */
+app.post('/queue/add', validateApiKey, async (req, res) => {
+  const { taskType, taskData } = req.body;
+
+  if (!taskType) {
+    return res.status(400).json({ success: false, error: 'taskType is required' });
+  }
+
+  if (!isQueueAvailable()) {
+    return res.status(503).json({
+      success: false,
+      error: 'Queue unavailable (Redis not connected). Use /execute-task for direct execution.',
+    });
+  }
+
+  try {
+    const result = await addJob(taskType, taskData);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('[Queue Add] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // =============================================================================
@@ -385,7 +422,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log('='.repeat(60));
-  console.log('RPA Worker Server');
+  console.log('RPA Worker Server v1.2.0');
   console.log('='.repeat(60));
   console.log(`Port: ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -397,16 +434,27 @@ app.listen(PORT, () => {
   console.log('[ENV] SUPABASE_DATABASE_URL:', process.env.SUPABASE_DATABASE_URL ? 'SET' : 'NOT SET');
   console.log('[ENV] GOOGLE_AI_API_KEY:', process.env.GOOGLE_AI_API_KEY ? 'SET' : 'NOT SET');
   console.log('[ENV] WORKER_API_KEY:', process.env.WORKER_API_KEY ? 'SET' : 'NOT SET');
+  console.log('[ENV] REDIS_URL:', process.env.REDIS_URL ? 'SET' : 'NOT SET (local fallback)');
   console.log('='.repeat(60));
+
+  // BullMQ Worker 시작
+  const worker = startWorker();
+  if (worker) {
+    console.log('[Server] BullMQ Worker 활성화');
+  } else {
+    console.log('[Server] BullMQ Worker 비활성화 (직접 실행 모드)');
+  }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('[Server] Received SIGTERM, shutting down gracefully');
+  stopWorker();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   console.log('[Server] Received SIGINT, shutting down gracefully');
+  stopWorker();
   process.exit(0);
 });

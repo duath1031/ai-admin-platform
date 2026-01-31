@@ -1,6 +1,6 @@
 {
   "name": "rpa-worker",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "RPA Worker Server for 정부24 자동화 & RAG 파이프라인 - Super Admini Platform",
   "main": "server.js",
   "scripts": {
@@ -21,7 +21,11 @@
     "playwright": "^1.50.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.3.2",
+    "ghost-cursor-playwright": "^2.1.0",
+    "tesseract.js": "^5.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

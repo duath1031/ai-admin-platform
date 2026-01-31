@@ -58,26 +58,28 @@ export interface TemplateField {
  * DOCX 문서 생성 메인 함수
  * @param templateCode - 템플릿 코드 (예: MAIL_ORDER_SALES)
  * @param data - 치환할 데이터
+ * @param templateBuffer - 직접 전달할 DOCX Buffer (DB 템플릿용, 선택)
  * @returns 생성된 DOCX 바이너리
  */
 export async function generateDocx(
   templateCode: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  templateBuffer?: Buffer
 ): Promise<DocxGenerationResult> {
   const startTime = Date.now();
 
   try {
-    // 1. 템플릿 파일 경로 확인
-    const templatePath = path.join(TEMPLATES_DIR, `${templateCode}.docx`);
-
-    let templateBuffer: Buffer;
-    try {
-      templateBuffer = await fs.readFile(templatePath);
-    } catch (error) {
-      return {
-        success: false,
-        error: `템플릿을 찾을 수 없습니다: ${templateCode}.docx`,
-      };
+    // 1. 템플릿 파일 로드: Buffer 직접 전달 또는 파일시스템
+    if (!templateBuffer) {
+      const templatePath = path.join(TEMPLATES_DIR, `${templateCode}.docx`);
+      try {
+        templateBuffer = await fs.readFile(templatePath);
+      } catch (error) {
+        return {
+          success: false,
+          error: `템플릿을 찾을 수 없습니다: ${templateCode}.docx`,
+        };
+      }
     }
 
     // 2. 데이터 전처리 (날짜, 숫자 포맷팅 등)

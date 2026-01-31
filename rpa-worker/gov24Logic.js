@@ -12,12 +12,15 @@
  * - 개인정보 처리 시 보안 유의
  */
 
-const { chromium } = require('playwright');
-const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-
-// 스크린샷 저장 경로
-const SCREENSHOT_DIR = process.env.SCREENSHOT_DIR || '/app/screenshots';
+const {
+  launchStealthBrowser,
+  humanClick,
+  humanDelay,
+  saveScreenshot: stealthScreenshot,
+} = require('./src/stealthBrowser');
+const { secureInput, secureSelect } = require('./src/inputHelper');
+const { typeOnKeypad } = require('./src/keypadSolver');
 
 // 타임아웃 설정
 const TIMEOUTS = {
@@ -28,71 +31,10 @@ const TIMEOUTS = {
 };
 
 /**
- * 스크린샷 저장 헬퍼
+ * 스크린샷 저장 (stealthBrowser 위임)
  */
 async function saveScreenshot(page, prefix = 'screenshot') {
-  const filename = `${prefix}_${Date.now()}.png`;
-  const filepath = path.join(SCREENSHOT_DIR, filename);
-  try {
-    await page.screenshot({ path: filepath, fullPage: true });
-    console.log(`[Screenshot] Saved: ${filepath}`);
-    return filepath;
-  } catch (error) {
-    console.error('[Screenshot] Failed:', error.message);
-    return null;
-  }
-}
-
-/**
- * 브라우저 설정 옵션
- */
-function getBrowserOptions() {
-  return {
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu',
-      '--window-size=1920,1080',
-      '--disable-blink-features=AutomationControlled',
-    ],
-  };
-}
-
-/**
- * Stealth 모드 적용 (봇 감지 우회)
- */
-async function applyStealthMode(context) {
-  await context.addInitScript(() => {
-    // Navigator webdriver 프로퍼티 숨기기
-    Object.defineProperty(navigator, 'webdriver', {
-      get: () => undefined,
-    });
-
-    // Chrome 프로퍼티 추가
-    window.chrome = {
-      runtime: {},
-    };
-
-    // Permissions 쿼리 오버라이드
-    const originalQuery = window.navigator.permissions.query;
-    window.navigator.permissions.query = (parameters) =>
-      parameters.name === 'notifications'
-        ? Promise.resolve({ state: Notification.permission })
-        : originalQuery(parameters);
-
-    // 플러그인 배열 수정
-    Object.defineProperty(navigator, 'plugins', {
-      get: () => [1, 2, 3, 4, 5],
-    });
-
-    // 언어 설정
-    Object.defineProperty(navigator, 'languages', {
-      get: () => ['ko-KR', 'ko', 'en-US', 'en'],
-    });
-  });
+  return stealthScreenshot(page, prefix);
 }
 
 /**
@@ -120,19 +62,14 @@ async function requestGov24Auth(params) {
   };
 
   try {
-    log('init', '브라우저 시작');
+    log('init', '스텔스 브라우저 시작');
 
-    // 브라우저 시작
-    browser = await chromium.launch(getBrowserOptions());
-    context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      locale: 'ko-KR',
-      timezoneId: 'Asia/Seoul',
-    });
-
-    // Stealth 모드 적용
-    await applyStealthMode(context);
+    // 스텔스 브라우저 시작 (ghost-cursor + stealth plugin)
+    const stealth = await launchStealthBrowser();
+    browser = stealth.browser;
+    context = stealth.context;
+    const page = stealth.page;
+    const cursor = stealth.cursor;
 
     // 다이얼로그 자동 수락
     context.on('dialog', async (dialog) => {
@@ -140,9 +77,8 @@ async function requestGov24Auth(params) {
       await dialog.accept();
     });
 
-    const page = await context.newPage();
-
     log('navigate', '정부24 로그인 페이지 이동');
+    await humanDelay(300, 800);
 
     // 정부24 로그인 페이지 접속
     await page.goto('https://www.gov.kr/nlogin/login', {
@@ -153,13 +89,11 @@ async function requestGov24Auth(params) {
     await saveScreenshot(page, `${taskId}_01_login_page`);
 
     log('tab', '간편인증 탭 클릭');
+    await humanDelay(500, 1200);
 
-    // 간편인증 탭 클릭 (탭 메뉴에서 선택)
-    const simpleAuthTab = await page.locator('text=간편인증').first();
-    if (await simpleAuthTab.isVisible()) {
-      await simpleAuthTab.click();
-      await page.waitForTimeout(1000);
-    }
+    // 간편인증 탭 클릭 (ghost-cursor 사용)
+    await humanClick(page, cursor, 'text=간편인증');
+    await humanDelay(800, 1500);
 
     await saveScreenshot(page, `${taskId}_02_simple_auth_tab`);
 
@@ -174,55 +108,52 @@ async function requestGov24Auth(params) {
     };
 
     const authMethodText = authMethodMap[authMethod] || 'PASS';
-    const authButton = await page.locator(`text=${authMethodText}`).first();
-    if (await authButton.isVisible()) {
-      await authButton.click();
-      await page.waitForTimeout(1000);
-    }
+    await humanClick(page, cursor, `text=${authMethodText}`);
+    await humanDelay(800, 1500);
 
-    log('input', '개인정보 입력');
+    log('input', '개인정보 입력 (보호 우회)');
 
     // iframe 내부 처리 (정부24 로그인은 iframe 사용)
-    const frameLocator = page.frameLocator('iframe').first();
-    const mainFrame = frameLocator || page;
-
-    // 이름 입력
-    const nameInput = await mainFrame.locator('input[name*="name"], input[placeholder*="이름"]').first();
-    if (await nameInput.isVisible()) {
-      await nameInput.fill(name);
+    let targetPage = page;
+    try {
+      const frame = page.frameLocator('iframe').first();
+      // iframe 존재 확인
+      const frameElement = await page.locator('iframe').first();
+      if (await frameElement.isVisible({ timeout: 3000 }).catch(() => false)) {
+        targetPage = frame;
+        log('iframe', 'iframe 감지 → 프레임 내부 처리');
+      }
+    } catch {
+      log('iframe', 'iframe 없음 → 메인 페이지 처리');
     }
+
+    // 이름 입력 (secureInput 사용)
+    await secureInput(page, 'input[name*="name"], input[placeholder*="이름"]', name);
+    await humanDelay(300, 700);
 
     // 생년월일 입력
-    const birthInput = await mainFrame.locator('input[name*="birth"], input[placeholder*="생년월일"]').first();
-    if (await birthInput.isVisible()) {
-      await birthInput.fill(birthDate);
-    }
+    await secureInput(page, 'input[name*="birth"], input[placeholder*="생년월일"]', birthDate);
+    await humanDelay(300, 700);
 
     // 전화번호 입력
-    const phoneInput = await mainFrame.locator('input[name*="phone"], input[name*="mobile"], input[placeholder*="휴대폰"]').first();
-    if (await phoneInput.isVisible()) {
-      await phoneInput.fill(phoneNumber);
-    }
+    await secureInput(page, 'input[name*="phone"], input[name*="mobile"], input[placeholder*="휴대폰"]', phoneNumber);
+    await humanDelay(300, 700);
 
     // 통신사 선택
     if (carrier) {
-      const carrierSelect = await mainFrame.locator('select[name*="carrier"], select[name*="telecom"]').first();
-      if (await carrierSelect.isVisible()) {
-        await carrierSelect.selectOption({ label: carrier });
-      }
+      await secureSelect(page, 'select[name*="carrier"], select[name*="telecom"]', carrier);
+      await humanDelay(300, 700);
     }
 
     await saveScreenshot(page, `${taskId}_03_input_complete`);
 
     log('request', '인증 요청 버튼 클릭');
+    await humanDelay(500, 1000);
 
-    // 인증 요청 버튼 클릭
-    const requestButton = await mainFrame.locator('button:has-text("인증 요청"), button:has-text("인증요청"), button:has-text("본인확인")').first();
-    if (await requestButton.isVisible()) {
-      await requestButton.click();
-    }
+    // 인증 요청 버튼 클릭 (ghost-cursor 사용)
+    await humanClick(page, cursor, 'button:has-text("인증 요청"), button:has-text("인증요청"), button:has-text("본인확인")');
 
-    await page.waitForTimeout(2000);
+    await humanDelay(1500, 2500);
     await saveScreenshot(page, `${taskId}_04_auth_requested`);
 
     log('success', '인증 요청 완료 - 사용자 앱 인증 대기');
@@ -292,18 +223,14 @@ async function confirmGov24Auth(params) {
   };
 
   try {
-    log('init', '인증 확인 시작');
+    log('init', '인증 확인 시작 (스텔스 모드)');
 
-    // 새 브라우저 세션 시작 (실제로는 세션 풀에서 가져와야 함)
-    browser = await chromium.launch(getBrowserOptions());
-    context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      locale: 'ko-KR',
-    });
-
-    await applyStealthMode(context);
-    const page = await context.newPage();
+    // 스텔스 브라우저 시작
+    const stealth = await launchStealthBrowser();
+    browser = stealth.browser;
+    context = stealth.context;
+    const page = stealth.page;
+    const cursor = stealth.cursor;
 
     // 정부24 메인 페이지로 이동하여 로그인 상태 확인
     await page.goto('https://www.gov.kr', {
@@ -328,8 +255,8 @@ async function confirmGov24Auth(params) {
       // 인증 완료 버튼 확인
       const confirmButton = await page.locator('button:has-text("인증 완료"), button:has-text("확인")').first();
       if (await confirmButton.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await confirmButton.click();
-        await page.waitForTimeout(2000);
+        await humanClick(page, cursor, 'button:has-text("인증 완료"), button:has-text("확인")');
+        await humanDelay(1500, 2500);
       }
 
       log('polling', '인증 대기 중...');
@@ -408,14 +335,12 @@ async function submitGov24Service(params) {
   };
 
   try {
-    log('init', '민원 제출 시작');
+    log('init', '민원 제출 시작 (스텔스 모드)');
 
-    browser = await chromium.launch(getBrowserOptions());
-    context = await browser.newContext({
-      viewport: { width: 1920, height: 1080 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      locale: 'ko-KR',
-    });
+    // 스텔스 브라우저 시작
+    const stealth = await launchStealthBrowser();
+    browser = stealth.browser;
+    context = stealth.context;
 
     // 쿠키 설정
     if (cookies && cookies.length > 0) {
@@ -423,8 +348,8 @@ async function submitGov24Service(params) {
       log('cookie', '세션 쿠키 설정 완료');
     }
 
-    await applyStealthMode(context);
-    const page = await context.newPage();
+    const page = stealth.page;
+    const cursor = stealth.cursor;
 
     log('navigate', `민원 서비스 페이지 이동: ${serviceCode}`);
 
@@ -437,39 +362,38 @@ async function submitGov24Service(params) {
     await saveScreenshot(page, `${taskId}_service_page`);
 
     log('apply', '신청 버튼 클릭');
+    await humanDelay(500, 1200);
 
-    // 신청 버튼 클릭
-    const applyButton = await page.locator('button:has-text("신청"), a:has-text("신청하기")').first();
-    if (await applyButton.isVisible()) {
-      await applyButton.click();
-      await page.waitForNavigation({ waitUntil: 'networkidle' });
-    }
+    // 신청 버튼 클릭 (ghost-cursor)
+    await humanClick(page, cursor, 'button:has-text("신청"), a:has-text("신청하기")');
+    await page.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => {});
+    await humanDelay(800, 1500);
 
-    log('fill', '신청서 작성');
+    log('fill', '신청서 작성 (보호 우회)');
 
-    // 폼 데이터 입력
+    // 폼 데이터 입력 (secureInput/secureSelect 사용)
     for (const [fieldName, value] of Object.entries(formData)) {
-      const input = await page.locator(`input[name="${fieldName}"], textarea[name="${fieldName}"], select[name="${fieldName}"]`).first();
-      if (await input.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const tagName = await input.evaluate(el => el.tagName.toLowerCase());
-        if (tagName === 'select') {
-          await input.selectOption({ label: value });
-        } else {
-          await input.fill(value);
-        }
+      const inputSelector = `input[name="${fieldName}"], textarea[name="${fieldName}"]`;
+      const selectSelector = `select[name="${fieldName}"]`;
+
+      // select 먼저 확인
+      const selectEl = await page.locator(selectSelector).first();
+      if (await selectEl.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await secureSelect(page, selectSelector, value);
+      } else {
+        await secureInput(page, inputSelector, value);
       }
+      await humanDelay(200, 500);
     }
 
     await saveScreenshot(page, `${taskId}_form_filled`);
 
     log('submit', '제출 버튼 클릭');
+    await humanDelay(800, 1500);
 
-    // 제출 버튼 클릭
-    const submitButton = await page.locator('button[type="submit"], button:has-text("제출"), button:has-text("신청")').first();
-    if (await submitButton.isVisible()) {
-      await submitButton.click();
-      await page.waitForTimeout(3000);
-    }
+    // 제출 버튼 클릭 (ghost-cursor)
+    await humanClick(page, cursor, 'button[type="submit"], button:has-text("제출"), button:has-text("신청")');
+    await humanDelay(2000, 3500);
 
     await saveScreenshot(page, `${taskId}_submitted`);
 

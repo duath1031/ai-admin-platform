@@ -41,6 +41,26 @@ async function withTimeout<T>(
 const KB_TAG_MATCH_THRESHOLD = 0.15;
 
 /**
+ * 단순 인사/잡담 감지 — 지식검색 전부 스킵
+ */
+function isSimpleGreeting(message: string): boolean {
+  const trimmed = message.trim().replace(/[.!?~]+$/, "").trim();
+  const greetings = [
+    "안녕하세요", "안녕", "하이", "헬로", "hello", "hi",
+    "감사합니다", "감사", "고맙습니다", "고마워",
+    "네", "예", "아니오", "아니요", "응", "웅",
+    "좋아", "좋아요", "알겠습니다", "알겠어요", "확인",
+    "반갑습니다", "반가워요", "처음 뵙겠습니다",
+    "수고하세요", "수고하셨습니다",
+  ];
+  if (greetings.includes(trimmed)) return true;
+  if (trimmed.length <= 5 && !/신고|신청|허가|등록|발급|조회|서류|양식|법|세무|사업|토지|건축/.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * 사용자 메시지에서 검색 키워드 추출 (경량 - AI 호출 없음)
  */
 function extractSearchKeywords(message: string): string[] {
@@ -261,6 +281,42 @@ export async function POST(req: NextRequest) {
 
     // 마지막 사용자 메시지에서 의도 파악
     const lastUserMessage = messages[messages.length - 1]?.content || "";
+
+    // =========================================================================
+    // Fast Path: 단순 인사/잡담 → 지식검색 전부 스킵, 즉시 스트리밍
+    // =========================================================================
+    if (isSimpleGreeting(lastUserMessage)) {
+      console.log(`[Chat Stream] 인사 감지 → Fast Path: "${lastUserMessage}"`);
+      let basePrompt: string;
+      try {
+        basePrompt = await getActiveSystemPrompt();
+      } catch {
+        basePrompt = "당신은 대한민국 행정업무 전문 AI 어시스턴트입니다.";
+      }
+      const greetingPrompt = basePrompt + `\n\n[중요] 사용자가 인사를 했습니다. 친절하게 인사로 답하고, "무엇을 도와드릴까요?" 정도로 안내하세요. 절대로 특정 행정 주제(농지, 비자, 세무 등)를 먼저 꺼내지 마세요.`;
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            const generator = chatWithKnowledgeStream(messages, greetingPrompt, [], 'free', false);
+            for await (const chunk of generator) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: chunk })}\n\n`));
+            }
+            controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+            controller.close();
+          } catch (error) {
+            console.error("[Chat Stream] 인사 스트리밍 오류:", error);
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: "오류가 발생했습니다." })}\n\n`));
+            controller.close();
+          }
+        },
+      });
+      return new Response(stream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
+      });
+    }
+
     const intent = detectIntent(lastUserMessage);
 
     // Multi-turn context: 마지막 메시지만으로 주소/키워드가 부족할 때 최근 3개 메시지 종합 분석
@@ -450,15 +506,11 @@ export async function POST(req: NextRequest) {
                 };
               }
             }
-            if (!bestDoc && renewedDocs.length > 0) {
-              bestDoc = {
-                title: renewedDocs[0].title,
-                filePart: { fileData: { fileUri: renewedDocs[0].fileUri, mimeType: renewedDocs[0].mimeType } },
-                score: 0.1,
-              };
-            }
+            // 매칭 없으면 문서 사용하지 않음 (엉뚱한 문서 방지)
             if (bestDoc) {
               console.log(`[Chat Stream] 갱신 fallback 성공: ${bestDoc.title}`);
+            } else {
+              console.log("[Chat Stream] 갱신 fallback: 키워드 매칭 문서 없음 - 문서 첨부 생략");
             }
           }
         } catch (renewErr) {

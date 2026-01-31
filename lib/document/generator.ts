@@ -10,6 +10,9 @@
 import { FormTemplate, FormField, FORM_TEMPLATES } from "./templates";
 import { Gov24Service, GOV24_SERVICES } from "./gov24Links";
 import { generateOfficialDocx, hasOfficialTemplate } from "./officialTemplates/generator";
+import prisma from "@/lib/prisma";
+import { readTemplateFromSupabase } from "@/lib/supabaseStorage";
+import { generateDocx as docxEngineGenerate } from "./docxEngine";
 
 // 문서 생성 결과
 export interface GeneratedDocument {
@@ -114,12 +117,64 @@ export function formatFieldValue(field: FormField, value: string | number | unde
 
 /**
  * DOCX 문서 생성 (서버사이드용)
- * 공식 양식이 있으면 공식 양식으로, 없으면 기본 테이블 형식으로 생성
+ * 1순위: DB 템플릿 (Supabase DOCX + docx-templates 치환)
+ * 2순위: 공식 양식 (officialTemplates)
+ * 3순위: 기본 테이블 형식 (fallback)
  */
 export async function generateDocx(
   templateKey: string,
   data: FormData
 ): Promise<GeneratedDocument> {
+  // --- 1순위: DB FormTemplate 조회 ---
+  try {
+    const dbTemplate = await prisma.formTemplate.findUnique({
+      where: { code: templateKey },
+    });
+
+    if (dbTemplate && dbTemplate.status === "active" && dbTemplate.docxStoragePath) {
+      console.log(`[Generator] DB 템플릿 사용: ${dbTemplate.name}`);
+
+      // Supabase에서 DOCX 다운로드
+      const docxBuffer = await readTemplateFromSupabase(dbTemplate.docxStoragePath);
+
+      // docx-templates 엔진으로 {{placeholder}} 치환
+      const result = await docxEngineGenerate(dbTemplate.code, data as Record<string, unknown>, docxBuffer);
+
+      if (result.success && result.docxData) {
+        const dbFields: FormField[] = JSON.parse(dbTemplate.fields);
+        const dbTemplateObj: FormTemplate = {
+          id: dbTemplate.id,
+          name: dbTemplate.name,
+          category: dbTemplate.category,
+          description: dbTemplate.description || "",
+          fields: dbFields,
+          outputFileName: dbTemplate.outputFileName || `${dbTemplate.name}.docx`,
+        };
+
+        const fileName = generateFileName(dbTemplateObj, data).replace(".pdf", ".docx");
+        const gov24Service = dbTemplate.gov24ServiceKey
+          ? GOV24_SERVICES[dbTemplate.gov24ServiceKey]
+          : null;
+
+        return {
+          success: true,
+          fileName,
+          fileType: "docx",
+          fileData: Buffer.from(result.docxData),
+          templateName: dbTemplate.name,
+          gov24Link: gov24Service?.applyUrl,
+          requiredDocs: dbTemplate.requiredDocs ? JSON.parse(dbTemplate.requiredDocs) : gov24Service?.requiredDocs,
+          tips: dbTemplate.tips ? JSON.parse(dbTemplate.tips) : gov24Service?.tips,
+        };
+      }
+      // docx-templates 실패 시 fallback으로 계속
+      console.warn(`[Generator] DB 템플릿 치환 실패, fallback 진행: ${result.error}`);
+    }
+  } catch (dbErr) {
+    console.warn("[Generator] DB 템플릿 조회 오류, 레거시 fallback:", dbErr);
+  }
+
+  // --- 2순위 이하: 레거시 FORM_TEMPLATES ---
   const template = FORM_TEMPLATES[templateKey];
 
   if (!template) {

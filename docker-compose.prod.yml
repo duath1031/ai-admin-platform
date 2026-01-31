@@ -6,6 +6,23 @@
 version: '3.8'
 
 services:
+  # Redis (BullMQ 큐 백엔드)
+  redis:
+    image: redis:7-alpine
+    container_name: admini-redis
+    restart: always
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Next.js App (Vercel 배포 시 불필요, 자체 호스팅용)
   app:
     image: admini/ai-admin-platform:latest
     container_name: admini-app
@@ -57,3 +74,50 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # RPA Worker (Playwright + BullMQ)
+  rpa-worker:
+    build:
+      context: ./rpa-worker
+      dockerfile: Dockerfile
+    container_name: admini-rpa-worker
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=${DATABASE_URL}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - WORKER_API_KEY=${WORKER_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - SCREENSHOT_DIR=/app/screenshots
+    ports:
+      - "3001:3001"
+    volumes:
+      - rpa_screenshots:/app/screenshots
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 8G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  redis_data:
+  rpa_screenshots:

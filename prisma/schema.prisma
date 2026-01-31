@@ -448,6 +448,40 @@ model SiteSettings {
   @@index([category])
 }
 
+model FormTemplate {
+  id                  String   @id @default(cuid())
+  code                String   @unique
+  name                String
+  category            String
+  description         String?
+
+  // 파일 저장
+  originalFileUrl     String?
+  originalFileType    String?
+  docxStoragePath     String?
+  docxStorageProvider String   @default("supabase")
+
+  // 필드 정의 (JSON string)
+  fields              String
+
+  // 메타데이터
+  gov24ServiceKey     String?
+  requiredDocs        String?
+  tips                String?
+  outputFileName      String?
+
+  // 상태
+  status              String   @default("active")
+  version             Int      @default(1)
+  uploadedBy          String?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([category])
+  @@index([status])
+}
+
 model KnowledgeDocument {
   id           String           @id @default(cuid())
   fileName     String

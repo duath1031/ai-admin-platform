@@ -7,19 +7,21 @@ FROM mcr.microsoft.com/playwright:v1.50.0-noble
 # 작업 디렉토리 설정
 WORKDIR /app
 
-# 한글 폰트 설치 (스크린샷 캡처 시 깨짐 방지)
+# 한글 폰트 + Tesseract OCR 설치
 RUN apt-get update && apt-get install -y \
     fonts-nanum \
     fonts-nanum-coding \
     fonts-nanum-extra \
     fontconfig \
+    tesseract-ocr \
+    tesseract-ocr-kor \
     && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
 # 환경변수 설정
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV CACHE_BUST=20260128_v3
+ENV CACHE_BUST=20260131_v4
 
 # package.json 복사 및 의존성 설치
 COPY package*.json ./
