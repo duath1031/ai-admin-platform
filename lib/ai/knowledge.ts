@@ -10,6 +10,7 @@
 import { GoogleAIFileManager, FileState } from "@google/generative-ai/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
+import { saveToSupabase } from "@/lib/supabaseStorage";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -207,6 +208,19 @@ export async function uploadKnowledgeDocument(
       options.title || fileName
     );
 
+    // Supabase 영구저장소에도 저장 (48시간 후 자동갱신을 위해)
+    let storagePath: string | null = null;
+    let storageProvider = "supabase";
+    try {
+      const storageResult = await saveToSupabase(fileBuffer, fileName, mimeType);
+      storagePath = storageResult.storagePath;
+      storageProvider = storageResult.storageProvider;
+      console.log(`[Knowledge] 영구저장소 저장 완료: ${storagePath}`);
+    } catch (storageError) {
+      // 영구저장 실패해도 Gemini 업로드는 성공이므로 계속 진행
+      console.warn("[Knowledge] 영구저장소 저장 실패 (Gemini 업로드는 성공):", storageError);
+    }
+
     // DB 업데이트
     await prisma.knowledgeDocument.update({
       where: { id: document.id },
@@ -215,6 +229,8 @@ export async function uploadKnowledgeDocument(
         geminiMimeType: uploadResult.mimeType,
         geminiFileName: uploadResult.name,
         geminiExpiresAt: uploadResult.expiresAt,
+        storagePath,
+        storageProvider,
         status: "completed",
       },
     });
@@ -377,6 +393,7 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       title: true,
       category: true,
       fileName: true,
+      storagePath: true,
       geminiFileUri: true,
       geminiMimeType: true,
       geminiExpiresAt: true,
@@ -399,7 +416,33 @@ export async function getActiveKnowledgeDocuments(category?: string): Promise<Ar
       continue;
     }
 
-    // TODO: Auto-Renewal 로직은 storagePath 컬럼 확인 후 재활성화
+    // 캐시 유효성 확인 (30분 버퍼)
+    if (!isGeminiCacheValid(doc.geminiExpiresAt)) {
+      // 만료됨 - storagePath가 있으면 자동 갱신 시도
+      if (doc.storagePath) {
+        console.log(`[Knowledge] 자동갱신 시도: ${doc.title}`);
+        const renewed = await renewGeminiCache({
+          id: doc.id,
+          storagePath: doc.storagePath,
+          fileName: doc.fileName,
+          title: doc.title,
+        });
+        if (renewed) {
+          activeDocuments.push({
+            id: doc.id,
+            title: doc.title || "제목 없음",
+            category: doc.category,
+            fileUri: renewed.fileUri,
+            mimeType: renewed.mimeType,
+            expiresAt: renewed.expiresAt,
+          });
+          continue;
+        }
+      }
+      console.warn(`[Knowledge] 만료 + 갱신 불가 - 건너뜀: ${doc.title}`);
+      continue;
+    }
+
     activeDocuments.push({
       id: doc.id,
       title: doc.title || "제목 없음",

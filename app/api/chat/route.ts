@@ -56,7 +56,30 @@ function extractSearchKeywords(message: string): string[] {
     "알려", "궁금", "질문", "답변", "도와", "부탁", "감사",
     "안녕", "하세요", "합니다", "입니다", "습니다", "것이",
     "수가", "방법", "절차", "과정", "필요", "서류",
+    "하려면", "뭐가", "필요해", "알려줘", "알려주세요", "주세요",
+    "있나요", "있는지", "싶습니다", "어떤가요", "할수", "해주세요",
   ]);
+
+  // 한국어 조사/어미 패턴 (단어 끝에서 제거)
+  const particleSuffixes = [
+    "하려면", "에서는", "으로는", "에서의", "으로의",
+    "에서", "에게", "한테", "으로", "부터", "까지", "에는",
+    "이란", "이라", "이요", "인가", "인지",
+    "가요", "나요", "는지", "인데", "이고",
+    "은요", "는요", "이요",
+    "가", "를", "을", "에", "의", "은", "는", "이", "와", "과",
+    "도", "만", "로", "서", "야",
+  ];
+
+  // 조사 제거 함수
+  function stripParticles(word: string): string {
+    for (const suffix of particleSuffixes) {
+      if (word.length > suffix.length + 1 && word.endsWith(suffix)) {
+        return word.slice(0, -suffix.length);
+      }
+    }
+    return word;
+  }
 
   // 메시지를 형태소 단위로 분리 (간이 토크나이저)
   const tokens = message
@@ -65,8 +88,11 @@ function extractSearchKeywords(message: string): string[] {
     .filter(t => t.length >= 2)
     .map(t => t.toLowerCase());
 
-  // 불용어 제거 후 유니크 키워드 반환
-  const keywords = tokens.filter(t => !stopWords.has(t));
+  // 불용어 제거 + 조사 제거 후 유니크 키워드 반환
+  const keywords = tokens
+    .filter(t => !stopWords.has(t))
+    .map(t => stripParticles(t))
+    .filter(t => t.length >= 2);
   return [...new Set(keywords)];
 }
 

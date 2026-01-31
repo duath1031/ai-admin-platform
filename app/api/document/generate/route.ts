@@ -16,6 +16,8 @@
  * - 실패: JSON 에러 메시지
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -80,21 +82,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 파일 응답 (파일명은 클라이언트에서 처리하므로 단순 ASCII 사용)
+    // Buffer를 정확한 바이너리로 변환 (Node.js Buffer pool 문제 방지)
+    // Buffer가 pool에서 할당되면 underlying ArrayBuffer가 더 크므로
+    // 정확한 byte range만 추출해야 DOCX ZIP 구조가 유지됨
+    const safeBuffer = Buffer.from(result.fileData);
+
     const headers = new Headers();
     headers.set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     headers.set("Content-Disposition", "attachment; filename=document.docx");
-    headers.set("Content-Length", String(result.fileData.length));
+    headers.set("Content-Length", String(safeBuffer.length));
+    headers.set("Cache-Control", "no-cache, no-store");
 
-    // 메타데이터는 클라이언트의 SolutionCard에서 템플릿 정보로 표시하므로 헤더에서 제외
-    // (HTTP 헤더는 ASCII만 허용하므로 한글 포함 시 ByteString 오류 발생)
+    console.log(`[Document Generate] Success: ${result.fileName} (${safeBuffer.length} bytes)`);
 
-    console.log(`[Document Generate] Success: ${result.fileName}`);
-
-    // Buffer를 Uint8Array로 변환 (NextResponse 호환)
-    const uint8Array = new Uint8Array(result.fileData);
-
-    return new NextResponse(uint8Array, {
+    return new NextResponse(safeBuffer, {
       status: 200,
       headers,
     });
