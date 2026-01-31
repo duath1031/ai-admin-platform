@@ -4,6 +4,8 @@
 // GET /api/rpa/civil-service - 민원 접수 목록 조회
 // =============================================================================
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';

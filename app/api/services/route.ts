@@ -9,6 +9,8 @@
  *   - hasTemplate: 템플릿 있는 서비스만
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import {
   SERVICE_REGISTRY,

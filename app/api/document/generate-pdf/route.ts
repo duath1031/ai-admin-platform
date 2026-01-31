@@ -6,6 +6,8 @@
  * 서비스 코드와 사용자 데이터를 받아 PDF 생성
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { generatePdf, loadMapping } from '@/lib/document/pdfEngine';
 

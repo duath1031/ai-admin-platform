@@ -5,6 +5,8 @@
  * DELETE /api/knowledge/[id] - 문서 삭제 (DB + Google 파일)
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";

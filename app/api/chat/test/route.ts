@@ -9,6 +9,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import prisma from "@/lib/prisma";
 
 export const maxDuration = 60; // 60초 타임아웃
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const results: Record<string, any> = {

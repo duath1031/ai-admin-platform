@@ -6,6 +6,8 @@
  * 자연어 텍스트에서 폼 데이터 추출
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 

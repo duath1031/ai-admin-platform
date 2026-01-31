@@ -4,6 +4,8 @@
  * POST /api/admin/setup-rag - 자동 설정 실행
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";

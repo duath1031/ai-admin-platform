@@ -9,6 +9,8 @@
  * 사용 가능한 템플릿 목록 조회
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import {
   generateDocx,

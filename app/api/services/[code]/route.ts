@@ -5,6 +5,8 @@
  * GET /api/services/:code - 서비스 상세 정보 조회
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import {
   getService,

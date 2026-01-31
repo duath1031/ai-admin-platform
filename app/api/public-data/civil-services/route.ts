@@ -3,6 +3,8 @@
  * Mock 데이터 포함 (API 키 미등록 시 테스트용)
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { searchCivilServices } from '@/lib/gov/publicDataService';
 

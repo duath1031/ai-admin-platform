@@ -1,6 +1,8 @@
 // 관리자용 시스템 상태 점검 API
 // API 상태, 주요 링크 유효성, 서비스 가용성 모니터링
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';

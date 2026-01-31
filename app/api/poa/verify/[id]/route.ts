@@ -3,6 +3,8 @@
 // GET /api/poa/verify/[id] - 전자위임장 유효성 검증
 // =============================================================================
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';

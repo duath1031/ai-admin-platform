@@ -4,6 +4,8 @@
 // PATCH /api/user/profile - 프로필 수정
 // =============================================================================
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';

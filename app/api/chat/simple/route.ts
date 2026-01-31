@@ -3,6 +3,8 @@
  * 에러 원인 격리를 위해 Knowledge Base만 사용
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";

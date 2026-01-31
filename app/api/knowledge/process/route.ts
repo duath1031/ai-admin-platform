@@ -9,6 +9,8 @@
  * - 청크 단위로 임베딩 생성
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";

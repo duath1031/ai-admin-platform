@@ -5,6 +5,8 @@
  * RPA Worker에서 Gemini File API로 업로드한 파일 정보를 DB에 저장
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 

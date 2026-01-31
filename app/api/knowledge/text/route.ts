@@ -9,6 +9,8 @@
  * - 청킹은 즉시, 임베딩은 백그라운드로
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";

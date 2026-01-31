@@ -4,6 +4,8 @@
  * POST /api/chat/debug - 간단한 AI 테스트
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { chatWithGemini, chatWithKnowledge, FileDataPart } from "@/lib/gemini";
 import { getActiveSystemPrompt } from "@/lib/systemPromptService";
