@@ -12,13 +12,14 @@ import { searchBusinessTypes } from "@/lib/formDatabase";
 import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawService";
 import { quickClassify } from "@/lib/rag/intentClassifier";
 // Knowledge Base - 경량 버전 사용 (서버 전용 import 제거)
-import { getKnowledgeContextFast } from "@/lib/ai/knowledgeQuery";
+import { getKnowledgeContextFast, getKnowledgeByTags } from "@/lib/ai/knowledgeQuery";
 // 문서 생성 시스템
 import { FORM_TEMPLATES, findTemplate } from "@/lib/document/templates";
 import { GOV24_SERVICES } from "@/lib/document/gov24Links";
 
 // Vercel 서버리스 함수 타임아웃 설정 (Pro: 최대 60초)
 export const maxDuration = 30; // 30초 타임아웃
+export const dynamic = 'force-dynamic';
 
 // 외부 API 타임아웃 헬퍼 함수 (기능 유지하면서 안정성 확보)
 async function withTimeout<T>(
@@ -35,68 +36,38 @@ async function withTimeout<T>(
 }
 
 // =============================================================================
-// Knowledge Base 문서 관련성 필터 (Agentic RAG)
+// Knowledge Base 문서 관련성 필터 (Smart Tag 기반 - Phase 2)
 // =============================================================================
 
-const KB_RELEVANCE_THRESHOLD = 0.2;
+const KB_TAG_MATCH_THRESHOLD = 0.15;
 
-/** 질문에서 주제 키워드 추출 */
-function extractTopicKeywords(message: string): string[] {
-  const topicMap: Record<string, string[]> = {
-    "숙박": ["숙박", "호텔", "호스텔", "모텔", "펜션", "게스트하우스", "민박", "리조트", "관광숙박"],
-    "비자": ["비자", "사증", "출입국", "체류", "외국인", "하이코리아", "영주권"],
-    "음식점": ["음식점", "식당", "카페", "휴게음식", "일반음식", "위생", "식품"],
-    "조달": ["공공조달", "조달", "입찰", "낙찰", "계약", "나라장터"],
-    "건축": ["건축", "건물", "건축물대장", "용도변경", "건폐율", "용적률"],
-    "토지": ["토지", "용도지역", "개발행위", "토지이용"],
-    "사업자": ["사업자등록", "창업", "개업", "폐업"],
-    "공장": ["공장", "제조업", "제조시설", "생산시설"],
-    "학원": ["학원", "교습소", "학원설립"],
-    "광고": ["옥외광고", "간판", "현수막", "광고물"],
-    "미용": ["미용업", "미용실", "헤어샵", "네일샵"],
-    "정책자금": ["정책자금", "중진공", "소진공", "융자", "지원금"],
-    "법인": ["법인설립", "법인", "주식회사", "유한회사"],
-    "허가": ["허가", "인허가", "신고", "등록", "면허"],
-    "공유재산": ["공유재산", "국유재산", "행정재산", "일반재산", "공공재산", "재산관리", "편람"],
-    "행정": ["행정사", "행정업무", "행정절차", "민원", "관공서"],
-  };
+/**
+ * 사용자 메시지에서 검색 키워드 추출 (경량 - AI 호출 없음)
+ * - 2글자 이상의 한국어 명사/키워드를 추출
+ * - 조사, 어미, 일반 동사 등은 제거
+ */
+function extractSearchKeywords(message: string): string[] {
+  // 불용어 (조사, 어미, 일반적 단어)
+  const stopWords = new Set([
+    "어떻게", "무엇", "언제", "어디", "왜", "얼마", "어떤",
+    "하는", "하고", "해야", "할까", "인가", "인지", "에서",
+    "으로", "에게", "한테", "부터", "까지", "대해", "대한",
+    "관련", "관해", "있는", "없는", "하려", "싶은", "원하",
+    "알려", "궁금", "질문", "답변", "도와", "부탁", "감사",
+    "안녕", "하세요", "합니다", "입니다", "습니다", "것이",
+    "수가", "방법", "절차", "과정", "필요", "서류",
+  ]);
 
-  const found: string[] = [];
-  for (const [topic, keywords] of Object.entries(topicMap)) {
-    if (keywords.some(k => message.includes(k))) {
-      found.push(topic);
-      // 매칭된 키워드도 추가
-      keywords.forEach(k => { if (message.includes(k)) found.push(k); });
-    }
-  }
-  return [...new Set(found)];
-}
+  // 메시지를 형태소 단위로 분리 (간이 토크나이저)
+  const tokens = message
+    .replace(/[?!.,;:'"()[\]{}<>~`@#$%^&*+=|\\\/]/g, " ")
+    .split(/\s+/)
+    .filter(t => t.length >= 2)
+    .map(t => t.toLowerCase());
 
-/** 문서 제목 vs 질문 키워드 매칭으로 관련성 점수 (0~1) 반환 */
-function scoreDocumentRelevance(docTitle: string, userMessage: string): number {
-  const titleLower = docTitle.toLowerCase();
-  const messageLower = userMessage.toLowerCase();
-  const topicKeywords = extractTopicKeywords(messageLower);
-
-  if (topicKeywords.length === 0) return 0;
-
-  let matchCount = 0;
-  for (const keyword of topicKeywords) {
-    if (titleLower.includes(keyword)) {
-      matchCount++;
-    }
-  }
-
-  // 직접 제목 키워드가 메시지에 포함되는지도 체크
-  const titleWords = titleLower.split(/[\s·\-_,./()]+/).filter(w => w.length >= 2);
-  for (const word of titleWords) {
-    if (messageLower.includes(word)) {
-      matchCount++;
-    }
-  }
-
-  const totalChecks = topicKeywords.length + titleWords.length;
-  return totalChecks > 0 ? matchCount / totalChecks : 0;
+  // 불용어 제거 후 유니크 키워드 반환
+  const keywords = tokens.filter(t => !stopWords.has(t));
+  return [...new Set(keywords)];
 }
 
 // 문서 생성 가능한 템플릿 매칭
@@ -368,65 +339,69 @@ export async function POST(req: NextRequest) {
       console.warn("[Chat] RAG 검색 오류 (무시하고 계속):", ragError);
     }
 
-    // Knowledge Base - Gemini File URI 방식 (Fast Path - 자동 갱신 없음)
+    // =========================================================================
+    // Knowledge Base - Smart Tag 기반 검색 (Phase 2)
+    // 하드코딩된 카테고리 감지 제거 → 태그 매칭으로 관련 문서 자동 선택
+    // =========================================================================
     let knowledgeFiles: FileDataPart[] = [];
 
     try {
-      // 카테고리 자동 감지 (질문 내용 기반)
-      let targetCategory: string | undefined;
-      if (/비자|사증|출입국|하이코리아|체류|외국인/i.test(lastUserMessage)) {
-        targetCategory = "출입국";
-      } else if (/숙박|호텔|호스텔|모텔|펜션|게스트하우스|관광숙박/i.test(lastUserMessage)) {
-        targetCategory = "관광숙박";
-      } else if (/음식점|식품|휴게음식|일반음식|위생/i.test(lastUserMessage)) {
-        targetCategory = "인허가";
-      } else if (/공공조달|조달|입찰|낙찰|계약|기업행정/i.test(lastUserMessage)) {
-        targetCategory = "기업행정";
-      }
-
-      // 카테고리 매칭되지 않으면 지식베이스 스킵 (관련 없는 문서 주입 방지)
-      if (!targetCategory) {
-        console.log("[Chat] Knowledge Base: 카테고리 매칭 없음 - 스킵");
-      }
-
-      // Fast Path: DB 쿼리만 수행 (자동 갱신 없음, 만료 문서 제외)
-      // 후보 5개까지 가져와서 관련성 필터링
-      // 3초 타임아웃 - 실패 시 빈 배열로 폴백
-      const kbResult = targetCategory ? await withTimeout(
-        getKnowledgeContextFast(targetCategory, 5),
-        3000,
-        { fileParts: [], documentTitles: [] }
-      ) : { fileParts: [], documentTitles: [] };
-
-      // KB 문서 관련성 필터링 함수
-      const findBestRelevantDoc = (fileParts: FileDataPart[], documentTitles: string[], source: string) => {
-        const scoredDocs = documentTitles.map((title, idx) => ({
-          title,
-          filePart: fileParts[idx],
-          score: scoreDocumentRelevance(title, lastUserMessage),
-        }));
-        scoredDocs.sort((a, b) => b.score - a.score);
-        console.log(`[Chat] KB 관련성 점수 (${source}): ${scoredDocs.map(d => `${d.title}=${d.score.toFixed(2)}`).join(', ')}`);
-        return scoredDocs.length > 0 && scoredDocs[0].score >= KB_RELEVANCE_THRESHOLD ? scoredDocs[0] : null;
-      };
+      // 사용자 메시지에서 검색 키워드 추출
+      const searchKeywords = extractSearchKeywords(lastUserMessage);
+      console.log(`[Chat] 검색 키워드: [${searchKeywords.join(", ")}]`);
 
       let bestDoc: { title: string; filePart: FileDataPart; score: number } | null = null;
 
-      if (kbResult.fileParts.length > 0) {
-        bestDoc = findBestRelevantDoc(kbResult.fileParts, kbResult.documentTitles, "카테고리");
+      // 1차: 태그 기반 검색 (tags 필드가 채워진 문서 대상)
+      if (searchKeywords.length > 0) {
+        const tagResult = await withTimeout(
+          getKnowledgeByTags(searchKeywords, 5),
+          3000,
+          { fileParts: [], documentTitles: [], documentTags: [], matchScores: [] }
+        );
+
+        if (tagResult.fileParts.length > 0 && tagResult.matchScores[0] >= KB_TAG_MATCH_THRESHOLD) {
+          bestDoc = {
+            title: tagResult.documentTitles[0],
+            filePart: tagResult.fileParts[0],
+            score: tagResult.matchScores[0],
+          };
+          console.log(`[Chat] 태그 매칭 성공: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
+        }
       }
 
-      // Fallback: 카테고리 검색에서 관련 문서 못 찾으면 전체 문서에서 검색
-      if (!bestDoc && extractTopicKeywords(lastUserMessage).length > 0) {
-        console.log("[Chat] KB fallback: 전체 문서에서 관련 문서 검색...");
+      // 2차 Fallback: 태그 매칭 실패 시 전체 문서에서 제목+태그 기반 검색
+      if (!bestDoc && searchKeywords.length > 0) {
+        console.log("[Chat] KB fallback: 전체 문서에서 키워드 검색...");
         try {
           const allDocsResult = await withTimeout(
             getKnowledgeContextFast(undefined, 10),
             3000,
-            { fileParts: [], documentTitles: [] }
+            { fileParts: [], documentTitles: [], documentTags: [] }
           );
+
           if (allDocsResult.fileParts.length > 0) {
-            bestDoc = findBestRelevantDoc(allDocsResult.fileParts, allDocsResult.documentTitles, "전체");
+            // 제목 + 태그 종합 매칭
+            const scored = allDocsResult.documentTitles.map((title, idx) => {
+              const titleLower = title.toLowerCase();
+              const docTags = allDocsResult.documentTags[idx] || [];
+              let matchCount = 0;
+
+              for (const kw of searchKeywords) {
+                const kwLower = kw.toLowerCase();
+                if (titleLower.includes(kwLower)) matchCount++;
+                if (docTags.some(tag => tag.toLowerCase().includes(kwLower) || kwLower.includes(tag.toLowerCase()))) matchCount++;
+              }
+
+              const score = searchKeywords.length > 0 ? matchCount / (searchKeywords.length * 2) : 0;
+              return { title, filePart: allDocsResult.fileParts[idx], score };
+            });
+
+            scored.sort((a, b) => b.score - a.score);
+            if (scored.length > 0 && scored[0].score >= KB_TAG_MATCH_THRESHOLD) {
+              bestDoc = scored[0];
+              console.log(`[Chat] Fallback 매칭: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
+            }
           }
         } catch (fallbackErr) {
           console.warn("[Chat] KB fallback 오류:", fallbackErr);

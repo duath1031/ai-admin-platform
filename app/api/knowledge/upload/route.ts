@@ -13,6 +13,8 @@
  * - 문서 전체 컨텍스트 유지 (Long Context)
  */
 
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -22,6 +24,7 @@ import {
   SUPPORTED_MIME_TYPES,
   MAX_FILE_SIZE_MB,
 } from "@/lib/ai/knowledge";
+import { extractDocumentTags } from "@/lib/ai/tagExtractor";
 
 // 관리자 이메일 목록
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").filter(Boolean);
@@ -112,19 +115,73 @@ export async function POST(req: NextRequest) {
         category: true,
         description: true,
         status: true,
+        tags: true,
         geminiFileUri: true,
+        geminiMimeType: true,
         geminiExpiresAt: true,
         processingMode: true,
         createdAt: true,
       },
     });
 
+    // =========================================================================
+    // Smart Tag Extraction - 업로드 완료 후 AI 태그 자동 추출
+    // 실패해도 업로드 자체는 성공으로 처리 (태그는 보너스)
+    // =========================================================================
+    let tagResult = null;
+    if (document?.geminiFileUri && document?.geminiMimeType) {
+      try {
+        console.log(`[Knowledge Upload] 태그 추출 시작: ${file.name}`);
+        tagResult = await extractDocumentTags(
+          document.geminiFileUri,
+          document.geminiMimeType
+        );
+
+        if (tagResult.tags.length > 0) {
+          const updateData: Record<string, unknown> = {
+            tags: JSON.stringify(tagResult.tags),
+          };
+
+          // description이 비어있으면 AI 요약으로 채움
+          if (!description && tagResult.summary) {
+            updateData.description = tagResult.summary;
+          }
+
+          // category가 지정되지 않았으면 AI 추천 카테고리 사용
+          if (!category && tagResult.suggestedCategory !== "기타") {
+            updateData.category = tagResult.suggestedCategory;
+          }
+
+          await prisma.knowledgeDocument.update({
+            where: { id: result.documentId },
+            data: updateData,
+          });
+
+          console.log(`[Knowledge Upload] 태그 저장 완료: ${tagResult.tags.length}개 태그`);
+        }
+      } catch (tagError) {
+        console.warn("[Knowledge Upload] 태그 추출 실패 (업로드는 성공):", tagError);
+      }
+    }
+
+    const tagElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
     return NextResponse.json({
       success: true,
-      message: `업로드 완료! (${elapsedTime}초)`,
-      document,
+      message: `업로드 완료! (${tagElapsed}초)${tagResult?.tags.length ? ` - ${tagResult.tags.length}개 태그 추출` : ""}`,
+      document: {
+        ...document,
+        tags: tagResult?.tags?.length ? JSON.stringify(tagResult.tags) : document?.tags,
+        description: (!description && tagResult?.summary) ? tagResult.summary : document?.description,
+        category: (!category && tagResult && tagResult.suggestedCategory !== "기타") ? tagResult.suggestedCategory : document?.category,
+      },
+      tagResult: tagResult ? {
+        tags: tagResult.tags,
+        summary: tagResult.summary,
+        suggestedCategory: tagResult.suggestedCategory,
+      } : null,
       processingMode: "gemini_file",
-      elapsedSeconds: parseFloat(elapsedTime),
+      elapsedSeconds: parseFloat(tagElapsed),
     });
   } catch (error) {
     console.error("[Knowledge Upload] Error:", error);
