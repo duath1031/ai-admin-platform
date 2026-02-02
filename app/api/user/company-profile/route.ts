@@ -27,9 +27,12 @@ export async function GET() {
       where: { userId: session.user.id },
     });
 
+    // BigInt는 JSON 직렬화가 안 되므로 Number로 변환
+    const data = profile ? { ...profile, capital: Number(profile.capital) } : null;
+
     return NextResponse.json({
       success: true,
-      data: profile,
+      data,
     });
 
   } catch (error) {
