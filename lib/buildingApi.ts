@@ -104,27 +104,65 @@ async function parseAddressToCode(address: string): Promise<AddressSearchResult>
     }
 
     const result = data.response.result;
+    const refined = data.response.refined;
 
-    // V-World 응답 유효성 검증 (.match() crash 방지)
-    if (!result?.text || !result?.point) {
-      console.warn("[BuildingAPI] V-World 응답 구조 이상:", JSON.stringify(result).substring(0, 200));
+    if (!result?.point) {
+      console.warn("[BuildingAPI] V-World 응답에 좌표 없음:", JSON.stringify(result).substring(0, 200));
       return { success: false, error: "주소 변환 결과가 올바르지 않습니다. 정확한 전체 주소(시/도 포함)를 입력해주세요." };
     }
 
-    const refinedAddr = result.text;
-
-    // 좌표로 법정동코드 조회
+    const refinedAddr = refined?.text || result.text || '';
+    const structure = refined?.structure;
     const x = parseFloat(result.point.x);
     const y = parseFloat(result.point.y);
 
+    console.log(`[BuildingAPI] 지오코딩 성공: "${refinedAddr}" (${x}, ${y})`);
+    if (structure?.level4LC) {
+      console.log(`[BuildingAPI] PNU(level4LC): ${structure.level4LC}`);
+    }
+
+    // PNU 기반 코드 추출 시도 (가장 정확한 방법)
+    // level4LC는 지번 주소일 때 19자리 PNU를 포함
+    const pnu = structure?.level4LC;
+    if (pnu && pnu.length === 19) {
+      console.log(`[BuildingAPI] PNU에서 코드 추출: ${pnu}`);
+      const sigunguCd = pnu.substring(0, 5);
+      const bjdongCd = pnu.substring(5, 10);
+      const platGbCd = pnu[10] === '2' ? '1' : '0'; // PNU: 1=대지,2=산 → API: 0=대지,1=산
+      const bun = pnu.substring(11, 15);
+      const ji = pnu.substring(15, 19);
+
+      return { success: true, sigunguCd, bjdongCd, bun, ji, platGbCd };
+    }
+
+    // PNU가 없으면 (도로명 주소 등) 연속지적도에서 PNU 조회
+    console.log("[BuildingAPI] PNU 없음, 연속지적도(LP_PA_CBND_BUBUN)에서 조회 시도...");
+    try {
+      const pnuResult = await getPnuByCoord(x, y, VWORLD_KEY);
+      if (pnuResult && pnuResult.length === 19) {
+        console.log(`[BuildingAPI] 연속지적도 PNU 추출: ${pnuResult}`);
+        const sigunguCd = pnuResult.substring(0, 5);
+        const bjdongCd = pnuResult.substring(5, 10);
+        const platGbCd = pnuResult[10] === '2' ? '1' : '0';
+        const bun = pnuResult.substring(11, 15);
+        const ji = pnuResult.substring(15, 19);
+
+        return { success: true, sigunguCd, bjdongCd, bun, ji, platGbCd };
+      }
+    } catch (pnuErr) {
+      console.warn("[BuildingAPI] 연속지적도 PNU 조회 실패:", pnuErr);
+    }
+
+    // 최후 수단: 기존 방식 (좌표로 법정동코드 + 지번 정규식 추출)
+    console.log("[BuildingAPI] PNU 방식 실패, 기존 좌표-법정동 방식 시도...");
     const codeResult = await getBjdongCodeByCoord(x, y, VWORLD_KEY);
 
     if (!codeResult.success) {
       return { success: false, error: codeResult.error };
     }
 
-    // 본번/부번 추출 (지번에서)
-    const bunjiMatch = refinedAddr.match(/(\d+)(?:-(\d+))?(?:번지)?$/);
+    // 본번/부번 추출 (refined text에서)
+    const bunjiMatch = refinedAddr.match(/(\d+)(?:-(\d+))?(?:번지)?(?:\s*\(.*\))?$/);
     const bun = bunjiMatch ? bunjiMatch[1].padStart(4, '0') : '0001';
     const ji = bunjiMatch && bunjiMatch[2] ? bunjiMatch[2].padStart(4, '0') : '0000';
 
@@ -134,12 +172,41 @@ async function parseAddressToCode(address: string): Promise<AddressSearchResult>
       bjdongCd: codeResult.bjdongCd,
       bun,
       ji,
-      platGbCd: '0', // 기본값: 대지
+      platGbCd: '0',
     };
   } catch (error: any) {
     console.error("[BuildingAPI] 주소 파싱 오류:", error);
     return { success: false, error: error.message };
   }
+}
+
+// 좌표로 PNU(필지고유번호) 조회 - 연속지적도(LP_PA_CBND_BUBUN)
+async function getPnuByCoord(x: number, y: number, apiKey: string): Promise<string | null> {
+  const dataUrl = "https://api.vworld.kr/req/data";
+  const params = new URLSearchParams({
+    service: "data",
+    request: "GetFeature",
+    data: "LP_PA_CBND_BUBUN",
+    key: apiKey,
+    format: "json",
+    geometry: "false",
+    attribute: "true",
+    crs: "EPSG:4326",
+    domain: process.env.VWORLD_DOMAIN || "localhost",
+    geomFilter: `POINT(${x} ${y})`,
+    buffer: "1",
+  });
+
+  const response = await fetch(`${dataUrl}?${params}`);
+  const data = await response.json();
+
+  if (data.response?.status === "OK") {
+    const features = data.response?.result?.featureCollection?.features || [];
+    if (features.length > 0) {
+      return features[0].properties?.pnu || null;
+    }
+  }
+  return null;
 }
 
 // 좌표로 법정동코드 조회

@@ -83,11 +83,12 @@ export async function geocodeAddress(address: string): Promise<{
 
       if (data.response?.status === "OK") {
         const result = data.response.result;
+        const refined = data.response.refined;
         return {
           success: true,
           x: parseFloat(result.point.x),
           y: parseFloat(result.point.y),
-          refinedAddress: result.text,
+          refinedAddress: refined?.text || result.text,
         };
       }
 
@@ -98,11 +99,12 @@ export async function geocodeAddress(address: string): Promise<{
 
       if (retryData.response?.status === "OK") {
         const result = retryData.response.result;
+        const refined = retryData.response.refined;
         return {
           success: true,
           x: parseFloat(result.point.x),
           y: parseFloat(result.point.y),
-          refinedAddress: result.text,
+          refinedAddress: refined?.text || result.text,
         };
       }
     }
