@@ -5,6 +5,7 @@ interface LandUseResult {
   address?: string;
   coordinates?: { x: number; y: number };
   zoneInfo?: ZoneInfo[];
+  pnu?: string;
   error?: string;
 }
 
@@ -23,6 +24,10 @@ export async function geocodeAddress(address: string): Promise<{
   error?: string;
 }> {
   try {
+    if (!address || typeof address !== 'string') {
+      return { success: false, error: "주소가 입력되지 않았습니다." };
+    }
+
     const VWORLD_KEY = process.env.VWORLD_KEY;
 
     if (!VWORLD_KEY) {
@@ -112,72 +117,108 @@ export async function geocodeAddress(address: string): Promise<{
   }
 }
 
-// 좌표로 토지이용계획 조회
-export async function getLandUseInfo(x: number, y: number): Promise<{
-  success: boolean;
-  zones?: ZoneInfo[];
-  error?: string;
-}> {
+// 용도지역 우선순위 (공업>상업>주거 순)
+const ZONE_PRIORITY: Record<string, number> = {
+  "준공업지역": 1,
+  "일반공업지역": 1,
+  "전용공업지역": 1,
+  "중심상업지역": 2,
+  "일반상업지역": 2,
+  "근린상업지역": 2,
+  "유통상업지역": 2,
+  "준주거지역": 3,
+  "제3종일반주거지역": 4,
+  "제2종일반주거지역": 5,
+  "제1종일반주거지역": 6,
+  "제2종전용주거지역": 7,
+  "제1종전용주거지역": 8,
+};
+
+// 좌표로 PNU(필지고유번호) 추출 - 연속지적도(LP_PA_CBND_BUBUN) 이용
+async function getPnuFromCoordinates(x: number, y: number, apiKey: string): Promise<string | null> {
   try {
-    const VWORLD_KEY = process.env.VWORLD_KEY;
-
-    if (!VWORLD_KEY) {
-      console.error("V-World API 키 미설정");
-      return { success: false, error: "V-World API 키가 설정되지 않았습니다. 관리자에게 문의하세요." };
-    }
-
-    // V-World 토지이용계획 데이터 조회
-    // 버퍼를 1m로 줄여서 정확한 위치의 용도지역만 조회
     const dataUrl = "https://api.vworld.kr/req/data";
     const params = new URLSearchParams({
       service: "data",
       request: "GetFeature",
-      data: "LT_C_UQ111",  // 토지이용계획 (용도지역/지구)
-      key: VWORLD_KEY,
+      data: "LP_PA_CBND_BUBUN",
+      key: apiKey,
       format: "json",
       geometry: "false",
       attribute: "true",
       crs: "EPSG:4326",
       domain: process.env.VWORLD_DOMAIN || "localhost",
       geomFilter: `POINT(${x} ${y})`,
-      buffer: "1",  // 버퍼를 1m로 최소화하여 정확한 조회
+      buffer: "1",
     });
 
-    console.log(`[V-World API] 토지이용계획 조회: (${x}, ${y})`);
+    console.log(`[V-World PNU] 연속지적도 조회: POINT(${x} ${y})`);
+    const response = await fetch(`${dataUrl}?${params}`);
+    const data = await response.json();
+
+    if (data.response?.status === "OK") {
+      const features = data.response?.result?.featureCollection?.features || [];
+      if (features.length > 0) {
+        const pnu = features[0].properties?.pnu;
+        if (pnu) {
+          console.log(`[V-World PNU] 추출 성공: ${pnu}`);
+          return pnu;
+        }
+      }
+    }
+
+    console.warn(`[V-World PNU] 조회 실패: ${data.response?.status || "UNKNOWN"}`);
+    return null;
+  } catch (error) {
+    console.error("[V-World PNU] 오류:", error);
+    return null;
+  }
+}
+
+// 단일 버퍼 크기로 LT_C_UQ111 조회
+async function queryLandUseLayer(
+  x: number, y: number, apiKey: string, buffer: number
+): Promise<ZoneInfo[]> {
+  try {
+    const dataUrl = "https://api.vworld.kr/req/data";
+    const params = new URLSearchParams({
+      service: "data",
+      request: "GetFeature",
+      data: "LT_C_UQ111",
+      key: apiKey,
+      format: "json",
+      geometry: "false",
+      attribute: "true",
+      crs: "EPSG:4326",
+      domain: process.env.VWORLD_DOMAIN || "localhost",
+      geomFilter: `POINT(${x} ${y})`,
+      buffer: String(buffer),
+    });
 
     const response = await fetch(`${dataUrl}?${params}`, {
-      headers: {
-        "Accept": "application/json",
-      },
+      headers: { "Accept": "application/json" },
     });
 
     if (!response.ok) {
-      console.error(`[V-World API] HTTP 오류: ${response.status}`);
-      return { success: false, error: `API 서버 오류 (${response.status})` };
+      console.error(`[V-World API] HTTP 오류 (buffer=${buffer}m): ${response.status}`);
+      return [];
     }
 
     const data = await response.json();
-    console.log("[V-World API] 응답:", JSON.stringify(data).substring(0, 500));
+    console.log(`[V-World API] buffer=${buffer}m 응답:`, JSON.stringify(data).substring(0, 300));
 
-    // API 응답 상태 확인
     if (data.response?.status === "NOT_FOUND" || data.response?.status === "ERROR") {
-      const errorText = data.response?.error?.text || "해당 위치의 토지이용계획 정보가 없습니다.";
-      console.warn(`[V-World API] 조회 실패: ${errorText}`);
-
-      // 대체 데이터 소스 시도 (LT_C_UQ112: 용도지구)
-      return await getLandUseInfoFallback(x, y, VWORLD_KEY);
+      return [];
     }
 
     const features = data.response?.result?.featureCollection?.features || [];
     const zones: ZoneInfo[] = [];
-    const seenZones = new Set<string>(); // 중복 제거용
+    const seenZones = new Set<string>();
 
     for (const feature of features) {
       const props = feature.properties;
-      // V-World API는 uname 또는 uq_nm으로 용도지역명을 반환
       const zoneName = props?.uname || props?.uq_nm || props?.prpos_area_nm;
 
-      // 미분류, 중복 제외
       if (zoneName && zoneName !== "미분류" && !seenZones.has(zoneName)) {
         seenZones.add(zoneName);
         zones.push({
@@ -187,37 +228,62 @@ export async function getLandUseInfo(x: number, y: number): Promise<{
       }
     }
 
-    // 용도지역 우선순위 정렬 (공업>상업>주거 순)
-    const zonePriority: Record<string, number> = {
-      "준공업지역": 1,
-      "일반공업지역": 1,
-      "전용공업지역": 1,
-      "중심상업지역": 2,
-      "일반상업지역": 2,
-      "근린상업지역": 2,
-      "유통상업지역": 2,
-      "준주거지역": 3,
-      "제3종일반주거지역": 4,
-      "제2종일반주거지역": 5,
-      "제1종일반주거지역": 6,
-      "제2종전용주거지역": 7,
-      "제1종전용주거지역": 8,
-    };
+    return zones;
+  } catch (error) {
+    console.error(`[V-World API] buffer=${buffer}m 조회 오류:`, error);
+    return [];
+  }
+}
 
-    zones.sort((a, b) => {
-      const priorityA = zonePriority[a.name] || 10;
-      const priorityB = zonePriority[b.name] || 10;
-      return priorityA - priorityB;
-    });
+// 좌표로 토지이용계획 조회 (Progressive buffer + PNU fallback)
+export async function getLandUseInfo(x: number, y: number): Promise<{
+  success: boolean;
+  zones?: ZoneInfo[];
+  pnu?: string;
+  error?: string;
+}> {
+  try {
+    const VWORLD_KEY = process.env.VWORLD_KEY;
 
-    // 결과가 없으면 대체 데이터 소스 시도
-    if (zones.length === 0) {
-      console.log("[V-World API] 결과 없음, 대체 소스 시도...");
-      return await getLandUseInfoFallback(x, y, VWORLD_KEY);
+    if (!VWORLD_KEY) {
+      console.error("[V-World API] 키 미설정");
+      return { success: false, error: "V-World API 키가 설정되지 않았습니다. 관리자에게 문의하세요." };
     }
 
-    console.log(`[V-World API] 조회 결과: ${zones.map(z => z.name).join(", ")}`);
-    return { success: true, zones };
+    console.log(`[V-World API] 토지이용계획 조회 시작: (${x}, ${y})`);
+
+    // Step 1: Progressive buffer로 LT_C_UQ111 조회 (1m → 10m → 50m → 100m)
+    const bufferSizes = [1, 10, 50, 100];
+    for (const buffer of bufferSizes) {
+      const zones = await queryLandUseLayer(x, y, VWORLD_KEY, buffer);
+      if (zones.length > 0) {
+        zones.sort((a, b) => {
+          const pa = ZONE_PRIORITY[a.name] || 10;
+          const pb = ZONE_PRIORITY[b.name] || 10;
+          return pa - pb;
+        });
+
+        console.log(`[V-World API] buffer=${buffer}m 조회 성공: ${zones.map(z => z.name).join(", ")}`);
+        return { success: true, zones };
+      }
+      console.log(`[V-World API] buffer=${buffer}m: 결과 없음`);
+    }
+
+    // Step 2: PNU 추출 시도 (진단용 로깅)
+    const pnu = await getPnuFromCoordinates(x, y, VWORLD_KEY);
+
+    // Step 3: 대체 레이어 시도 (UQ112 용도지구, UQ113 용도구역 등)
+    console.log("[V-World API] LT_C_UQ111 전체 실패, 대체 레이어 시도...");
+    const fallbackResult = await getLandUseInfoFallback(x, y, VWORLD_KEY);
+    if (fallbackResult.success) {
+      return { ...fallbackResult, pnu: pnu || undefined };
+    }
+
+    return {
+      success: false,
+      pnu: pnu || undefined,
+      error: `해당 위치의 토지이용계획 정보를 찾을 수 없습니다.${pnu ? ` (PNU: ${pnu})` : ""} 토지이음(eum.go.kr)에서 직접 확인해주세요.`,
+    };
   } catch (error: any) {
     console.error("[V-World API] 토지이용계획 조회 오류:", error);
     return { success: false, error: `API 호출 실패: ${error.message}` };
@@ -311,6 +377,7 @@ export async function searchLandUse(address: string): Promise<LandUseResult> {
       success: false,
       address: geoResult.refinedAddress,
       coordinates: { x: geoResult.x, y: geoResult.y },
+      pnu: landResult.pnu,
       error: landResult.error,
     };
   }
@@ -320,6 +387,7 @@ export async function searchLandUse(address: string): Promise<LandUseResult> {
     address: geoResult.refinedAddress,
     coordinates: { x: geoResult.x, y: geoResult.y },
     zoneInfo: landResult.zones,
+    pnu: landResult.pnu,
   };
 }
 

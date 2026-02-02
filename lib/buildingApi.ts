@@ -36,6 +36,10 @@ interface AddressSearchResult {
 // 주소를 법정동코드/본번/부번으로 변환 (V-World Geocoding 활용)
 async function parseAddressToCode(address: string): Promise<AddressSearchResult> {
   try {
+    if (!address || typeof address !== 'string') {
+      return { success: false, error: "주소가 입력되지 않았습니다." };
+    }
+
     const VWORLD_KEY = process.env.VWORLD_KEY;
 
     if (!VWORLD_KEY) {
@@ -100,6 +104,13 @@ async function parseAddressToCode(address: string): Promise<AddressSearchResult>
     }
 
     const result = data.response.result;
+
+    // V-World 응답 유효성 검증 (.match() crash 방지)
+    if (!result?.text || !result?.point) {
+      console.warn("[BuildingAPI] V-World 응답 구조 이상:", JSON.stringify(result).substring(0, 200));
+      return { success: false, error: "주소 변환 결과가 올바르지 않습니다. 정확한 전체 주소(시/도 포함)를 입력해주세요." };
+    }
+
     const refinedAddr = result.text;
 
     // 좌표로 법정동코드 조회

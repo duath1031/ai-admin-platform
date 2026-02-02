@@ -848,16 +848,43 @@ export async function POST(request: NextRequest) {
 
     // V-World API로 실제 용도지역 조회
     const landUseResult = await searchLandUse(address);
-    let zone = "제2종일반주거지역"; // 기본값 (조회 실패 시)
-    let zoneSource = "추정";
+    let zone: string | null = null;
+    let zoneSource = "조회실패";
 
     if (landUseResult.success && landUseResult.zoneInfo && landUseResult.zoneInfo.length > 0) {
-      // 실제 V-World API 조회 성공
       zone = landUseResult.zoneInfo[0].name;
       zoneSource = "V-World API";
       console.log(`[Permit-Check] 용도지역 조회 성공: ${zone}`);
     } else {
-      console.warn(`[Permit-Check] 용도지역 조회 실패, 기본값 사용: ${landUseResult.error || "알 수 없는 오류"}`);
+      console.warn(`[Permit-Check] 용도지역 조회 실패: ${landUseResult.error || "알 수 없는 오류"}`);
+    }
+
+    // 용도지역 조회 실패 시: 잘못된 기본값 대신 정직한 오류 반환
+    if (!zone) {
+      return NextResponse.json({
+        score: 0,
+        grade: "조회불가",
+        zoneInfo: {
+          zone: "조회실패",
+          zoneSource: "조회실패",
+          buildingCoverage: 0,
+          floorAreaRatio: 0,
+          allZones: [],
+          error: landUseResult.error || "토지이용계획 정보를 조회할 수 없습니다.",
+          suggestion: "정확한 전체 주소(시/도/구/동 포함)를 입력하거나, 토지이음(eum.go.kr)에서 직접 확인해주세요.",
+        },
+        analysis: [{
+          category: "용도지역 확인",
+          status: "fail" as const,
+          description: "V-World API에서 해당 주소의 용도지역 정보를 조회하지 못했습니다. 정확한 전체 주소(시/도 포함)를 입력해주세요.",
+        }],
+        recommendations: [
+          "정확한 도로명 주소(시/도 포함)를 다시 입력해주세요.",
+          "토지이음(eum.go.kr)에서 해당 주소의 용도지역을 직접 확인해주세요.",
+        ],
+        legalBasis: [],
+        hasDiscretion: false,
+      });
     }
 
     const limits = ZONE_LIMITS[zone] || { buildingCoverage: 60, floorAreaRatio: 200 };
@@ -870,10 +897,10 @@ export async function POST(request: NextRequest) {
       grade,
       zoneInfo: {
         zone,
-        zoneSource, // "V-World API" 또는 "추정"
+        zoneSource,
         buildingCoverage: limits.buildingCoverage,
         floorAreaRatio: limits.floorAreaRatio,
-        allZones: landUseResult.zoneInfo || [], // V-World에서 조회된 모든 용도지역
+        allZones: landUseResult.zoneInfo || [],
       },
       analysis,
       recommendations,
