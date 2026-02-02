@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
 import { chatWithKnowledgeStream, FileDataPart } from "@/lib/gemini";
 import { getActiveSystemPrompt } from "@/lib/systemPromptService";
 import { searchForm, formatFormInfo, COMMON_FORMS } from "@/lib/lawApi";
@@ -350,6 +351,51 @@ export async function POST(req: NextRequest) {
 
     // 추가 컨텍스트 정보 수집
     let additionalContext = "";
+
+    // =========================================================================
+    // 마스터 프로필 (기업 정보) 로드 — 서류 자동완성 및 맞춤 상담용
+    // =========================================================================
+    try {
+      const companyProfile = await prisma.companyProfile.findUnique({
+        where: { userId: session.user.id as string },
+      });
+      if (companyProfile) {
+        const profileLines: string[] = [];
+        if (companyProfile.companyName) profileLines.push(`- 상호: ${companyProfile.companyName}`);
+        if (companyProfile.ownerName) profileLines.push(`- 대표자: ${companyProfile.ownerName}`);
+        if (companyProfile.bizRegNo) {
+          const b = companyProfile.bizRegNo;
+          const formatted = b.length === 10 ? `${b.slice(0,3)}-${b.slice(3,5)}-${b.slice(5)}` : b;
+          profileLines.push(`- 사업자등록번호: ${formatted}`);
+        }
+        if (companyProfile.corpRegNo) {
+          const c = companyProfile.corpRegNo;
+          const formatted = c.length === 13 ? `${c.slice(0,6)}-${c.slice(6)}` : c;
+          profileLines.push(`- 법인등록번호: ${formatted}`);
+        }
+        if (companyProfile.address) profileLines.push(`- 주소: ${companyProfile.address}`);
+        if (companyProfile.bizType) profileLines.push(`- 업태/종목: ${companyProfile.bizType}`);
+        if (companyProfile.foundedDate) profileLines.push(`- 설립일: ${companyProfile.foundedDate.toISOString().split('T')[0]}`);
+        if (companyProfile.employeeCount > 0) profileLines.push(`- 직원 수: ${companyProfile.employeeCount}명`);
+        if (companyProfile.capital > 0) {
+          const cap = Number(companyProfile.capital);
+          const capStr = cap >= 100000000 ? `${(cap / 100000000).toFixed(1)}억원` : `${Math.round(cap / 10000).toLocaleString()}만원`;
+          profileLines.push(`- 자본금: ${capStr}`);
+        }
+
+        if (profileLines.length > 0) {
+          additionalContext += `\n\n[사용자 기업 정보 (마스터 프로필)]
+${profileLines.join('\n')}
+⚠️ 위 정보는 사용자가 사전에 등록한 기업 정보입니다.
+- 답변 시 이 정보를 자연스럽게 활용하세요 (예: "대표님 회사 주소인 OO 기준으로 분석하면...").
+- 이미 등록된 정보를 다시 물어보지 마세요.
+- 서류 작성 시 위 정보를 자동으로 채워 넣으세요.`;
+          console.log(`[Chat Stream] 마스터 프로필 로드: ${companyProfile.companyName || '(상호 미입력)'}`);
+        }
+      }
+    } catch (profileError) {
+      console.warn("[Chat Stream] 마스터 프로필 로드 오류 (무시하고 계속):", profileError);
+    }
 
     // 서식 정보 추가
     if (intent.needsFormInfo && intent.formKeyword) {

@@ -185,6 +185,34 @@ export default function MyPage() {
             </CardContent>
           </Card>
 
+          {/* 기업 정보 관리 */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-900">기업 정보</h3>
+                <Link
+                  href="/mypage/company"
+                  className="text-sm text-primary-600 hover:text-primary-800 font-medium"
+                >
+                  관리하기
+                </Link>
+              </div>
+              <Link href="/mypage/company">
+                <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer">
+                  <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center text-teal-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">기업 마스터 프로필</p>
+                    <p className="text-sm text-gray-500">상호, 사업자번호, 주소 등 기업 정보를 등록하면 AI가 기억합니다</p>
+                  </div>
+                </div>
+              </Link>
+            </CardContent>
+          </Card>
+
           {/* 결제 내역 */}
           <Card>
             <CardContent className="p-6">
