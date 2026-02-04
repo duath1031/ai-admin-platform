@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui";
 import { FORM_TEMPLATES } from "@/lib/document/templates";
 import { GOV24_SERVICES } from "@/lib/document/gov24Links";
@@ -22,11 +22,71 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
   const [isGenerating, setIsGenerating] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLoadingTemplate, setIsLoadingTemplate] = useState(false);
+  const [dbTemplate, setDbTemplate] = useState<{
+    name: string;
+    category: string;
+    description: string;
+    fields: Array<{ id: string; label: string; type: string; required?: boolean; placeholder?: string; description?: string; options?: string[]; defaultValue?: string }>;
+    gov24ServiceKey?: string;
+    outputFileName?: string;
+    source?: string;
+  } | null>(null);
 
-  const template = FORM_TEMPLATES[templateKey];
-  const gov24Service = template?.gov24ServiceKey
-    ? GOV24_SERVICES[template.gov24ServiceKey]
-    : null;
+  const legacyTemplate = FORM_TEMPLATES[templateKey];
+  const isHwpx = templateKey.startsWith("hwpx_");
+
+  // DB 템플릿 조회 (레거시에 없을 때)
+  useEffect(() => {
+    if (legacyTemplate) return;
+
+    setIsLoadingTemplate(true);
+    fetch(`/api/document/generate?templateKey=${encodeURIComponent(templateKey)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.template) {
+          const t = data.template;
+          const mappedFields = (t.fields || []).map((f: any) => ({
+            id: f.name || f.id,
+            label: f.label || f.name,
+            type: f.type || "text",
+            required: f.required !== false,
+            placeholder: f.placeholder || "",
+            description: f.description || "",
+            options: f.options,
+            defaultValue: f.defaultValue,
+          }));
+          setDbTemplate({
+            name: t.name,
+            category: t.category || "",
+            description: t.description || "",
+            fields: mappedFields,
+            gov24ServiceKey: t.gov24ServiceKey,
+            outputFileName: t.outputFileName,
+            source: t.source,
+          });
+        }
+      })
+      .catch((err) => console.error("Template fetch error:", err))
+      .finally(() => setIsLoadingTemplate(false));
+  }, [templateKey, legacyTemplate]);
+
+  const template = legacyTemplate || dbTemplate;
+  const gov24Service = (() => {
+    const key = legacyTemplate?.gov24ServiceKey || dbTemplate?.gov24ServiceKey;
+    return key ? GOV24_SERVICES[key] : null;
+  })();
+
+  if (!template && isLoadingTemplate) {
+    return (
+      <div className="my-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+        <div className="flex items-center gap-3">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-blue-700 text-sm">서식 정보를 불러오는 중...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!template) {
     return (
@@ -46,15 +106,37 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
     setError(null);
 
     try {
-      const response = await fetch("/api/document/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          templateKey,
-          formData,
-          format: "docx",
-        }),
-      });
+      let response: Response;
+      let fileExt: string;
+      let mimeType: string;
+
+      if (isHwpx) {
+        // HWPX 템플릿: generate-hwpx API 사용
+        response = await fetch("/api/document/generate-hwpx", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            templateCode: templateKey,
+            data: formData,
+            returnFormat: "binary",
+          }),
+        });
+        fileExt = "hwpx";
+        mimeType = "application/hwp+zip";
+      } else {
+        // DOCX 템플릿: 기존 generate API 사용
+        response = await fetch("/api/document/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            templateKey,
+            formData,
+            format: "docx",
+          }),
+        });
+        fileExt = "docx";
+        mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+      }
 
       // Content-Type 확인하여 JSON 에러 응답 처리
       const contentType = response.headers.get("content-type");
@@ -67,17 +149,15 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
         throw new Error("문서 생성 실패 (서버 오류)");
       }
 
-      // ArrayBuffer로 받아서 Blob으로 변환 (더 안정적인 바이너리 처리)
+      // ArrayBuffer로 받아서 Blob으로 변환
       const arrayBuffer = await response.arrayBuffer();
-      const blob = new Blob([arrayBuffer], {
-        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      });
+      const blob = new Blob([arrayBuffer], { type: mimeType });
 
-      // 파일명 생성 (영문+숫자만 사용)
+      // 파일명 생성
       const today = new Date();
       const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
       const timeStr = `${String(today.getHours()).padStart(2, "0")}${String(today.getMinutes()).padStart(2, "0")}`;
-      const fileName = `document_${dateStr}_${timeStr}.docx`;
+      const fileName = `document_${dateStr}_${timeStr}.${fileExt}`;
 
       // 다운로드 링크 생성 및 클릭
       const downloadUrl = window.URL.createObjectURL(blob);
@@ -234,7 +314,7 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                서류 다운로드 (DOCX)
+                서류 다운로드 ({isHwpx ? "HWPX" : "DOCX"})
               </>
             )}
           </button>
