@@ -26,7 +26,9 @@ import * as path from 'path';
 // Constants
 // =============================================================================
 
-const UPLOAD_DIR = path.join(process.cwd(), 'temp', 'uploads');
+const UPLOAD_DIR = process.env.VERCEL
+  ? path.join('/tmp', 'uploads')
+  : path.join(process.cwd(), 'temp', 'uploads');
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const ALLOWED_TYPES: Record<string, string[]> = {

@@ -458,7 +458,9 @@ export function validateRequiredFields(
 // =============================================================================
 
 export async function saveHwpxToTemp(buffer: Buffer, fileName: string): Promise<string> {
-  const tempDir = path.join(process.cwd(), 'temp');
+  const tempDir = process.env.VERCEL
+    ? path.join('/tmp', 'hwpx')
+    : path.join(process.cwd(), 'temp');
   if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
   }

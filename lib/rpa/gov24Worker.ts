@@ -62,8 +62,9 @@ export interface SessionStatus {
 // Constants
 // =============================================================================
 
-const AUTH_STATE_PATH = path.join(process.cwd(), 'temp', 'auth.json');
-const SCREENSHOTS_DIR = path.join(process.cwd(), 'temp', 'screenshots');
+const TEMP_BASE = process.env.VERCEL ? '/tmp' : path.join(process.cwd(), 'temp');
+const AUTH_STATE_PATH = path.join(TEMP_BASE, 'auth.json');
+const SCREENSHOTS_DIR = path.join(TEMP_BASE, 'screenshots');
 const SESSION_MAX_AGE_MS = 30 * 60 * 1000; // 30분
 
 const GOV24_URLS = {
