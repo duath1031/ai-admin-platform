@@ -56,8 +56,8 @@ const UploadSubmitSchema = z.object({
   mode: z.literal('upload'),
   /** 업로드 API에서 반환된 파일 경로 */
   filePath: z.string().min(1),
-  serviceUrl: z.string().url(),
-  serviceName: z.string().min(1),
+  serviceUrl: z.string().url().optional(),
+  serviceName: z.string().min(1).optional(),
   autoSubmit: z.boolean().default(false),
   documentStatus: z.enum(['SIGNED', 'GENERATED', 'UPLOADED']).default('UPLOADED'),
 });
@@ -194,6 +194,50 @@ export async function POST(request: NextRequest) {
       filePath = input.filePath;
       fileType = Gov24Worker.detectFileType(filePath);
 
+      // serviceUrl 미제공 시: 파일 접수 준비만 완료 (Gov24 미연동)
+      if (!input.serviceUrl) {
+        const submission = await prisma.civilServiceSubmission.create({
+          data: {
+            serviceName: input.serviceName || '채팅 파일 접수',
+            serviceCode: `chat_upload_${fileType}`,
+            targetSite: 'gov24',
+            targetUrl: '',
+            applicationData: JSON.stringify({ filePath, fileType }),
+            applicantName: session.user.name || '',
+            status: 'pending_review',
+            userId: session.user.id,
+            resultData: JSON.stringify({
+              filePath,
+              fileType,
+              documentStatus,
+              pipeline: 'v2_chat',
+            }),
+          },
+        });
+
+        await prisma.submissionTrackingLog.create({
+          data: {
+            submissionId: submission.id,
+            step: 'generate',
+            stepOrder: 1,
+            status: 'success',
+            message: `파일 접수 준비 완료 (${fileType})`,
+            startedAt: new Date(),
+            completedAt: new Date(),
+          },
+        });
+
+        return NextResponse.json({
+          success: true,
+          submissionId: submission.id,
+          step: 'pending_review',
+          status: 'pending_review',
+          message: '파일이 접수 준비되었습니다. 행정사가 확인 후 정부24에 접수합니다.',
+          documentStatus,
+          fileType,
+        });
+      }
+
     } else {
       // --- Mode C: documentId 기반 (기존 제출 건 조회) ---
       console.log(`[Submit-V2] Step 1C: documentId 조회 - ${input.documentId}`);
@@ -244,23 +288,30 @@ export async function POST(request: NextRequest) {
     // -----------------------------------------------------------------------
     let submission: any;
 
+    const resolvedServiceUrl = input.mode === 'upload'
+      ? (input.serviceUrl || '')
+      : input.serviceUrl;
+    const resolvedServiceName = input.mode === 'upload'
+      ? (input.serviceName || '파일 접수')
+      : input.serviceName;
+
     if (existingSubmission) {
       // Mode C: 기존 건 상태 업데이트
       submission = await prisma.civilServiceSubmission.update({
         where: { id: existingSubmission.id },
         data: {
           status: 'processing',
-          targetUrl: input.serviceUrl,
+          targetUrl: resolvedServiceUrl,
         },
       });
     } else {
       // Mode A/B: 새 레코드 생성
       submission = await prisma.civilServiceSubmission.create({
         data: {
-          serviceName: input.serviceName,
+          serviceName: resolvedServiceName,
           serviceCode: input.mode === 'generate' ? (input as any).templateCode : `upload_${fileType}`,
           targetSite: 'gov24',
-          targetUrl: input.serviceUrl,
+          targetUrl: resolvedServiceUrl,
           applicationData: JSON.stringify(
             input.mode === 'generate' ? (input as any).data : { filePath, fileType }
           ),
@@ -304,8 +355,8 @@ export async function POST(request: NextRequest) {
     const rpaResult = await worker.submitFile({
       filePath,
       fileType: Gov24Worker.detectFileType(filePath),
-      serviceUrl: input.serviceUrl,
-      serviceName: input.serviceName,
+      serviceUrl: resolvedServiceUrl,
+      serviceName: resolvedServiceName,
       userId: session.user.id,
       autoSubmit: input.autoSubmit,
     });
