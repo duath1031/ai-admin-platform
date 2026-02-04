@@ -13,9 +13,7 @@ import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawServic
 import { quickClassify } from "@/lib/rag/intentClassifier";
 // Knowledge Base - 경량 버전 사용 (Smart Tag 기반)
 import { getKnowledgeByTags } from "@/lib/ai/knowledgeQuery";
-// 문서 생성 시스템
-import { FORM_TEMPLATES } from "@/lib/document/templates";
-import { GOV24_SERVICES } from "@/lib/document/gov24Links";
+// 문서 생성: LLM-Driven Selection (Phase 11) - DB에서 동적 로드
 
 // Vercel 서버리스 함수 타임아웃 설정
 export const maxDuration = 60;
@@ -114,41 +112,10 @@ function extractSearchKeywords(message: string): string[] {
 }
 
 // =============================================================================
-// 문서 생성 템플릿 매칭
+// 문서 생성 템플릿: LLM-Driven Selection (Phase 11 Refactor)
 // =============================================================================
-
-function detectDocumentTemplate(message: string): string | undefined {
-  const templateKeywords: Record<string, string[]> = {
-    "통신판매업신고서": ["통신판매", "쇼핑몰", "인터넷판매", "온라인판매", "스마트스토어", "오픈마켓", "온라인 쇼핑몰", "이커머스"],
-    "일반음식점영업신고서": ["일반음식점", "음식점", "식당", "레스토랑", "고깃집", "치킨집", "분식"],
-    "휴게음식점영업신고서": ["휴게음식점", "카페", "커피숍", "제과점", "빵집", "베이커리", "디저트", "아이스크림"],
-    "식품제조업영업신고서": ["식품제조", "식품가공", "제조업영업", "식품공장"],
-    "건축물대장발급신청서": ["건축물대장", "건축물대장발급"],
-    "사업자등록신청서": ["사업자등록", "창업", "개업"],
-    "숙박업영업허가신청서": ["숙박업", "호텔", "모텔", "펜션", "게스트하우스", "민박", "숙박시설"],
-    "학원설립운영등록신청서": ["학원", "학원설립", "교습소", "입시학원", "영어학원", "수학학원"],
-    "미용업신고서": ["미용업", "미용실", "헤어샵", "네일샵", "피부관리", "미용사"],
-    "옥외광고물표시허가신청서": ["옥외광고", "간판", "현수막", "옥상광고", "돌출간판", "광고물"],
-  };
-
-  const writeIntentKeywords = [
-    "작성", "만들", "서류", "신고서", "신청서", "준비", "어떻게",
-    "필요", "양식", "서식", "제출", "신청", "신고", "하려", "하고싶", "할려고"
-  ];
-
-  for (const [templateKey, keywords] of Object.entries(templateKeywords)) {
-    if (keywords.some(k => message.includes(k))) {
-      if (writeIntentKeywords.some(k => message.includes(k))) {
-        return templateKey;
-      }
-      if (/신고|신청|허가|등록|영업/.test(message)) {
-        return templateKey;
-      }
-    }
-  }
-
-  return undefined;
-}
+// 하드코딩된 키워드 매칭 제거. Gemini가 대화 맥락에서 직접 판단하여
+// DB의 HWPX 템플릿 목록 중 적합한 서식을 선택한다.
 
 // =============================================================================
 // 사용자 메시지에서 의도 파악
@@ -161,7 +128,6 @@ function detectIntent(message: string): {
   formKeyword?: string;
   address?: string;
   targetBusiness?: string;
-  documentTemplate?: string;
 } {
   // 서식 관련 키워드
   const formKeywords = ["서식", "신청서", "신고서", "양식", "다운로드", "서류"];
@@ -247,8 +213,6 @@ function detectIntent(message: string): {
     }
   }
 
-  const documentTemplate = detectDocumentTemplate(message);
-
   return {
     needsFormInfo,
     needsLandUse,
@@ -256,7 +220,6 @@ function detectIntent(message: string): {
     formKeyword,
     address: addressMatch ? addressMatch[1] : undefined,
     targetBusiness,
-    documentTemplate,
   };
 }
 
@@ -392,19 +355,6 @@ export async function POST(req: NextRequest) {
       contextParts.push(bizCtx);
     }
 
-    // 문서 생성 템플릿 감지 (동기, 로컬)
-    if (intent.documentTemplate) {
-      const template = FORM_TEMPLATES[intent.documentTemplate];
-      const gov24Service = template?.gov24ServiceKey ? GOV24_SERVICES[template.gov24ServiceKey] : null;
-      if (template) {
-        console.log(`[Chat Stream] 문서 생성 템플릿 감지: ${intent.documentTemplate}`);
-        let docCtx = `\n\n[서류 자동 작성 기능 - 반드시 따르세요]\n===================================================\n사용자가 "${template.name}" 관련 질문을 했습니다.\n\n🔴 중요: 답변 마지막에 반드시 아래 마커를 추가하세요:\n[[DOCUMENT:${intent.documentTemplate}]]\n\n이 마커를 추가하면 사용자 화면에 서류 작성 폼이 나타납니다.\n마커가 없으면 사용자가 서류를 작성할 수 없습니다!\n\n필수 입력 항목:\n${template.fields.filter(f => f.required).map(f => `- ${f.label}`).join('\n')}\n\n선택 입력 항목:\n${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') || '없음'}\n`;
-        if (gov24Service) docCtx += `\n정부24 신청 정보:\n- 서비스명: ${gov24Service.name}\n- 처리기간: ${gov24Service.processingDays}\n- 수수료: ${gov24Service.fee}\n- 필요서류: ${gov24Service.requiredDocs.join(', ') || '없음'}\n`;
-        docCtx += `\n===================================================\n📝 응답 형식 예시:\n"${template.name} 신청을 도와드리겠습니다.\n[신청 절차 및 필요 서류 안내...]\n아래 폼에서 정보를 입력하시면 서류를 작성해드립니다.\n\n[[DOCUMENT:${intent.documentTemplate}]]"\n===================================================\n`;
-        contextParts.push(docCtx);
-      }
-    }
-
     // =========================================================================
     // [병렬 실행] 모든 네트워크 호출을 동시에 시작 (타임아웃 3초 통일)
     // =========================================================================
@@ -458,9 +408,20 @@ export async function POST(req: NextRequest) {
         PARALLEL_TIMEOUT,
         "당신은 대한민국 행정업무 전문 AI 어시스턴트입니다. 행정사, 정부기관, 기업의 행정업무를 지원합니다."
       ),
+
+      // Task 7: HWPX 템플릿 목록 (DB) - LLM-Driven Document Selection용
+      withTimeout(
+        prisma.formTemplate.findMany({
+          where: { status: 'active', originalFileType: 'hwpx' },
+          select: { code: true, name: true, description: true, category: true, fields: true },
+          orderBy: { name: 'asc' },
+        }).catch(() => []),
+        PARALLEL_TIMEOUT,
+        []
+      ),
     ]);
 
-    const [companyProfile, legalResult, kbTagResult, landResult, buildingResult, loadedPrompt] = parallelTasks;
+    const [companyProfile, legalResult, kbTagResult, landResult, buildingResult, loadedPrompt, hwpxTemplates] = parallelTasks;
     const pEnd = Date.now();
     console.log(`[Chat Stream] 병렬 조회 완료 (총 소요시간은 가장 느린 태스크 기준)`);
 
@@ -568,7 +529,38 @@ export async function POST(req: NextRequest) {
 - 첨부된 Knowledge Base 문서가 질문 주제와 무관하면, 해당 문서를 언급하지 마세요.
 - 확실하지 않은 정보는 "정확한 확인이 필요합니다"라고 안내하세요.`;
 
-    const enhancedPrompt = baseSystemPrompt + antiHallucinationInstruction + additionalContext;
+    // Phase 11 Refactor: LLM-Driven Document Selection
+    // DB의 HWPX 템플릿 목록을 Gemini에게 주입하여 AI가 직접 적합한 서식을 선택
+    let documentSelectionInstruction = '';
+    const templateList = hwpxTemplates as any[];
+    if (templateList && templateList.length > 0) {
+      const templateLines = templateList.map((t: any) => {
+        const fields = JSON.parse(t.fields || '[]');
+        const fieldNames = fields.map((f: any) => f.name || f.label).join(', ');
+        return `- code: "${t.code}" | name: "${t.name}" | category: ${t.category || '일반'} | desc: ${t.description || '-'} | fields: [${fieldNames}]`;
+      }).join('\n');
+
+      documentSelectionInstruction = `
+
+[서류 자동 작성 기능 - Available Documents]
+아래는 시스템에 등록된 서식 템플릿 목록입니다:
+${templateLines}
+
+🔴 핵심 규칙:
+1. 사용자의 대화 맥락을 파악하여, 위 목록 중 적합한 서식이 있다면 답변 마지막에 반드시 [[DOCUMENT:code]] 마커를 출력하세요.
+2. 사용자가 먼저 "서류 작성해줘"라고 요청할 때까지 기다리지 마세요. 행정 절차 안내 시 관련 서식이 있으면 선제적으로 "서류를 작성해드릴까요?" 라고 제안하고 마커를 출력하세요.
+3. 마커 형식: [[DOCUMENT:정확한_code값]] (예: [[DOCUMENT:hwpx_식품영업신고서]])
+4. 이 마커가 출력되면 사용자 화면에 서류 작성 폼이 자동으로 나타납니다.
+5. 목록에 없는 서식은 절대 마커를 만들어내지 마세요.
+
+예시:
+사용자: "식당 열 거야"
+→ "일반음식점 영업신고가 필요합니다. [절차 안내...] 신고서를 바로 작성해드릴까요?\n\n[[DOCUMENT:hwpx_식품영업신고서]]"`;
+
+      console.log(`[Chat Stream] HWPX 템플릿 ${templateList.length}개 프롬프트 주입`);
+    }
+
+    const enhancedPrompt = baseSystemPrompt + antiHallucinationInstruction + documentSelectionInstruction + additionalContext;
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder();
