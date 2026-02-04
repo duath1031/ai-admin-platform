@@ -54,8 +54,12 @@ const GenerateSubmitSchema = z.object({
 
 const UploadSubmitSchema = z.object({
   mode: z.literal('upload'),
-  /** 업로드 API에서 반환된 파일 경로 */
-  filePath: z.string().min(1),
+  /** 업로드 API에서 반환된 파일 식별자 또는 경로 */
+  filePath: z.string().min(1).optional(),
+  /** base64 인코딩된 파일 데이터 (Vercel 서버리스 환경용) */
+  fileBase64: z.string().min(1).optional(),
+  /** 파일명 (base64 모드 시 필수) */
+  fileName: z.string().min(1).optional(),
   serviceUrl: z.string().url().optional(),
   serviceName: z.string().min(1).optional(),
   autoSubmit: z.boolean().default(false),
@@ -181,18 +185,30 @@ export async function POST(request: NextRequest) {
 
     } else if (input.mode === 'upload') {
       // --- Mode B: 업로드 파일 직접 제출 ---
-      console.log(`[Submit-V2] Step 1B: 업로드 파일 확인 - ${input.filePath}`);
       documentStatus = input.documentStatus as DocumentStatus;
 
-      if (!fs.existsSync(input.filePath)) {
+      // base64 데이터가 있으면 /tmp에 임시 저장 (서버리스 환경)
+      if (input.fileBase64) {
+        const tmpDir = '/tmp/rpa-submit';
+        if (!fs.existsSync(tmpDir)) {
+          fs.mkdirSync(tmpDir, { recursive: true });
+        }
+        const tmpFileName = input.fileName || `upload_${Date.now()}.pdf`;
+        const tmpPath = path.join(tmpDir, tmpFileName);
+        fs.writeFileSync(tmpPath, Buffer.from(input.fileBase64, 'base64'));
+        filePath = tmpPath;
+        fileType = Gov24Worker.detectFileType(filePath);
+        console.log(`[Submit-V2] Step 1B: base64 → /tmp 저장 - ${tmpFileName} (${input.fileBase64.length} chars)`);
+      } else if (input.filePath && fs.existsSync(input.filePath)) {
+        filePath = input.filePath;
+        fileType = Gov24Worker.detectFileType(filePath);
+        console.log(`[Submit-V2] Step 1B: 로컬 파일 확인 - ${input.filePath}`);
+      } else {
         return NextResponse.json(
-          { success: false, error: '파일을 찾을 수 없습니다. 먼저 /api/rpa/upload로 업로드하세요.' },
-          { status: 404 }
+          { success: false, error: '파일 데이터가 필요합니다. fileBase64 또는 유효한 filePath를 전달하세요.' },
+          { status: 400 }
         );
       }
-
-      filePath = input.filePath;
-      fileType = Gov24Worker.detectFileType(filePath);
 
       // serviceUrl 미제공 시: 파일 접수 준비만 완료 (Gov24 미연동)
       if (!input.serviceUrl) {
@@ -202,12 +218,11 @@ export async function POST(request: NextRequest) {
             serviceCode: `chat_upload_${fileType}`,
             targetSite: 'gov24',
             targetUrl: '',
-            applicationData: JSON.stringify({ filePath, fileType }),
+            applicationData: JSON.stringify({ filePath: input.fileName || filePath, fileType }),
             applicantName: session.user.name || '',
             status: 'pending_review',
             userId: session.user.id,
             resultData: JSON.stringify({
-              filePath,
               fileType,
               documentStatus,
               pipeline: 'v2_chat',

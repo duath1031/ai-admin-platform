@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import { useChatStore } from "@/lib/store";
 
 // SolutionCard는 클라이언트에서만 로드
 const SolutionCard = dynamic(() => import("./SolutionCard"), { ssr: false });
@@ -339,7 +340,17 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
 
   const handleSubmit = async () => {
     setStatus('submitting');
-    setMessage('정부24 접수 준비 중...');
+    setMessage('접수 준비 중...');
+
+    // zustand에서 base64 데이터 조회
+    const { uploadedFileData } = useChatStore.getState();
+    const fileBase64 = uploadedFileData[filePath];
+
+    if (!fileBase64) {
+      setStatus('error');
+      setMessage('파일 데이터를 찾을 수 없습니다. 파일을 다시 첨부해주세요.');
+      return;
+    }
 
     try {
       const res = await fetch('/api/rpa/submit-v2', {
@@ -347,7 +358,8 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'upload',
-          filePath,
+          fileBase64,
+          fileName: filePath,
         }),
       });
       const data = await res.json();

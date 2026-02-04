@@ -24,7 +24,7 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { messages, isLoading, addMessage, setLoading } = useChatStore();
+  const { messages, isLoading, addMessage, setLoading, setUploadedFileData } = useChatStore();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -58,6 +58,10 @@ export default function ChatPage() {
           fileType: data.file.fileType,
           size: data.file.savedSize,
         });
+        // base64 데이터를 zustand에 저장 (RPA 제출 시 사용)
+        if (data.base64) {
+          setUploadedFileData(data.file.savedPath, data.base64);
+        }
       } else {
         alert(data.error || "파일 업로드 실패");
       }

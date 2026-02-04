@@ -108,15 +108,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    ensureUploadDir();
-
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     let savedFileName: string;
-    let savedFilePath: string;
     let convertedFrom: string | null = null;
     let finalFileType: string;
 
     // JPG/PNG → PDF 자동 변환 (lib/pdfUtils 사용)
+    let finalBuffer: Buffer;
+
     if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
       console.log(`[Upload] 이미지 → PDF 변환: ${file.name} (${ext})`);
       const mime = getMimeFromExtension(ext) || 'image/jpeg';
@@ -128,31 +127,33 @@ export async function POST(request: NextRequest) {
         );
       }
       savedFileName = generateFileName(file.name, '.pdf');
-      savedFilePath = path.join(UPLOAD_DIR, savedFileName);
-      fs.writeFileSync(savedFilePath, convertResult.buffer);
+      finalBuffer = convertResult.buffer;
       convertedFrom = ext;
       finalFileType = 'pdf';
-      console.log(`[Upload] 변환 완료: ${savedFileName} (${convertResult.buffer.length} bytes)`);
+      console.log(`[Upload] 변환 완료: ${savedFileName} (${finalBuffer.length} bytes)`);
     } else {
-      // PDF, HWPX는 그대로 저장
+      // PDF, HWPX는 그대로
       savedFileName = generateFileName(file.name, ext);
-      savedFilePath = path.join(UPLOAD_DIR, savedFileName);
-      fs.writeFileSync(savedFilePath, fileBuffer);
+      finalBuffer = fileBuffer;
       finalFileType = ext.replace('.', '');
-      console.log(`[Upload] 파일 저장: ${savedFileName} (${fileBuffer.length} bytes)`);
+      console.log(`[Upload] 파일 처리: ${savedFileName} (${finalBuffer.length} bytes)`);
     }
+
+    // base64로 클라이언트에 반환 (서버 디스크 저장 X, 임시 전달)
+    const base64 = finalBuffer.toString('base64');
 
     return NextResponse.json({
       success: true,
       file: {
         originalName: file.name,
         savedName: savedFileName,
-        savedPath: savedFilePath,
+        savedPath: savedFileName, // 식별용 이름만 (실제 경로 아님)
         fileType: finalFileType,
         originalSize: file.size,
-        savedSize: fs.statSync(savedFilePath).size,
+        savedSize: finalBuffer.length,
         convertedFrom,
       },
+      base64,
       message: convertedFrom
         ? `${convertedFrom.toUpperCase()} → PDF 변환 완료`
         : '파일 업로드 완료',

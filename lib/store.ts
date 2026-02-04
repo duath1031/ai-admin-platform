@@ -19,18 +19,22 @@ interface ChatState {
   messages: Message[];
   isLoading: boolean;
   currentChatId: string | null;
+  /** 업로드된 파일의 base64 데이터 (path → base64) */
+  uploadedFileData: Record<string, string>;
   addMessage: (message: Omit<Message, "createdAt" | "id"> & { id?: string }) => void;
   updateMessage: (id: string, content: string) => void;
   setMessages: (messages: Message[]) => void;
   setLoading: (loading: boolean) => void;
   setCurrentChatId: (id: string | null) => void;
   clearMessages: () => void;
+  setUploadedFileData: (path: string, base64: string) => void;
 }
 
 export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   isLoading: false,
   currentChatId: null,
+  uploadedFileData: {},
   addMessage: (message) =>
     set((state) => ({
       messages: [
@@ -51,7 +55,11 @@ export const useChatStore = create<ChatState>((set) => ({
   setMessages: (messages) => set({ messages }),
   setLoading: (isLoading) => set({ isLoading }),
   setCurrentChatId: (currentChatId) => set({ currentChatId }),
-  clearMessages: () => set({ messages: [] }),
+  clearMessages: () => set({ messages: [], uploadedFileData: {} }),
+  setUploadedFileData: (path, base64) =>
+    set((state) => ({
+      uploadedFileData: { ...state.uploadedFileData, [path]: base64 },
+    })),
 }));
 
 interface Document {
