@@ -26,9 +26,13 @@ import * as path from 'path';
 export type WorkerStatus = 'idle' | 'busy' | 'error';
 export type SubmissionStep = 'generate' | 'login_check' | 'navigate' | 'upload' | 'verify' | 'submitted' | 'failed';
 
+export type FileType = 'hwpx' | 'pdf' | 'jpg' | 'jpeg' | 'png';
+
 export interface SubmissionRequest {
-  /** 제출할 파일 경로 (HWPX) */
+  /** 제출할 파일 경로 */
   filePath: string;
+  /** 파일 형식 (자동 감지됨) */
+  fileType?: FileType;
   /** 정부24 서비스 URL */
   serviceUrl: string;
   /** 서비스명 */
@@ -617,5 +621,31 @@ export class Gov24Worker {
       fs.unlinkSync(AUTH_STATE_PATH);
       console.log('[Gov24Worker] 세션 파일 삭제 완료');
     }
+  }
+
+  /**
+   * 파일 경로에서 FileType을 자동 감지한다.
+   */
+  static detectFileType(filePath: string): FileType {
+    const ext = path.extname(filePath).toLowerCase().replace('.', '');
+    const validTypes: FileType[] = ['hwpx', 'pdf', 'jpg', 'jpeg', 'png'];
+    if (validTypes.includes(ext as FileType)) {
+      return ext as FileType;
+    }
+    return 'pdf'; // 기본값
+  }
+
+  /**
+   * 파일 형식에 따른 MIME type 반환
+   */
+  static getMimeType(fileType: FileType): string {
+    const mimeMap: Record<FileType, string> = {
+      hwpx: 'application/vnd.hancom.hwpx',
+      pdf: 'application/pdf',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+    };
+    return mimeMap[fileType] || 'application/octet-stream';
   }
 }

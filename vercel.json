@@ -7,14 +7,21 @@
     {
       "path": "/api/cron/renew-knowledge",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/keep-alive",
+      "schedule": "*/5 * * * *"
     }
   ],
   "functions": {
     "app/api/cron/**/*.ts": {
       "maxDuration": 60
     },
+    "app/api/rpa/**/*.ts": {
+      "maxDuration": 60
+    },
     "app/api/**/*.ts": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "headers": [
