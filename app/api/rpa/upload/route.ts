@@ -18,7 +18,7 @@ export const maxDuration = 30;
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { PDFDocument } from 'pdf-lib';
+import { imageToPdf, getMimeFromExtension } from '@/lib/pdfUtils';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -62,48 +62,7 @@ function generateFileName(originalName: string, extension: string): string {
   return `${baseName}_${timestamp}${extension}`;
 }
 
-/**
- * JPG/PNG 이미지를 PDF로 변환한다.
- */
-async function convertImageToPdf(imageBuffer: Buffer, mimeType: string): Promise<Buffer> {
-  const pdfDoc = await PDFDocument.create();
-
-  let image;
-  if (mimeType === 'image/jpeg') {
-    image = await pdfDoc.embedJpg(imageBuffer);
-  } else if (mimeType === 'image/png') {
-    image = await pdfDoc.embedPng(imageBuffer);
-  } else {
-    throw new Error(`지원하지 않는 이미지 형식: ${mimeType}`);
-  }
-
-  // A4 사이즈 (595.28 x 841.89 points)
-  const A4_WIDTH = 595.28;
-  const A4_HEIGHT = 841.89;
-
-  // 이미지를 A4에 맞게 스케일링 (여백 포함)
-  const margin = 36; // 0.5 inch margin
-  const maxWidth = A4_WIDTH - margin * 2;
-  const maxHeight = A4_HEIGHT - margin * 2;
-
-  const imgWidth = image.width;
-  const imgHeight = image.height;
-  const scale = Math.min(maxWidth / imgWidth, maxHeight / imgHeight, 1);
-
-  const scaledWidth = imgWidth * scale;
-  const scaledHeight = imgHeight * scale;
-
-  const page = pdfDoc.addPage([A4_WIDTH, A4_HEIGHT]);
-  page.drawImage(image, {
-    x: (A4_WIDTH - scaledWidth) / 2,
-    y: (A4_HEIGHT - scaledHeight) / 2,
-    width: scaledWidth,
-    height: scaledHeight,
-  });
-
-  const pdfBytes = await pdfDoc.save();
-  return Buffer.from(pdfBytes);
-}
+// PDF 변환은 lib/pdfUtils.ts의 imageToPdf 사용
 
 // =============================================================================
 // POST: File Upload
@@ -155,16 +114,23 @@ export async function POST(request: NextRequest) {
     let convertedFrom: string | null = null;
     let finalFileType: string;
 
-    // JPG/PNG → PDF 자동 변환
+    // JPG/PNG → PDF 자동 변환 (lib/pdfUtils 사용)
     if (ext === '.jpg' || ext === '.jpeg' || ext === '.png') {
       console.log(`[Upload] 이미지 → PDF 변환: ${file.name} (${ext})`);
-      const pdfBuffer = await convertImageToPdf(fileBuffer, file.type || `image/${ext.replace('.', '')}`);
+      const mime = getMimeFromExtension(ext) || 'image/jpeg';
+      const convertResult = await imageToPdf(fileBuffer, mime);
+      if (!convertResult.success || !convertResult.buffer) {
+        return NextResponse.json(
+          { success: false, error: `PDF 변환 실패: ${convertResult.error}` },
+          { status: 500 }
+        );
+      }
       savedFileName = generateFileName(file.name, '.pdf');
       savedFilePath = path.join(UPLOAD_DIR, savedFileName);
-      fs.writeFileSync(savedFilePath, pdfBuffer);
+      fs.writeFileSync(savedFilePath, convertResult.buffer);
       convertedFrom = ext;
       finalFileType = 'pdf';
-      console.log(`[Upload] 변환 완료: ${savedFileName} (${pdfBuffer.length} bytes)`);
+      console.log(`[Upload] 변환 완료: ${savedFileName} (${convertResult.buffer.length} bytes)`);
     } else {
       // PDF, HWPX는 그대로 저장
       savedFileName = generateFileName(file.name, ext);

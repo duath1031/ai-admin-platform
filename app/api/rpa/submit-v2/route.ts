@@ -39,7 +39,7 @@ import * as fs from 'fs';
 // Types & Schema
 // =============================================================================
 
-/** 문서 상태: SIGNED=서명 완료, GENERATED=생성만 됨, UPLOADED=업로드됨 */
+/** 문서 상태: SIGNED=서명 완료(날인 PDF 업로드), GENERATED=시스템 HWPX, UPLOADED=단순 업로드 */
 type DocumentStatus = 'SIGNED' | 'GENERATED' | 'UPLOADED';
 
 const GenerateSubmitSchema = z.object({
@@ -49,7 +49,6 @@ const GenerateSubmitSchema = z.object({
   serviceUrl: z.string().url(),
   serviceName: z.string().min(1),
   autoSubmit: z.boolean().default(false),
-  /** 문서가 전자서명 완료된 상태인지 */
   documentStatus: z.enum(['SIGNED', 'GENERATED']).default('GENERATED'),
 });
 
@@ -63,9 +62,19 @@ const UploadSubmitSchema = z.object({
   documentStatus: z.enum(['SIGNED', 'GENERATED', 'UPLOADED']).default('UPLOADED'),
 });
 
+const DocumentIdSubmitSchema = z.object({
+  mode: z.literal('document'),
+  /** CivilServiceSubmission ID (기존 제출 건) */
+  documentId: z.string().min(1),
+  serviceUrl: z.string().url(),
+  serviceName: z.string().min(1),
+  autoSubmit: z.boolean().default(false),
+});
+
 const SubmitSchema = z.discriminatedUnion('mode', [
   GenerateSubmitSchema,
   UploadSubmitSchema,
+  DocumentIdSubmitSchema,
 ]);
 
 // =============================================================================
@@ -113,15 +122,18 @@ export async function POST(request: NextRequest) {
     const input = validation.data;
 
     // -----------------------------------------------------------------------
-    // Step 1: 파일 준비
+    // Step 1: 파일 준비 (3가지 모드)
     // -----------------------------------------------------------------------
     let filePath: string;
     let fileType: string;
+    let documentStatus: DocumentStatus;
     let hwpxMeta: { fileName: string; replacedCount: number } | null = null;
+    let existingSubmission: any = null;
 
     if (input.mode === 'generate') {
-      // HWPX 생성 모드
-      console.log(`[Submit-V2] Step 1: HWPX 생성 - ${input.templateCode}`);
+      // --- Mode A: HWPX 생성 ---
+      console.log(`[Submit-V2] Step 1A: HWPX 생성 - ${input.templateCode}`);
+      documentStatus = input.documentStatus as DocumentStatus;
 
       const template = await prisma.formTemplate.findUnique({
         where: { code: input.templateCode },
@@ -148,9 +160,11 @@ export async function POST(request: NextRequest) {
       fileType = 'hwpx';
       hwpxMeta = { fileName: hwpxResult.fileName, replacedCount: hwpxResult.replacedCount || 0 };
       console.log(`[Submit-V2] HWPX 생성 완료: ${hwpxResult.fileName} (${hwpxResult.replacedCount} 치환)`);
-    } else {
-      // 업로드된 파일 직접 제출
-      console.log(`[Submit-V2] Step 1: 업로드 파일 확인 - ${input.filePath}`);
+
+    } else if (input.mode === 'upload') {
+      // --- Mode B: 업로드 파일 직접 제출 ---
+      console.log(`[Submit-V2] Step 1B: 업로드 파일 확인 - ${input.filePath}`);
+      documentStatus = input.documentStatus as DocumentStatus;
 
       if (!fs.existsSync(input.filePath)) {
         return NextResponse.json(
@@ -161,47 +175,92 @@ export async function POST(request: NextRequest) {
 
       filePath = input.filePath;
       fileType = Gov24Worker.detectFileType(filePath);
+
+    } else {
+      // --- Mode C: documentId 기반 (기존 제출 건 조회) ---
+      console.log(`[Submit-V2] Step 1C: documentId 조회 - ${input.documentId}`);
+
+      existingSubmission = await prisma.civilServiceSubmission.findUnique({
+        where: { id: input.documentId },
+      });
+
+      if (!existingSubmission || existingSubmission.userId !== session.user.id) {
+        return NextResponse.json(
+          { success: false, error: '해당 문서를 찾을 수 없습니다.' },
+          { status: 404 }
+        );
+      }
+
+      const resultData = JSON.parse(existingSubmission.resultData || '{}');
+      filePath = resultData.filePath;
+      fileType = resultData.fileType || 'hwpx';
+      documentStatus = resultData.documentStatus || 'GENERATED';
+
+      if (!filePath || !fs.existsSync(filePath)) {
+        return NextResponse.json(
+          { success: false, error: '문서 파일을 찾을 수 없습니다. 파일이 만료되었을 수 있습니다.' },
+          { status: 404 }
+        );
+      }
+
+      hwpxMeta = resultData.hwpxMeta || null;
+      console.log(`[Submit-V2] 기존 문서 로드: ${existingSubmission.serviceName} (${documentStatus})`);
     }
 
     // -----------------------------------------------------------------------
     // Step 2: 문서 상태 체크
     // -----------------------------------------------------------------------
-    console.log(`[Submit-V2] Step 2: 문서 상태 = ${input.documentStatus}, 파일 형식 = ${fileType}`);
+    console.log(`[Submit-V2] Step 2: 문서 상태 = ${documentStatus}, 파일 형식 = ${fileType}`);
 
-    if (input.documentStatus === 'GENERATED' && fileType === 'hwpx') {
-      // HWPX는 GENERATED 상태에서도 제출 가능 (정부24가 처리)
+    if (documentStatus === 'SIGNED') {
+      // 사용자가 날인 후 업로드한 PDF → 즉시 제출 가능
+      console.log(`[Submit-V2] SIGNED 문서 - 바로 정부24 업로드`);
+    } else if (documentStatus === 'GENERATED' && fileType === 'hwpx') {
       console.log(`[Submit-V2] HWPX 문서 (GENERATED) - 정부24 업로드 진행`);
-    } else if (input.documentStatus === 'GENERATED' && fileType === 'pdf') {
-      // PDF가 서명 안 된 상태 → 경고만 로깅 (제출은 허용)
-      console.log(`[Submit-V2] 경고: PDF 문서가 서명되지 않았습니다. 제출은 진행하지만 반려될 수 있습니다.`);
+    } else if (documentStatus === 'GENERATED' && fileType === 'pdf') {
+      console.log(`[Submit-V2] 경고: PDF 문서 미서명. 제출 진행하나 반려 가능성 있음`);
     }
 
     // -----------------------------------------------------------------------
-    // Step 3: DB 레코드 생성
+    // Step 3: DB 레코드 생성 (또는 기존 건 업데이트)
     // -----------------------------------------------------------------------
-    const submission = await prisma.civilServiceSubmission.create({
-      data: {
-        serviceName: input.serviceName,
-        serviceCode: input.mode === 'generate' ? (input as any).templateCode : `upload_${fileType}`,
-        targetSite: 'gov24',
-        targetUrl: input.serviceUrl,
-        applicationData: JSON.stringify(
-          input.mode === 'generate' ? (input as any).data : { filePath, fileType }
-        ),
-        applicantName: input.mode === 'generate'
-          ? ((input as any).data['성명'] || (input as any).data['대표자명'] || session.user.name || '')
-          : (session.user.name || ''),
-        status: 'processing',
-        userId: session.user.id,
-        resultData: JSON.stringify({
-          filePath,
-          fileType,
-          documentStatus: input.documentStatus,
-          hwpxMeta,
-          pipeline: 'v2',
-        }),
-      },
-    });
+    let submission: any;
+
+    if (existingSubmission) {
+      // Mode C: 기존 건 상태 업데이트
+      submission = await prisma.civilServiceSubmission.update({
+        where: { id: existingSubmission.id },
+        data: {
+          status: 'processing',
+          targetUrl: input.serviceUrl,
+        },
+      });
+    } else {
+      // Mode A/B: 새 레코드 생성
+      submission = await prisma.civilServiceSubmission.create({
+        data: {
+          serviceName: input.serviceName,
+          serviceCode: input.mode === 'generate' ? (input as any).templateCode : `upload_${fileType}`,
+          targetSite: 'gov24',
+          targetUrl: input.serviceUrl,
+          applicationData: JSON.stringify(
+            input.mode === 'generate' ? (input as any).data : { filePath, fileType }
+          ),
+          applicantName: input.mode === 'generate'
+            ? ((input as any).data['성명'] || (input as any).data['대표자명'] || session.user.name || '')
+            : (session.user.name || ''),
+          status: 'processing',
+          userId: session.user.id,
+          resultData: JSON.stringify({
+            filePath,
+            fileType,
+            documentStatus,
+            hwpxMeta,
+            pipeline: 'v2',
+          }),
+        },
+      });
+    }
 
     // 트래킹 로그: 파일 준비 완료
     await prisma.submissionTrackingLog.create({
@@ -248,7 +307,7 @@ export async function POST(request: NextRequest) {
         resultData: JSON.stringify({
           filePath,
           fileType,
-          documentStatus: input.documentStatus,
+          documentStatus,
           hwpxMeta,
           pipeline: 'v2',
           rpaResult: {
@@ -282,7 +341,7 @@ export async function POST(request: NextRequest) {
       step: rpaResult.step,
       status: newStatus,
       message: rpaResult.message,
-      documentStatus: input.documentStatus,
+      documentStatus,
       fileType,
       screenshotPath: rpaResult.screenshotPath,
       applicationNumber: rpaResult.applicationNumber,

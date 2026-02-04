@@ -285,16 +285,174 @@ export class Gov24Worker {
   }
 
   // ---------------------------------------------------------------------------
-  // Core: Submit File to Gov24
+  // Core: Upload Document (파일 업로드 전담)
   // ---------------------------------------------------------------------------
 
   /**
-   * HWPX 파일을 정부24에 업로드한다.
+   * 파일을 현재 페이지에 업로드한다.
+   * 파일 확장자를 자동 감지하여 적절한 input에 매칭한다.
+   *
+   * @param filePath - 업로드할 파일의 절대 경로
+   * @returns 업로드 성공 여부
+   */
+  async submitDocument(filePath: string): Promise<{ success: boolean; message: string }> {
+    if (!this.page) {
+      return { success: false, message: 'Page not initialized' };
+    }
+
+    const fileType = Gov24Worker.detectFileType(filePath);
+    console.log(`[Gov24Worker] submitDocument: ${path.basename(filePath)} (${fileType})`);
+
+    // 파일 확장자별 input selector 우선순위 분기
+    const selectorsByType: Record<string, string[]> = {
+      hwpx: [
+        'input[type="file"]',
+        'input[accept*=".hwp"]',
+        'input[accept*=".hwpx"]',
+        'input[name*="file"]',
+        'input[name*="attach"]',
+      ],
+      pdf: [
+        'input[type="file"]',
+        'input[accept*=".pdf"]',
+        'input[name*="file"]',
+        'input[name*="attach"]',
+      ],
+      default: [
+        'input[type="file"]',
+        'input[name*="file"]',
+        'input[name*="attach"]',
+      ],
+    };
+
+    const selectors = selectorsByType[fileType] || selectorsByType.default;
+
+    // 1단계: 직접 file input 찾기
+    let uploaded = false;
+    for (const selector of selectors) {
+      try {
+        const fileInput = await this.page.$(selector);
+        if (fileInput) {
+          await fileInput.setInputFiles(filePath);
+          uploaded = true;
+          console.log(`[Gov24Worker] 파일 업로드 성공: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    // 2단계: 첨부 버튼 클릭 → 숨겨진 input 찾기
+    if (!uploaded) {
+      const attachBtnSelectors = [
+        'button:has-text("첨부")',
+        'button:has-text("파일")',
+        'a:has-text("첨부파일")',
+        'a:has-text("파일찾기")',
+        '.btn-attach',
+        '#attachBtn',
+        '[class*="attach"]',
+        '[class*="upload"]',
+      ];
+
+      for (const selector of attachBtnSelectors) {
+        try {
+          const btn = await this.page.$(selector);
+          if (btn) {
+            await btn.click();
+            await this.page.waitForTimeout(1500);
+
+            const fileInput = await this.page.$('input[type="file"]');
+            if (fileInput) {
+              await fileInput.setInputFiles(filePath);
+              uploaded = true;
+              console.log(`[Gov24Worker] 첨부 버튼 클릭 후 업로드 성공: ${selector}`);
+              break;
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+
+    if (!uploaded) {
+      return { success: false, message: '파일 업로드 input을 찾을 수 없습니다.' };
+    }
+
+    // 3단계: 업로드 확인 대기 (UI 변화 감지)
+    console.log(`[Gov24Worker] 업로드 확인 대기 중...`);
+    const uploadConfirmed = await this.waitForUploadConfirmation();
+
+    if (uploadConfirmed) {
+      console.log(`[Gov24Worker] 업로드 확인됨`);
+      return { success: true, message: `파일 업로드 완료 (${fileType})` };
+    }
+
+    // 확인 못해도 업로드 자체는 성공한 것이므로 성공 반환
+    console.log(`[Gov24Worker] 업로드 확인 UI 미감지 (파일은 전송됨)`);
+    return { success: true, message: `파일 전송됨 (확인 UI 미감지, ${fileType})` };
+  }
+
+  /**
+   * 업로드 후 "첨부 완료" 등의 UI 변화를 감지한다.
+   * 정부24에서 파일 업로드 후 나타나는 다양한 확인 패턴을 대기한다.
+   */
+  private async waitForUploadConfirmation(): Promise<boolean> {
+    if (!this.page) return false;
+
+    const confirmSelectors = [
+      // 파일명이 표시되는 영역
+      '.file-name',
+      '.attach-file-name',
+      '.uploaded-file',
+      '[class*="file-list"] li',
+      '[class*="attach-list"] li',
+      // 첨부 완료 텍스트
+      'span:has-text("첨부완료")',
+      'span:has-text("업로드완료")',
+      'div:has-text("첨부되었습니다")',
+      // 삭제 버튼 (파일이 첨부되면 삭제 버튼이 나타남)
+      'button:has-text("삭제")',
+      'a:has-text("삭제")',
+      '[class*="file-delete"]',
+      '[class*="btn-del"]',
+    ];
+
+    try {
+      // 최대 8초간 대기하며 확인 UI 감지 시도
+      const result = await Promise.race([
+        ...confirmSelectors.map(selector =>
+          this.page!.waitForSelector(selector, { timeout: 8000, state: 'visible' })
+            .then(() => selector)
+            .catch(() => null)
+        ),
+        new Promise<null>(resolve => setTimeout(() => resolve(null), 8000)),
+      ]);
+
+      if (result) {
+        console.log(`[Gov24Worker] 업로드 확인 UI 감지: ${result}`);
+        return true;
+      }
+    } catch {
+      // 타임아웃 - 확인 UI 없음
+    }
+
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Core: Submit File to Gov24 (Full Pipeline)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 파일을 정부24에 업로드한다.
    *
    * Flow:
    * 1. 세션 확인 (login_check)
    * 2. 서비스 페이지 이동 (navigate)
-   * 3. 파일 업로드 (upload)
+   * 3. 파일 업로드 - submitDocument() (upload)
    * 4. 스크린샷 확인 (verify)
    * 5. (선택) 제출 (submitted)
    */
@@ -348,7 +506,6 @@ export class Gov24Worker {
       // 로그인 페이지로 리다이렉트되었는지 확인
       if (this.page.url().includes('nlogin') || this.page.url().includes('login')) {
         await this.cleanup();
-        // 세션 파일 삭제
         if (fs.existsSync(AUTH_STATE_PATH)) {
           fs.unlinkSync(AUTH_STATE_PATH);
         }
@@ -360,93 +517,35 @@ export class Gov24Worker {
         };
       }
 
-      const navScreenshot = await this.takeScreenshot('navigate');
+      await this.takeScreenshot('navigate');
 
-      // Step 3: Upload file
+      // Step 3: Upload file via submitDocument
       console.log(`[Gov24Worker] Step 3: 파일 업로드 - ${request.filePath}`);
+      const uploadResult = await this.submitDocument(request.filePath);
 
-      // 파일 업로드 input 찾기
-      const fileInputSelectors = [
-        'input[type="file"]',
-        'input[name*="file"]',
-        'input[name*="attach"]',
-        'input[accept*=".hwp"]',
-        'input[accept*=".hwpx"]',
-      ];
-
-      let fileInputFound = false;
-      for (const selector of fileInputSelectors) {
-        try {
-          const fileInput = await this.page.$(selector);
-          if (fileInput) {
-            await fileInput.setInputFiles(request.filePath);
-            fileInputFound = true;
-            console.log(`[Gov24Worker] 파일 업로드 성공: ${selector}`);
-            break;
-          }
-        } catch {
-          continue;
-        }
-      }
-
-      if (!fileInputFound) {
-        // 첨부파일 버튼 클릭 시도 (숨겨진 input이 있을 수 있음)
-        const attachBtnSelectors = [
-          'button:has-text("첨부")',
-          'button:has-text("파일")',
-          'a:has-text("첨부파일")',
-          '.btn-attach',
-          '#attachBtn',
-        ];
-
-        for (const selector of attachBtnSelectors) {
-          try {
-            const btn = await this.page.$(selector);
-            if (btn) {
-              await btn.click();
-              await this.page.waitForTimeout(1000);
-
-              // 클릭 후 다시 file input 찾기
-              const fileInput = await this.page.$('input[type="file"]');
-              if (fileInput) {
-                await fileInput.setInputFiles(request.filePath);
-                fileInputFound = true;
-                console.log(`[Gov24Worker] 첨부 버튼 클릭 후 업로드 성공`);
-                break;
-              }
-            }
-          } catch {
-            continue;
-          }
-        }
-      }
-
-      if (!fileInputFound) {
+      if (!uploadResult.success) {
         const errorScreenshot = await this.takeScreenshot('upload_error');
         await this.cleanup();
         return {
           success: false,
           step: 'upload',
-          message: '파일 업로드 input을 찾을 수 없습니다. 수동으로 업로드해주세요.',
+          message: uploadResult.message + ' 수동으로 업로드해주세요.',
           screenshotPath: errorScreenshot,
         };
       }
-
-      await this.page.waitForTimeout(2000);
 
       // Step 4: Verify (스크린샷으로 사용자 컨펌 요청)
       console.log(`[Gov24Worker] Step 4: 제출 전 확인`);
       const verifyScreenshot = await this.takeScreenshot('verify');
 
       if (!request.autoSubmit) {
-        // 세션 저장 (나중에 제출할 때 사용)
         await this.saveSession();
         await this.cleanup();
 
         return {
           success: true,
           step: 'verify',
-          message: '파일 업로드 완료. 제출 전 스크린샷을 확인해주세요. 확인 후 submit-confirm API를 호출하세요.',
+          message: '파일 업로드 완료. 제출 전 스크린샷을 확인해주세요.',
           screenshotPath: verifyScreenshot,
         };
       }
