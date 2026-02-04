@@ -244,6 +244,8 @@ ${textMap}
 7. 서명란("서명 또는 인" 근처 빈칸)은 필드 아님 — 스킵
 8. injections의 nodeIndex는 위 텍스트 노드 목록의 [인덱스] 숫자와 정확히 일치해야 함
 9. 모든 체크박스 항목([  ] 또는 [ ])에 대해 각각 개별 injection을 만들어라
+10. 날짜(년/월/일) 패턴이 있으면 fields에 type: "date"인 단일 필드를 추가하고 (예: { name: "신고일자", label: "신고 연월일", type: "date" }), 각 빈칸 노드는 {{신고연도}}, {{신고월}}, {{신고일}} 등 개별 replace_blank injection으로 처리하라
+11. "서명 또는 인" 텍스트 근처 빈칸은 서명란이므로 필드로 만들지 말 것
 
 JSON만 반환하라. 마크다운 코드블록 없이.`;
 
@@ -275,45 +277,47 @@ function executeInjections(
   allNodes: TextNode[],
   injections: Injection[],
 ): Map<string, string> {
-  // 1. 유효한 injection만 수집
+  // 1. Validate and separate injections
   interface ValidInj { node: TextNode; injection: Injection; }
-  const valid: ValidInj[] = [];
+  const textEdits: ValidInj[] = [];   // replace_pattern, replace_blank
+  const paraInserts: ValidInj[] = []; // append → new paragraph (레이아웃 보존)
+
   for (const inj of injections) {
     const node = allNodes.find((n) => n.index === inj.nodeIndex);
     if (!node) { console.warn(`  [주의] 노드 [${inj.nodeIndex}] 없음 — 스킵`); continue; }
-    valid.push({ node, injection: inj });
+    if (inj.action === 'append') {
+      paraInserts.push({ node, injection: inj });
+    } else {
+      textEdits.push({ node, injection: inj });
+    }
   }
 
-  // 2. nodeIndex별로 그룹핑 → 같은 노드의 injection들을 순차 적용
+  // 2. Process text edits (replace_pattern, replace_blank): group by nodeIndex
   const byNode: Record<number, ValidInj[]> = {};
-  for (const v of valid) {
+  for (const v of textEdits) {
     const idx = v.node.index;
     if (!byNode[idx]) byNode[idx] = [];
     byNode[idx].push(v);
   }
 
-  // 3. 노드별로 최종 텍스트 계산
-  interface NodeResult { node: TextNode; finalText: string; }
-  const nodeResults: NodeResult[] = [];
+  interface XmlEdit {
+    entryName: string;
+    startPos: number;
+    endPos: number;
+    newContent: string;
+  }
+  const allEdits: XmlEdit[] = [];
 
+  // Text replacement edits
   for (const nodeIdx of Object.keys(byNode)) {
     const group = byNode[Number(nodeIdx)];
     const node = group[0].node;
-    let text = ''; // will be set from XML
-
-    // 임시로 원본 텍스트를 xmlMap에서 추출
     const xml = xmlMap.get(node.entryName);
     if (!xml) continue;
-    text = xml.substring(node.textStart, node.textEnd);
+    let text = xml.substring(node.textStart, node.textEnd);
 
-    // 이 노드의 모든 injection을 순차 적용
     for (const { injection } of group) {
       switch (injection.action) {
-        case 'append':
-          console.log(`  [태깅] APPEND [${node.index}]: "${text.substring(0, 30)}..." + "${injection.appendText}"`);
-          text = text + (injection.appendText || '');
-          break;
-
         case 'replace_pattern':
           if (!injection.find || injection.replace === undefined) {
             console.warn(`  [주의] [${node.index}] replace_pattern에 find/replace 누락`);
@@ -323,46 +327,98 @@ function executeInjections(
             console.warn(`  [주의] [${node.index}] 패턴 "${injection.find}" 미발견 in "${text.substring(0, 60)}"`);
             break;
           }
-          // replace만 첫 번째 매치 치환 (의도적)
           text = text.replace(injection.find, injection.replace);
           console.log(`  [태깅] REPLACE [${node.index}]: "${injection.find}" → "${injection.replace}"`);
           break;
-
         case 'replace_blank':
           console.log(`  [태깅] BLANK [${node.index}]: [공백 ${text.length}자] → "${injection.appendText}"`);
           text = injection.appendText || '';
           break;
-
-        default:
-          console.warn(`  [주의] [${node.index}] 알 수 없는 action: ${injection.action}`);
       }
     }
 
-    nodeResults.push({ node, finalText: text });
+    allEdits.push({
+      entryName: node.entryName,
+      startPos: node.textStart,
+      endPos: node.textEnd,
+      newContent: text,
+    });
   }
 
-  // 4. entryName별로 그룹 → 역순 위치로 XML에 한 번씩만 반영
-  const byEntry: Record<string, NodeResult[]> = {};
-  for (const nr of nodeResults) {
-    const key = nr.node.entryName;
-    if (!byEntry[key]) byEntry[key] = [];
-    byEntry[key].push(nr);
+  // 3. Paragraph insertion edits (for "append" → 새 단락으로 삽입, 레이아웃 보존)
+  for (const { node, injection } of paraInserts) {
+    const xml = xmlMap.get(node.entryName);
+    if (!xml) continue;
+
+    // Find </hp:p> after the text node
+    const closePIdx = xml.indexOf('</hp:p>', node.textEnd);
+    if (closePIdx === -1) {
+      // Fallback: 못 찾으면 텍스트 append
+      console.warn(`  [주의] [${node.index}] </hp:p> 미발견 — 텍스트 append 폴백`);
+      allEdits.push({
+        entryName: node.entryName,
+        startPos: node.textStart,
+        endPos: node.textEnd,
+        newContent: xml.substring(node.textStart, node.textEnd) + (injection.appendText || ''),
+      });
+      continue;
+    }
+
+    // Safety: 같은 테이블 셀 안에 있는지 확인
+    const closeTcIdx = xml.indexOf('</hp:tc>', node.textEnd);
+    if (closeTcIdx !== -1 && closePIdx > closeTcIdx) {
+      console.warn(`  [주의] [${node.index}] </hp:p>가 셀 밖 — 스킵`);
+      continue;
+    }
+
+    // Extract paraPrIDRef from enclosing <hp:p>
+    const openPIdx = xml.lastIndexOf('<hp:p', node.textStart);
+    let paraId = '0';
+    if (openPIdx !== -1) {
+      const paraTagEnd = xml.indexOf('>', openPIdx);
+      const paraTag = xml.substring(openPIdx, paraTagEnd + 1);
+      const m = paraTag.match(/paraPrIDRef="(\d+)"/);
+      if (m) paraId = m[1];
+    }
+
+    // Extract charPrIDRef from enclosing <hp:run>
+    const openRunIdx = xml.lastIndexOf('<hp:run', node.textStart);
+    let charId = '0';
+    if (openRunIdx !== -1) {
+      const runTagEnd = xml.indexOf('>', openRunIdx);
+      const runTag = xml.substring(openRunIdx, runTagEnd + 1);
+      const m = runTag.match(/charPrIDRef="(\d+)"/);
+      if (m) charId = m[1];
+    }
+
+    const placeholder = (injection.appendText || '').trim();
+    const newPara = `<hp:p paraPrIDRef="${paraId}"><hp:run charPrIDRef="${charId}"><hp:t>${placeholder}</hp:t></hp:run></hp:p>`;
+    const insertAt = closePIdx + '</hp:p>'.length;
+
+    allEdits.push({
+      entryName: node.entryName,
+      startPos: insertAt,
+      endPos: insertAt, // pure insertion (no replacement)
+      newContent: newPara,
+    });
+    console.log(`  [태깅] NEW_PARA [${node.index}]: "${node.text.substring(0, 30)}..." → 새 단락 "${placeholder}"`);
+  }
+
+  // 4. Apply all edits per entry, sorted by position descending (offset 보존)
+  const editsByEntry: Record<string, XmlEdit[]> = {};
+  for (const edit of allEdits) {
+    if (!editsByEntry[edit.entryName]) editsByEntry[edit.entryName] = [];
+    editsByEntry[edit.entryName].push(edit);
   }
 
   const result = new Map(xmlMap);
-
-  for (const entryName of Object.keys(byEntry)) {
-    let xml = result.get(entryName);
-    if (!xml) continue;
-
-    // 역순 정렬 (뒤→앞 처리로 offset 보존)
-    const sorted = byEntry[entryName].sort((a, b) => b.node.textStart - a.node.textStart);
-
-    for (const { node, finalText } of sorted) {
-      xml = xml!.substring(0, node.textStart) + finalText + xml!.substring(node.textEnd);
+  for (const entryName of Object.keys(editsByEntry)) {
+    let xml = result.get(entryName)!;
+    const sorted = editsByEntry[entryName].sort((a, b) => b.startPos - a.startPos);
+    for (const edit of sorted) {
+      xml = xml.substring(0, edit.startPos) + edit.newContent + xml.substring(edit.endPos);
     }
-
-    result.set(entryName, xml!);
+    result.set(entryName, xml);
   }
 
   return result;

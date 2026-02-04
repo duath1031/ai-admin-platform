@@ -168,6 +168,15 @@ function replacePlaceholders(xml: string, data: HwpxFieldMapping): { result: str
     }
   }
 
+  // 3단계: 미치환 플레이스홀더 정리 (사용자에게 {{}} 노출 방지)
+  const beforeCleanup = result;
+  result = result.replace(/\{\{check_[^}]+\}\}/g, '\u25A1'); // 미체크 체크박스 → □
+  result = result.replace(/\{\{[^}]+\}\}/g, '');              // 나머지 → 빈문자열
+  const cleaned = (beforeCleanup.match(/\{\{[^}]+\}\}/g) || []).length;
+  if (cleaned > 0) {
+    console.log(`[HWPX] ${cleaned}개 미치환 플레이스홀더 정리됨`);
+  }
+
   return { result, count: totalCount };
 }
 
