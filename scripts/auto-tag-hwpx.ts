@@ -275,76 +275,91 @@ function executeInjections(
   allNodes: TextNode[],
   injections: Injection[],
 ): Map<string, string> {
-  // Group by entryName, sort by position descending
-  interface Work {
-    node: TextNode;
-    injection: Injection;
-  }
-
-  const works: Work[] = [];
-
+  // 1. 유효한 injection만 수집
+  interface ValidInj { node: TextNode; injection: Injection; }
+  const valid: ValidInj[] = [];
   for (const inj of injections) {
     const node = allNodes.find((n) => n.index === inj.nodeIndex);
-    if (!node) {
-      console.warn(`  [주의] 노드 [${inj.nodeIndex}] 없음 — 스킵`);
-      continue;
-    }
-    works.push({ node, injection: inj });
+    if (!node) { console.warn(`  [주의] 노드 [${inj.nodeIndex}] 없음 — 스킵`); continue; }
+    valid.push({ node, injection: inj });
   }
 
-  // Group by entry
-  const grouped: Record<string, Work[]> = {};
-  for (const w of works) {
-    const key = w.node.entryName;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(w);
+  // 2. nodeIndex별로 그룹핑 → 같은 노드의 injection들을 순차 적용
+  const byNode: Record<number, ValidInj[]> = {};
+  for (const v of valid) {
+    const idx = v.node.index;
+    if (!byNode[idx]) byNode[idx] = [];
+    byNode[idx].push(v);
   }
 
-  const result = new Map(xmlMap);
+  // 3. 노드별로 최종 텍스트 계산
+  interface NodeResult { node: TextNode; finalText: string; }
+  const nodeResults: NodeResult[] = [];
 
-  for (const entryName of Object.keys(grouped)) {
-    let xml = result.get(entryName);
+  for (const nodeIdx of Object.keys(byNode)) {
+    const group = byNode[Number(nodeIdx)];
+    const node = group[0].node;
+    let text = ''; // will be set from XML
+
+    // 임시로 원본 텍스트를 xmlMap에서 추출
+    const xml = xmlMap.get(node.entryName);
     if (!xml) continue;
+    text = xml.substring(node.textStart, node.textEnd);
 
-    // Sort descending by textStart (process from end to preserve offsets)
-    const entryWorks = grouped[entryName].sort((a, b) => b.node.textStart - a.node.textStart);
-
-    for (const w of entryWorks) {
-      const { node, injection } = w;
-      const originalText = xml!.substring(node.textStart, node.textEnd);
-
-      let newText: string;
-
+    // 이 노드의 모든 injection을 순차 적용
+    for (const { injection } of group) {
       switch (injection.action) {
         case 'append':
-          newText = originalText + (injection.appendText || '');
-          console.log(`  [태깅] APPEND [${node.index}]: "${originalText.substring(0, 30)}..." + "${injection.appendText}"`);
+          console.log(`  [태깅] APPEND [${node.index}]: "${text.substring(0, 30)}..." + "${injection.appendText}"`);
+          text = text + (injection.appendText || '');
           break;
 
         case 'replace_pattern':
           if (!injection.find || injection.replace === undefined) {
             console.warn(`  [주의] [${node.index}] replace_pattern에 find/replace 누락`);
-            continue;
+            break;
           }
-          if (!originalText.includes(injection.find)) {
-            console.warn(`  [주의] [${node.index}] 패턴 "${injection.find}" 미발견 in "${originalText.substring(0, 60)}"`);
-            continue;
+          if (!text.includes(injection.find)) {
+            console.warn(`  [주의] [${node.index}] 패턴 "${injection.find}" 미발견 in "${text.substring(0, 60)}"`);
+            break;
           }
-          newText = originalText.replace(injection.find, injection.replace);
+          // replace만 첫 번째 매치 치환 (의도적)
+          text = text.replace(injection.find, injection.replace);
           console.log(`  [태깅] REPLACE [${node.index}]: "${injection.find}" → "${injection.replace}"`);
           break;
 
         case 'replace_blank':
-          newText = injection.appendText || '';
-          console.log(`  [태깅] BLANK [${node.index}]: [공백 ${originalText.length}자] → "${newText}"`);
+          console.log(`  [태깅] BLANK [${node.index}]: [공백 ${text.length}자] → "${injection.appendText}"`);
+          text = injection.appendText || '';
           break;
 
         default:
           console.warn(`  [주의] [${node.index}] 알 수 없는 action: ${injection.action}`);
-          continue;
       }
+    }
 
-      xml = xml!.substring(0, node.textStart) + newText + xml!.substring(node.textEnd);
+    nodeResults.push({ node, finalText: text });
+  }
+
+  // 4. entryName별로 그룹 → 역순 위치로 XML에 한 번씩만 반영
+  const byEntry: Record<string, NodeResult[]> = {};
+  for (const nr of nodeResults) {
+    const key = nr.node.entryName;
+    if (!byEntry[key]) byEntry[key] = [];
+    byEntry[key].push(nr);
+  }
+
+  const result = new Map(xmlMap);
+
+  for (const entryName of Object.keys(byEntry)) {
+    let xml = result.get(entryName);
+    if (!xml) continue;
+
+    // 역순 정렬 (뒤→앞 처리로 offset 보존)
+    const sorted = byEntry[entryName].sort((a, b) => b.node.textStart - a.node.textStart);
+
+    for (const { node, finalText } of sorted) {
+      xml = xml!.substring(0, node.textStart) + finalText + xml!.substring(node.textEnd);
     }
 
     result.set(entryName, xml!);
