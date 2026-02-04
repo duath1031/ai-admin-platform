@@ -41,3 +41,12 @@ export {
   type GeneratedDocument,
   type FormData,
 } from "./generator";
+
+// HWPX 엔진 (Phase 9)
+export {
+  generateHwpx,
+  extractPlaceholders,
+  saveHwpxToTemp,
+  type HwpxFieldMapping,
+  type HwpxGenerateResult,
+} from "../hwpx";

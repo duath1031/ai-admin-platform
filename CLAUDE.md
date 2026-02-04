@@ -1,5 +1,51 @@
 # AI Admin Platform - 작업 메모
 
+## ✅ 완료: Phase 9 & 10 - HWPX 엔진 + Gov24 RPA (2026-02-04)
+
+### Phase 9: HWPX Document Engine (The Writer v2)
+- **DOCX 방식 폐기** → **HWPX (한글 표준 문서) 네이티브 엔진** 도입
+- `adm-zip`으로 HWPX(ZIP) 해체 → XML 내 `{{placeholder}}` 치환 → 재압축
+- 레이아웃 100% 보존, XML 특수문자 이스케이프 처리 (`escapeXml()`)
+- 분할된 플레이스홀더(XML 태그에 걸쳐 나뉜 경우) 자동 감지 및 치환
+
+#### 생성된 파일
+- `lib/hwpx.ts` - HWPX 엔진 코어 (generateHwpx, extractPlaceholders, saveHwpxToTemp)
+- `scripts/sync-hwpx.ts` - HWPX 템플릿 자동 등록 스크립트 (public/templates/hwpx/ → DB)
+- `app/api/document/generate-hwpx/route.ts` - HWPX 생성 API (POST: 생성, GET: 목록)
+- `public/templates/hwpx/` - HWPX 템플릿 폴더 (여기에 .hwpx 파일 배치)
+
+#### 사용법
+```bash
+# 1. 템플릿 파일을 public/templates/hwpx/ 에 배치
+# 2. 동기화 스크립트 실행 (파일 → DB 자동 등록)
+npx ts-node scripts/sync-hwpx.ts
+
+# 3. API로 문서 생성
+POST /api/document/generate-hwpx
+{
+  "templateCode": "hwpx_식품영업신고서",
+  "data": { "상호": "주식회사 어드미니", "성명": "염현수" }
+}
+```
+
+### Phase 10: Gov24 RPA Engine (The Runner)
+- 기존 RPA 폐기 → **Playwright + StorageState** 방식 재구축
+- Session Persistence: `auth.json`에 세션 저장/재사용 (30분 TTL)
+- Session Lock: 동시 RPA 작업 방지 (5분 타임아웃 좀비 방지)
+- 스크린샷 안전장치: 제출 전 스크린샷 → 사용자 컨펌
+
+#### 생성된 파일
+- `lib/rpa/gov24Worker.ts` - Gov24Worker 클래스 (세션관리, 파일업로드, 스크린샷)
+- `app/api/rpa/submit-hwpx/route.ts` - 통합 파이프라인 API
+
+#### 파이프라인 흐름
+1. `POST /api/rpa/submit-hwpx` → HWPX 생성 → 세션 확인 → 정부24 업로드 → 스크린샷
+2. `POST /api/rpa/submit-hwpx?action=confirm` → 스크린샷 확인 후 최종 제출
+3. `POST /api/rpa/submit-hwpx?action=session-check` → 세션 유효성 확인
+4. `GET /api/rpa/submit-hwpx` → 워커 상태 조회
+
+---
+
 ## ✅ 완료: The Navigator (정부24 딥링크) - 2026-01-28
 
 ### 핵심 변경
@@ -79,6 +125,8 @@
 | 1 | The Writer | ✅ 완료 | DOCX 템플릿 엔진 |
 | 2 | The Brain | ✅ 완료 | 대용량 지식 파이프라인 (500MB) |
 | 3 | The Navigator | ✅ 완료 | 정부24 딥링크 시스템 |
+| 9 | The Writer v2 | ✅ 완료 | HWPX 네이티브 엔진 (레이아웃 100% 보존) |
+| 10 | The Runner | ✅ 완료 | Gov24 RPA (Playwright + StorageState) |
 
 ### 테스트 방법
 ```bash

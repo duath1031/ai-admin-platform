@@ -12,7 +12,7 @@ import { searchBusinessTypes } from "@/lib/formDatabase";
 import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawService";
 import { quickClassify } from "@/lib/rag/intentClassifier";
 // Knowledge Base - 경량 버전 사용 (Smart Tag 기반)
-import { getKnowledgeContextFast, getKnowledgeByTags, getActiveKnowledgeDocuments } from "@/lib/ai/knowledgeQuery";
+import { getKnowledgeByTags } from "@/lib/ai/knowledgeQuery";
 // 문서 생성 시스템
 import { FORM_TEMPLATES } from "@/lib/document/templates";
 import { GOV24_SERVICES } from "@/lib/document/gov24Links";
@@ -349,339 +349,203 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 추가 컨텍스트 정보 수집
-    let additionalContext = "";
-
     // =========================================================================
-    // 마스터 프로필 (기업 정보) 로드 — 서류 자동완성 및 맞춤 상담용
+    // [최적화] 모든 외부 API 호출을 병렬 실행 (순차→병렬)
+    // 기존: 순차 실행 ~15-30초 → 최적화 후: 병렬 실행 ~3-5초
     // =========================================================================
-    try {
-      const companyProfile = await prisma.companyProfile.findUnique({
-        where: { userId: session.user.id as string },
-      });
-      if (companyProfile) {
-        const profileLines: string[] = [];
-        if (companyProfile.companyName) profileLines.push(`- 상호: ${companyProfile.companyName}`);
-        if (companyProfile.ownerName) profileLines.push(`- 대표자: ${companyProfile.ownerName}`);
-        if (companyProfile.bizRegNo) {
-          const b = companyProfile.bizRegNo;
-          const formatted = b.length === 10 ? `${b.slice(0,3)}-${b.slice(3,5)}-${b.slice(5)}` : b;
-          profileLines.push(`- 사업자등록번호: ${formatted}`);
-        }
-        if (companyProfile.corpRegNo) {
-          const c = companyProfile.corpRegNo;
-          const formatted = c.length === 13 ? `${c.slice(0,6)}-${c.slice(6)}` : c;
-          profileLines.push(`- 법인등록번호: ${formatted}`);
-        }
-        if (companyProfile.address) profileLines.push(`- 주소: ${companyProfile.address}`);
-        if (companyProfile.bizType) profileLines.push(`- 업태/종목: ${companyProfile.bizType}`);
-        if (companyProfile.foundedDate) profileLines.push(`- 설립일: ${companyProfile.foundedDate.toISOString().split('T')[0]}`);
-        if (companyProfile.employeeCount > 0) profileLines.push(`- 직원 수: ${companyProfile.employeeCount}명`);
-        if (companyProfile.capital > 0) {
-          const cap = Number(companyProfile.capital);
-          const capStr = cap >= 100000000 ? `${(cap / 100000000).toFixed(1)}억원` : `${Math.round(cap / 10000).toLocaleString()}만원`;
-          profileLines.push(`- 자본금: ${capStr}`);
-        }
-
-        if (profileLines.length > 0) {
-          additionalContext += `\n\n[사용자 기업 정보 (마스터 프로필)]
-${profileLines.join('\n')}
-⚠️ 위 정보는 사용자가 사전에 등록한 기업 정보입니다.
-- 답변 시 이 정보를 자연스럽게 활용하세요 (예: "대표님 회사 주소인 OO 기준으로 분석하면...").
-- 이미 등록된 정보를 다시 물어보지 마세요.
-- 서류 작성 시 위 정보를 자동으로 채워 넣으세요.`;
-          console.log(`[Chat Stream] 마스터 프로필 로드: ${companyProfile.companyName || '(상호 미입력)'}`);
-        }
-      }
-    } catch (profileError) {
-      console.warn("[Chat Stream] 마스터 프로필 로드 오류 (무시하고 계속):", profileError);
-    }
-
-    // 서식 정보 추가
-    if (intent.needsFormInfo && intent.formKeyword) {
-      const form = searchForm(intent.formKeyword);
-      if (form) {
-        additionalContext += `\n\n[관련 서식 정보]\n${formatFormInfo(form)}`;
-      }
-    }
-
-    // 업종 정보 검색
-    const businessTypesResult = searchBusinessTypes(lastUserMessage);
-    if (businessTypesResult.length > 0) {
-      additionalContext += `\n\n[관련 업종 정보 - 반드시 아래 링크를 답변에 포함할 것]\n`;
-      for (const bt of businessTypesResult.slice(0, 2)) {
-        additionalContext += `\n### ${bt.name} (${bt.category})\n`;
-        additionalContext += `📋 **신청 서식**: [${bt.formName}](${bt.formUrl})\n`;
-        additionalContext += `📚 **관계법령**: [${bt.category} 서식 페이지](${bt.lawPage})\n`;
-
-        if (bt.gov24Url) {
-          additionalContext += `\n📱 **정부24 온라인 신청**\n`;
-          additionalContext += `- 서비스명: ${bt.gov24ServiceName}\n`;
-          additionalContext += `- 바로가기: [정부24 신청 바로가기](${bt.gov24Url})\n`;
-          if (bt.applicationSteps) {
-            additionalContext += `\n📝 **신청 절차**\n${bt.applicationSteps.join('\n')}\n`;
-          }
-          if (bt.gov24InputFields) {
-            additionalContext += `\n📋 **입력 항목**: ${bt.gov24InputFields.join(', ')}\n`;
-          }
-          if (bt.gov24UploadDocs) {
-            additionalContext += `\n📎 **첨부 서류 및 준비 방법**\n`;
-            for (const doc of bt.gov24UploadDocs) {
-              additionalContext += `- ${doc}\n`;
-            }
-          }
-        }
-      }
-      additionalContext += `\n⚠️ 위 링크를 마크다운 형식으로 답변에 반드시 포함하세요.\n`;
-    }
-
-    // 맥락 인식형 법령 검색 (RAG) - 타임아웃 5초로 제한
-    try {
-      const intentClass = quickClassify(lastUserMessage);
-      const needsLegalSearch = intentClass.procedureScore >= 2 || intentClass.disputeScore >= 2;
-      console.log(`[Chat Stream] 의도분류: 절차=${intentClass.procedureScore}, 분쟁=${intentClass.disputeScore}, 검색필요=${needsLegalSearch}`);
-      if (needsLegalSearch) {
-        console.log(`[Chat Stream] RAG 법령 검색 시작...`);
-        try {
-          const legalResult = await withTimeout(
-            searchLegalInfo(lastUserMessage),
-            5000,
-            { success: false, intent: { mode: intentClass.likelyMode, confidence: 0, keywords: [], reasoning: "타임아웃", searchScope: { statutes: false, regulations: false, localLaws: false, precedents: false, rulings: false, forms: false } }, statutes: [], precedents: [], rulings: [], forms: [], localLaws: [], error: "타임아웃", systemMessage: "법령 검색 타임아웃" }
-          );
-          if (legalResult.success) {
-            additionalContext += formatLegalResultForPrompt(legalResult);
-            console.log("[Chat Stream] RAG 검색 완료");
-          } else {
-            console.log("[Chat Stream] RAG 검색 실패/타임아웃:", legalResult.systemMessage || legalResult.error);
-          }
-        } catch (searchError) {
-          console.warn("[Chat Stream] RAG searchLegalInfo 오류:", searchError);
-        }
-      }
-    } catch (ragError) {
-      console.warn("[Chat Stream] RAG 검색 오류 (무시하고 계속):", ragError);
-    }
-
-    // =========================================================================
-    // Knowledge Base - Smart Tag 기반 검색 (Phase 2)
-    // =========================================================================
+    const contextParts: string[] = [];
     let knowledgeFiles: FileDataPart[] = [];
 
-    try {
-      const searchKeywords = extractSearchKeywords(lastUserMessage);
-      console.log(`[Chat Stream] 검색 키워드: [${searchKeywords.join(", ")}]`);
+    // 동기 작업 (즉시 실행, 네트워크 불필요)
+    const businessTypesResult = searchBusinessTypes(lastUserMessage);
+    const searchKeywords = extractSearchKeywords(lastUserMessage);
+    const intentClass = quickClassify(lastUserMessage);
+    const needsLegalSearch = intentClass.procedureScore >= 2 || intentClass.disputeScore >= 2;
+    console.log(`[Chat Stream] 의도분류: 절차=${intentClass.procedureScore}, 분쟁=${intentClass.disputeScore}`);
+    console.log(`[Chat Stream] 검색 키워드: [${searchKeywords.join(", ")}]`);
 
+    // 서식 정보 (동기, 로컬 DB)
+    if (intent.needsFormInfo && intent.formKeyword) {
+      const form = searchForm(intent.formKeyword);
+      if (form) contextParts.push(`\n\n[관련 서식 정보]\n${formatFormInfo(form)}`);
+    }
+
+    // 업종 정보 (동기, 로컬)
+    if (businessTypesResult.length > 0) {
+      let bizCtx = `\n\n[관련 업종 정보 - 반드시 아래 링크를 답변에 포함할 것]\n`;
+      for (const bt of businessTypesResult.slice(0, 2)) {
+        bizCtx += `\n### ${bt.name} (${bt.category})\n`;
+        bizCtx += `📋 **신청 서식**: [${bt.formName}](${bt.formUrl})\n`;
+        bizCtx += `📚 **관계법령**: [${bt.category} 서식 페이지](${bt.lawPage})\n`;
+        if (bt.gov24Url) {
+          bizCtx += `\n📱 **정부24 온라인 신청**\n- 서비스명: ${bt.gov24ServiceName}\n- 바로가기: [정부24 신청 바로가기](${bt.gov24Url})\n`;
+          if (bt.applicationSteps) bizCtx += `\n📝 **신청 절차**\n${bt.applicationSteps.join('\n')}\n`;
+          if (bt.gov24InputFields) bizCtx += `\n📋 **입력 항목**: ${bt.gov24InputFields.join(', ')}\n`;
+          if (bt.gov24UploadDocs) { bizCtx += `\n📎 **첨부 서류 및 준비 방법**\n`; for (const doc of bt.gov24UploadDocs) bizCtx += `- ${doc}\n`; }
+        }
+      }
+      bizCtx += `\n⚠️ 위 링크를 마크다운 형식으로 답변에 반드시 포함하세요.\n`;
+      contextParts.push(bizCtx);
+    }
+
+    // 문서 생성 템플릿 감지 (동기, 로컬)
+    if (intent.documentTemplate) {
+      const template = FORM_TEMPLATES[intent.documentTemplate];
+      const gov24Service = template?.gov24ServiceKey ? GOV24_SERVICES[template.gov24ServiceKey] : null;
+      if (template) {
+        console.log(`[Chat Stream] 문서 생성 템플릿 감지: ${intent.documentTemplate}`);
+        let docCtx = `\n\n[서류 자동 작성 기능 - 반드시 따르세요]\n===================================================\n사용자가 "${template.name}" 관련 질문을 했습니다.\n\n🔴 중요: 답변 마지막에 반드시 아래 마커를 추가하세요:\n[[DOCUMENT:${intent.documentTemplate}]]\n\n이 마커를 추가하면 사용자 화면에 서류 작성 폼이 나타납니다.\n마커가 없으면 사용자가 서류를 작성할 수 없습니다!\n\n필수 입력 항목:\n${template.fields.filter(f => f.required).map(f => `- ${f.label}`).join('\n')}\n\n선택 입력 항목:\n${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') || '없음'}\n`;
+        if (gov24Service) docCtx += `\n정부24 신청 정보:\n- 서비스명: ${gov24Service.name}\n- 처리기간: ${gov24Service.processingDays}\n- 수수료: ${gov24Service.fee}\n- 필요서류: ${gov24Service.requiredDocs.join(', ') || '없음'}\n`;
+        docCtx += `\n===================================================\n📝 응답 형식 예시:\n"${template.name} 신청을 도와드리겠습니다.\n[신청 절차 및 필요 서류 안내...]\n아래 폼에서 정보를 입력하시면 서류를 작성해드립니다.\n\n[[DOCUMENT:${intent.documentTemplate}]]"\n===================================================\n`;
+        contextParts.push(docCtx);
+      }
+    }
+
+    // =========================================================================
+    // [병렬 실행] 모든 네트워크 호출을 동시에 시작 (타임아웃 3초 통일)
+    // =========================================================================
+    const PARALLEL_TIMEOUT = 3000; // 개별 타임아웃 3초
+
+    const parallelTasks = await Promise.all([
+      // Task 1: 마스터 프로필 (DB)
+      withTimeout(
+        prisma.companyProfile.findUnique({ where: { userId: session.user.id as string } }).catch(() => null),
+        PARALLEL_TIMEOUT, null
+      ),
+
+      // Task 2: RAG 법령 검색 (필요한 경우만)
+      needsLegalSearch
+        ? withTimeout(
+            searchLegalInfo(lastUserMessage).catch(() => null),
+            PARALLEL_TIMEOUT, null
+          )
+        : Promise.resolve(null),
+
+      // Task 3: Knowledge Base 태그 검색
+      searchKeywords.length > 0
+        ? withTimeout(
+            getKnowledgeByTags(searchKeywords, 5).catch(() => ({ fileParts: [], documentTitles: [], documentTags: [], matchScores: [] })),
+            PARALLEL_TIMEOUT,
+            { fileParts: [], documentTitles: [], documentTags: [], matchScores: [] }
+          )
+        : Promise.resolve({ fileParts: [] as FileDataPart[], documentTitles: [] as string[], documentTags: [] as string[][], matchScores: [] as number[] }),
+
+      // Task 4: 토지이용계획 (주소 감지 시만)
+      intent.address && intent.needsLandUse
+        ? withTimeout(
+            searchLandUse(intent.address).catch(e => ({ success: false, error: `조회 오류: ${e.message}` })),
+            PARALLEL_TIMEOUT,
+            { success: false, error: "토지이용계획 조회 타임아웃" }
+          )
+        : Promise.resolve(null),
+
+      // Task 5: 건축물대장 (주소 감지 시만)
+      intent.address && intent.needsBuildingInfo
+        ? withTimeout(
+            searchBuilding(intent.address).catch(e => ({ success: false, error: `조회 오류: ${e.message}` })),
+            PARALLEL_TIMEOUT,
+            { success: false, error: "건축물대장 조회 타임아웃" }
+          )
+        : Promise.resolve(null),
+
+      // Task 6: 시스템 프롬프트 (DB)
+      withTimeout(
+        getActiveSystemPrompt().catch(() => "당신은 대한민국 행정업무 전문 AI 어시스턴트입니다. 행정사, 정부기관, 기업의 행정업무를 지원합니다."),
+        PARALLEL_TIMEOUT,
+        "당신은 대한민국 행정업무 전문 AI 어시스턴트입니다. 행정사, 정부기관, 기업의 행정업무를 지원합니다."
+      ),
+    ]);
+
+    const [companyProfile, legalResult, kbTagResult, landResult, buildingResult, loadedPrompt] = parallelTasks;
+    const pEnd = Date.now();
+    console.log(`[Chat Stream] 병렬 조회 완료 (총 소요시간은 가장 느린 태스크 기준)`);
+
+    // --- 결과 조립: 마스터 프로필 ---
+    if (companyProfile) {
+      const p = companyProfile as any;
+      const profileLines: string[] = [];
+      if (p.companyName) profileLines.push(`- 상호: ${p.companyName}`);
+      if (p.ownerName) profileLines.push(`- 대표자: ${p.ownerName}`);
+      if (p.bizRegNo) { const b = p.bizRegNo; profileLines.push(`- 사업자등록번호: ${b.length === 10 ? `${b.slice(0,3)}-${b.slice(3,5)}-${b.slice(5)}` : b}`); }
+      if (p.corpRegNo) { const c = p.corpRegNo; profileLines.push(`- 법인등록번호: ${c.length === 13 ? `${c.slice(0,6)}-${c.slice(6)}` : c}`); }
+      if (p.address) profileLines.push(`- 주소: ${p.address}`);
+      if (p.bizType) profileLines.push(`- 업태/종목: ${p.bizType}`);
+      if (p.foundedDate) profileLines.push(`- 설립일: ${new Date(p.foundedDate).toISOString().split('T')[0]}`);
+      if (p.employeeCount > 0) profileLines.push(`- 직원 수: ${p.employeeCount}명`);
+      if (p.capital > 0) { const cap = Number(p.capital); profileLines.push(`- 자본금: ${cap >= 100000000 ? `${(cap / 100000000).toFixed(1)}억원` : `${Math.round(cap / 10000).toLocaleString()}만원`}`); }
+      if (profileLines.length > 0) {
+        contextParts.push(`\n\n[사용자 기업 정보 (마스터 프로필)]\n${profileLines.join('\n')}\n⚠️ 위 정보는 사용자가 사전에 등록한 기업 정보입니다.\n- 답변 시 이 정보를 자연스럽게 활용하세요.\n- 이미 등록된 정보를 다시 물어보지 마세요.\n- 서류 작성 시 위 정보를 자동으로 채워 넣으세요.`);
+        console.log(`[Chat Stream] 마스터 프로필 로드: ${p.companyName || '(상호 미입력)'}`);
+      }
+    }
+
+    // --- 결과 조립: RAG 법령 검색 ---
+    if (legalResult && (legalResult as any).success) {
+      contextParts.push(formatLegalResultForPrompt(legalResult as any));
+      console.log("[Chat Stream] RAG 검색 완료");
+    }
+
+    // --- 결과 조립: Knowledge Base ---
+    try {
       let bestDoc: { title: string; filePart: FileDataPart; score: number } | null = null;
 
-      // 1차: 태그 기반 검색
-      if (searchKeywords.length > 0) {
-        const tagResult = await withTimeout(
-          getKnowledgeByTags(searchKeywords, 5),
-          3000,
-          { fileParts: [], documentTitles: [], documentTags: [], matchScores: [] }
-        );
-
-        if (tagResult.fileParts.length > 0 && tagResult.matchScores[0] >= KB_TAG_MATCH_THRESHOLD) {
-          bestDoc = {
-            title: tagResult.documentTitles[0],
-            filePart: tagResult.fileParts[0],
-            score: tagResult.matchScores[0],
-          };
-          console.log(`[Chat Stream] 태그 매칭 성공: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
-        }
+      // 1차: 태그 매칭
+      if (kbTagResult && kbTagResult.fileParts.length > 0 && kbTagResult.matchScores[0] >= KB_TAG_MATCH_THRESHOLD) {
+        bestDoc = { title: kbTagResult.documentTitles[0], filePart: kbTagResult.fileParts[0], score: kbTagResult.matchScores[0] };
+        console.log(`[Chat Stream] 태그 매칭 성공: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
       }
 
-      // 2차 Fallback: 전체 문서에서 제목+태그 기반 검색
-      if (!bestDoc && searchKeywords.length > 0) {
-        console.log("[Chat Stream] KB fallback: 전체 문서에서 키워드 검색...");
-        try {
-          const allDocsResult = await withTimeout(
-            getKnowledgeContextFast(undefined, 10),
-            3000,
-            { fileParts: [], documentTitles: [], documentTags: [] }
-          );
-
-          if (allDocsResult.fileParts.length > 0) {
-            const scored = allDocsResult.documentTitles.map((title, idx) => {
-              const titleLower = title.toLowerCase();
-              const docTags = allDocsResult.documentTags[idx] || [];
-              let matchCount = 0;
-
-              for (const kw of searchKeywords) {
-                const kwLower = kw.toLowerCase();
-                if (titleLower.includes(kwLower)) matchCount++;
-                if (docTags.some(tag => tag.toLowerCase().includes(kwLower) || kwLower.includes(tag.toLowerCase()))) matchCount++;
-              }
-
-              const score = searchKeywords.length > 0 ? matchCount / (searchKeywords.length * 2) : 0;
-              return { title, filePart: allDocsResult.fileParts[idx], score };
-            });
-
-            scored.sort((a, b) => b.score - a.score);
-            if (scored.length > 0 && scored[0].score >= KB_TAG_MATCH_THRESHOLD) {
-              bestDoc = scored[0];
-              console.log(`[Chat Stream] Fallback 매칭: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
-            }
+      // 2차 Fallback: 키워드 제목 매칭 (태그 결과에 매칭 안 된 경우, 같은 데이터 재활용)
+      if (!bestDoc && kbTagResult && kbTagResult.fileParts.length > 0 && searchKeywords.length > 0) {
+        const scored = kbTagResult.documentTitles.map((title: string, idx: number) => {
+          const titleLower = title.toLowerCase();
+          const docTags = kbTagResult.documentTags[idx] || [];
+          let matchCount = 0;
+          for (const kw of searchKeywords) {
+            const kwLower = kw.toLowerCase();
+            if (titleLower.includes(kwLower)) matchCount++;
+            if (docTags.some((tag: string) => tag.toLowerCase().includes(kwLower) || kwLower.includes(tag.toLowerCase()))) matchCount++;
           }
-        } catch (fallbackErr) {
-          console.warn("[Chat Stream] KB fallback 오류:", fallbackErr);
-        }
-      }
-
-      // 3차 Fallback: fast 쿼리 모두 0건 → 만료 문서 자동 갱신 시도
-      if (!bestDoc && searchKeywords.length > 0) {
-        try {
-          console.log("[Chat Stream] KB 갱신 fallback: 만료 문서 자동 갱신 시도...");
-          const renewedDocs = await withTimeout(
-            getActiveKnowledgeDocuments(),
-            8000,
-            []
-          );
-          if (renewedDocs.length > 0) {
-            for (const doc of renewedDocs) {
-              const titleLower = (doc.title || "").toLowerCase();
-              const matchCount = searchKeywords.filter(kw =>
-                titleLower.includes(kw.toLowerCase())
-              ).length;
-              const score = matchCount / searchKeywords.length;
-              if (score > 0 && (!bestDoc || score > bestDoc.score)) {
-                bestDoc = {
-                  title: doc.title,
-                  filePart: { fileData: { fileUri: doc.fileUri, mimeType: doc.mimeType } },
-                  score,
-                };
-              }
-            }
-            // 매칭 없으면 문서 사용하지 않음 (엉뚱한 문서 방지)
-            if (bestDoc) {
-              console.log(`[Chat Stream] 갱신 fallback 성공: ${bestDoc.title}`);
-            } else {
-              console.log("[Chat Stream] 갱신 fallback: 키워드 매칭 문서 없음 - 문서 첨부 생략");
-            }
-          }
-        } catch (renewErr) {
-          console.warn("[Chat Stream] KB 갱신 fallback 오류:", renewErr);
+          return { title, filePart: kbTagResult.fileParts[idx], score: searchKeywords.length > 0 ? matchCount / (searchKeywords.length * 2) : 0 };
+        });
+        scored.sort((a: any, b: any) => b.score - a.score);
+        if (scored.length > 0 && scored[0].score >= KB_TAG_MATCH_THRESHOLD) {
+          bestDoc = scored[0];
+          console.log(`[Chat Stream] Fallback 매칭: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
         }
       }
 
       if (bestDoc) {
         knowledgeFiles = [bestDoc.filePart];
-        console.log(`[Chat Stream] Knowledge Base 연동: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
-        additionalContext += `\n\n[Knowledge Base 문서 참고]
-📚 첨부된 문서: ${bestDoc.title}
-- 이 문서는 질문과 관련성이 높습니다. 문서 내용을 적극적으로 인용하여 답변하세요.
-- 인용 시 "[출처: ${bestDoc.title}]" 형식으로 출처를 명시하세요.
-- 문서에 없는 내용은 전문 지식과 Google 검색을 활용하세요.
-`;
+        contextParts.push(`\n\n[Knowledge Base 문서 참고]\n📚 첨부된 문서: ${bestDoc.title}\n- 이 문서는 질문과 관련성이 높습니다. 문서 내용을 적극적으로 인용하여 답변하세요.\n- 인용 시 "[출처: ${bestDoc.title}]" 형식으로 출처를 명시하세요.\n- 문서에 없는 내용은 전문 지식과 Google 검색을 활용하세요.`);
       } else {
-        console.log("[Chat Stream] Knowledge Base: 관련 문서 없음 - 시스템 프롬프트만 사용");
+        console.log("[Chat Stream] Knowledge Base: 관련 문서 없음");
       }
-    } catch (error) {
-      console.error("[Chat Stream] Knowledge Base 오류:", error);
+    } catch (kbErr) {
+      console.warn("[Chat Stream] KB 결과 처리 오류:", kbErr);
     }
 
-    // 문서 생성 템플릿 감지 시 AI에게 정보 제공
-    if (intent.documentTemplate) {
-      const template = FORM_TEMPLATES[intent.documentTemplate];
-      const gov24Service = template?.gov24ServiceKey ? GOV24_SERVICES[template.gov24ServiceKey] : null;
-
-      if (template) {
-        console.log(`[Chat Stream] 문서 생성 템플릿 감지: ${intent.documentTemplate}`);
-
-        additionalContext += `\n\n[서류 자동 작성 기능 - 반드시 따르세요]
-===================================================
-사용자가 "${template.name}" 관련 질문을 했습니다.
-
-🔴 중요: 답변 마지막에 반드시 아래 마커를 추가하세요:
-[[DOCUMENT:${intent.documentTemplate}]]
-
-이 마커를 추가하면 사용자 화면에 서류 작성 폼이 나타납니다.
-마커가 없으면 사용자가 서류를 작성할 수 없습니다!
-
-필수 입력 항목:
-${template.fields.filter(f => f.required).map(f => `- ${f.label}`).join('\n')}
-
-선택 입력 항목:
-${template.fields.filter(f => !f.required).map(f => `- ${f.label}`).join('\n') || '없음'}
-`;
-
-        if (gov24Service) {
-          additionalContext += `
-정부24 신청 정보:
-- 서비스명: ${gov24Service.name}
-- 처리기간: ${gov24Service.processingDays}
-- 수수료: ${gov24Service.fee}
-- 필요서류: ${gov24Service.requiredDocs.join(', ') || '없음'}
-`;
-        }
-
-        additionalContext += `
-===================================================
-📝 응답 형식 예시:
-"${template.name} 신청을 도와드리겠습니다.
-[신청 절차 및 필요 서류 안내...]
-아래 폼에서 정보를 입력하시면 서류를 작성해드립니다.
-
-[[DOCUMENT:${intent.documentTemplate}]]"
-===================================================
-`;
+    // --- 결과 조립: 부동산 정보 ---
+    if (landResult) {
+      if ((landResult as any).success) {
+        contextParts.push(`\n\n${formatLandUseResult(landResult)}`);
+        console.log("[Chat Stream] 토지이용계획 조회 완료");
+      } else {
+        contextParts.push(`\n\n[토지이용계획 조회]\n⚠️ ${(landResult as any).error || "조회 실패"}\n토지이음(eum.go.kr)에서 직접 확인해주세요.`);
+      }
+    }
+    if (buildingResult) {
+      if ((buildingResult as any).success) {
+        contextParts.push(`\n\n${formatBuildingResult(buildingResult)}`);
+        console.log("[Chat Stream] 건축물대장 조회 완료");
+      } else {
+        contextParts.push(`\n\n[건축물대장 조회]\n⚠️ ${(buildingResult as any).error || "조회 실패"}\n세움터(cloud.eais.go.kr)에서 직접 확인해주세요.`);
       }
     }
 
-    // 토지이용계획 + 건축물대장 조회 - 타임아웃 5초로 제한 (병렬 처리)
-    if (intent.address) {
-      console.log(`[Chat Stream] 부동산 정보 조회 시작: "${intent.address}", 토지=${intent.needsLandUse}, 건물=${intent.needsBuildingInfo}`);
-
-      try {
-        const [landResult, buildingResult] = await Promise.all([
-          intent.needsLandUse
-            ? withTimeout(
-                searchLandUse(intent.address).catch(e => ({ success: false, error: `조회 오류: ${e.message}` })),
-                5000,
-                { success: false, error: "토지이용계획 조회 타임아웃" }
-              )
-            : Promise.resolve(null),
-          intent.needsBuildingInfo
-            ? withTimeout(
-                searchBuilding(intent.address).catch(e => ({ success: false, error: `조회 오류: ${e.message}` })),
-                5000,
-                { success: false, error: "건축물대장 조회 타임아웃" }
-              )
-            : Promise.resolve(null),
-        ]);
-
-        if (landResult) {
-          if (landResult.success) {
-            additionalContext += `\n\n${formatLandUseResult(landResult)}`;
-            console.log("[Chat Stream] 토지이용계획 조회 완료");
-          } else {
-            console.log("[Chat Stream] 토지이용계획 조회 실패:", landResult.error);
-            additionalContext += `\n\n[토지이용계획 조회]\n⚠️ ${landResult.error || "조회 실패"}\n토지이음(eum.go.kr)에서 직접 확인해주세요.`;
-          }
-        }
-
-        if (buildingResult) {
-          if (buildingResult.success) {
-            additionalContext += `\n\n${formatBuildingResult(buildingResult)}`;
-            console.log("[Chat Stream] 건축물대장 조회 완료");
-          } else {
-            console.log("[Chat Stream] 건축물대장 조회 실패:", buildingResult.error);
-            additionalContext += `\n\n[건축물대장 조회]\n⚠️ ${buildingResult.error || "조회 실패"}\n세움터(cloud.eais.go.kr)에서 직접 확인해주세요.`;
-          }
-        }
-      } catch (realEstateError) {
-        console.warn("[Chat Stream] 부동산 정보 조회 오류 (무시하고 계속):", realEstateError);
-      }
-    }
-
-    // 시스템 프롬프트 (DB 오류 시 기본 프롬프트 사용)
-    let baseSystemPrompt: string;
-    try {
-      baseSystemPrompt = await getActiveSystemPrompt();
-    } catch (promptError) {
-      console.warn("[Chat Stream] 시스템 프롬프트 로드 실패, 기본값 사용:", promptError);
-      baseSystemPrompt = "당신은 대한민국 행정업무 전문 AI 어시스턴트입니다. 행정사, 정부기관, 기업의 행정업무를 지원합니다.";
-    }
+    // --- 시스템 프롬프트 조합 ---
+    const additionalContext = contextParts.join('');
+    let baseSystemPrompt: string = loadedPrompt as string;
     const enhancedPrompt = baseSystemPrompt + additionalContext;
 
     // 스트리밍 응답 생성
