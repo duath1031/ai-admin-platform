@@ -39,7 +39,11 @@ async function withTimeout<T>(
 // Knowledge Base 문서 관련성 필터 (Smart Tag 기반 - Phase 2)
 // =============================================================================
 
-const KB_TAG_MATCH_THRESHOLD = 0.15;
+// Phase 11: Anti-Hallucination 임계값
+// 0.6 미만 → 문서 폐기 (Gemini 순수 지능으로 답변)
+// 0.7 이상 → 확실한 문서만 출처 표기
+const KB_TAG_MATCH_THRESHOLD = 0.6;
+const KB_CONFIDENT_CITATION_THRESHOLD = 0.7;
 
 /**
  * 단순 인사/잡담 감지 — 지식검색 전부 스킵
@@ -517,9 +521,17 @@ export async function POST(req: NextRequest) {
 
       if (bestDoc) {
         knowledgeFiles = [bestDoc.filePart];
-        contextParts.push(`\n\n[Knowledge Base 문서 참고]\n📚 첨부된 문서: ${bestDoc.title}\n- 이 문서는 질문과 관련성이 높습니다. 문서 내용을 적극적으로 인용하여 답변하세요.\n- 인용 시 "[출처: ${bestDoc.title}]" 형식으로 출처를 명시하세요.\n- 문서에 없는 내용은 전문 지식과 Google 검색을 활용하세요.`);
+        console.log(`[Chat Stream] Knowledge Base 연동: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
+
+        if (bestDoc.score >= KB_CONFIDENT_CITATION_THRESHOLD) {
+          // 0.7 이상: 확실한 문서 → 적극 인용 + 출처 표기
+          contextParts.push(`\n\n[Knowledge Base 문서 참고]\n📚 첨부된 문서: ${bestDoc.title}\n- 이 문서는 질문과 관련성이 높습니다. 문서 내용을 적극적으로 인용하여 답변하세요.\n- 인용 시 "[출처: ${bestDoc.title}]" 형식으로 출처를 명시하세요.\n- 문서에 없는 내용은 전문 지식과 Google 검색을 활용하세요.`);
+        } else {
+          // 0.6~0.7: 참고 수준 → 인용하되 출처는 표기하지 않음
+          contextParts.push(`\n\n[참고 문서 (낮은 관련성)]\n첨부된 문서 "${bestDoc.title}"은 참고용입니다.\n⚠️ 이 문서의 주제가 사용자 질문과 직접 관련이 없다면, 이 문서를 무시하고 일반적인 지식으로 답변하세요.\n⚠️ 관련 없는 문서를 억지로 연결하거나 [출처: ...] 태그를 붙이지 마세요.`);
+        }
       } else {
-        console.log("[Chat Stream] Knowledge Base: 관련 문서 없음");
+        console.log("[Chat Stream] Knowledge Base: 관련 문서 없음 (유사도 미달)");
       }
     } catch (kbErr) {
       console.warn("[Chat Stream] KB 결과 처리 오류:", kbErr);
@@ -546,7 +558,17 @@ export async function POST(req: NextRequest) {
     // --- 시스템 프롬프트 조합 ---
     const additionalContext = contextParts.join('');
     let baseSystemPrompt: string = loadedPrompt as string;
-    const enhancedPrompt = baseSystemPrompt + additionalContext;
+
+    // Phase 11: Anti-Hallucination 지시문
+    const antiHallucinationInstruction = `
+
+[중요 지침: 환각 방지]
+- 사용자의 질문과 검색된 문서(Context)의 주제가 일치하지 않는다면, Context를 무시하고 일반적인 지식으로 답변하세요.
+- 절대 관련 없는 문서를 억지로 연결하거나 출처로 표기하지 마세요.
+- 첨부된 Knowledge Base 문서가 질문 주제와 무관하면, 해당 문서를 언급하지 마세요.
+- 확실하지 않은 정보는 "정확한 확인이 필요합니다"라고 안내하세요.`;
+
+    const enhancedPrompt = baseSystemPrompt + antiHallucinationInstruction + additionalContext;
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder();
