@@ -24,8 +24,8 @@ interface MessageRendererProps {
 // 솔루션 카드 마커 패턴: [[DOCUMENT:templateKey]] 또는 [[DOCUMENT:templateKey:jsonData]]
 const SOLUTION_CARD_PATTERN = /\[\[DOCUMENT:([^\]:\s]+)(?::(\{[^}]+\}))?\]\]/g;
 
-// RPA 접수 마커 패턴: [[RPA_SUBMIT:filePath]]
-const RPA_SUBMIT_PATTERN = /\[\[RPA_SUBMIT:([^\]]+)\]\]/g;
+// RPA 접수 마커 패턴: [[RPA_SUBMIT:filePath]] (Gemini가 \_로 이스케이프하는 경우도 처리)
+const RPA_SUBMIT_PATTERN = /\[\[RPA[_\\]*_SUBMIT:([^\]]+)\]\]/g;
 
 // 접수대행 불가 업무 (직접 방문 또는 개별 홈페이지 접수 필요)
 const DIRECT_VISIT_REQUIRED = [
@@ -481,7 +481,7 @@ function SubmissionButtons({ content }: { content: string }) {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          접수대행 신청
+          행정사 접수대행
         </button>
         <button
           onClick={handleDelegateClick}
@@ -516,11 +516,12 @@ export default function MessageRenderer({ content, isUser = false, fileAttachmen
     );
   }
 
-  // RPA 접수 카드 추출
+  // RPA 접수 카드 추출 (Gemini가 \_로 이스케이프하는 경우 정규화)
+  const normalizedContent = content.replace(/\\_/g, '_');
   const rpaSubmits: string[] = [];
   let rpaMatch;
   const rpaPattern = new RegExp(RPA_SUBMIT_PATTERN.source, "g");
-  while ((rpaMatch = rpaPattern.exec(content)) !== null) {
+  while ((rpaMatch = rpaPattern.exec(normalizedContent)) !== null) {
     rpaSubmits.push(rpaMatch[1]);
   }
 
@@ -528,7 +529,7 @@ export default function MessageRenderer({ content, isUser = false, fileAttachmen
   const solutionCards: { templateKey: string; data?: Record<string, string> }[] = [];
   let match;
   const cardPattern = new RegExp(SOLUTION_CARD_PATTERN.source, "g");
-  while ((match = cardPattern.exec(content)) !== null) {
+  while ((match = cardPattern.exec(normalizedContent)) !== null) {
     const templateKey = match[1];
     let data: Record<string, string> | undefined;
     if (match[2]) {
@@ -542,7 +543,7 @@ export default function MessageRenderer({ content, isUser = false, fileAttachmen
   }
 
   // 솔루션 카드 + RPA 마커 제거한 콘텐츠
-  const contentWithoutCards = content
+  const contentWithoutCards = normalizedContent
     .replace(SOLUTION_CARD_PATTERN, "")
     .replace(RPA_SUBMIT_PATTERN, "")
     .trim();

@@ -45,7 +45,13 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
     if (legacyTemplate) return;
 
     setIsLoadingTemplate(true);
-    fetch(`/api/document/generate?templateKey=${encodeURIComponent(templateKey)}`)
+
+    // HWPX 템플릿은 generate-hwpx API 사용
+    const fetchUrl = isHwpx
+      ? `/api/document/generate-hwpx?code=${encodeURIComponent(templateKey)}`
+      : `/api/document/generate?templateKey=${encodeURIComponent(templateKey)}`;
+
+    fetch(fetchUrl)
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.template) {
@@ -73,7 +79,7 @@ export default function SolutionCard({ templateKey, collectedData = {} }: Soluti
       })
       .catch((err) => console.error("Template fetch error:", err))
       .finally(() => setIsLoadingTemplate(false));
-  }, [templateKey, legacyTemplate]);
+  }, [templateKey, legacyTemplate, isHwpx]);
 
   const template = legacyTemplate || dbTemplate;
   const gov24Service = (() => {
