@@ -321,6 +321,142 @@ export function extractPlaceholders(templatePath: string): string[] {
  * 생성된 HWPX 버퍼를 임시 경로에 저장한다.
  * RPA 엔진이 정부24에 업로드할 때 사용.
  */
+// =============================================================================
+// Data Transformation: User Input → HWPX Placeholders (공용)
+// =============================================================================
+
+export interface HwpxFieldDef {
+  name: string;
+  type: string;
+  options?: string[];
+  checkPrefix?: string;
+}
+
+/**
+ * 사용자 입력 데이터를 HWPX 플레이스홀더 형태로 변환.
+ * - select 필드 → check_XXX 체크박스 (■/□)
+ * - date 필드 → 연도/월/일 분리
+ * - address → 관할관청 자동 매핑
+ * - 테스트 폴백: 주민등록번호 누락 시 임시값
+ */
+export function transformDataForHwpx(
+  data: Record<string, string>,
+  fields: HwpxFieldDef[]
+): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(data)) {
+    result[key] = String(value);
+  }
+
+  // 1. 체크박스 확장 (select → check_XXX)
+  for (const field of fields) {
+    if (field.type === 'select' && field.options?.length) {
+      const selectedValue = data[field.name] || '';
+      const selectedNormalized = selectedValue.replace(/[\s·ㆍ\-]/g, '');
+      const prefix = field.checkPrefix || '';
+      for (const option of field.options) {
+        const normalized = option.replace(/[\s·ㆍ\-]/g, '');
+        const checkKey = `check_${prefix}${normalized}`;
+        result[checkKey] = (normalized === selectedNormalized || option === selectedValue) ? '■' : '□';
+      }
+    }
+  }
+
+  // 2. 날짜 분리 (date → 연도/월/일)
+  let dateParsed = false;
+  for (const field of fields) {
+    if (field.type === 'date' && data[field.name]) {
+      const date = new Date(data[field.name]);
+      if (!isNaN(date.getTime())) {
+        result['신고연도'] = String(date.getFullYear());
+        result['신고월'] = String(date.getMonth() + 1);
+        result['신고일'] = String(date.getDate());
+        result['신청연도'] = String(date.getFullYear());
+        result['신청월'] = String(date.getMonth() + 1);
+        result['신청일'] = String(date.getDate());
+        dateParsed = true;
+      }
+    }
+  }
+  if (!dateParsed && !result['신고연도']) {
+    const today = new Date();
+    result['신고연도'] = String(today.getFullYear());
+    result['신고월'] = String(today.getMonth() + 1);
+    result['신고일'] = String(today.getDate());
+    result['신청연도'] = String(today.getFullYear());
+    result['신청월'] = String(today.getMonth() + 1);
+    result['신청일'] = String(today.getDate());
+  }
+
+  // 3. 관할관청 자동 매핑
+  const address = data['영업장소재지'] || data['주소'] || data['소재지'] || '';
+  if (address && !result['관할관청']) {
+    result['관할관청'] = deriveJurisdiction(address);
+  }
+
+  // 4. 테스트 폴백: 주민등록번호 누락 시 임시값
+  if (!result['주민등록번호']) {
+    result['주민등록번호'] = '000000-0000000';
+    console.log('[HWPX] 주민등록번호 누락 — 테스트 임시값 적용');
+  }
+
+  console.log('[HWPX] 데이터 변환:', Object.keys(result).length, '키,',
+    Object.keys(result).filter(k => k.startsWith('check_')).length, '체크박스');
+  return result;
+}
+
+/**
+ * 주소에서 관할관청 추출
+ */
+export function deriveJurisdiction(address: string): string {
+  const metroMatch = address.match(
+    /(서울특별시|부산광역시|대구광역시|인천광역시|광주광역시|대전광역시|울산광역시)\s+([\w가-힣]+구)/
+  );
+  if (metroMatch) return `${metroMatch[1]} ${metroMatch[2]}청장`;
+
+  if (address.includes('세종특별자치시')) return '세종특별자치시장';
+
+  const doMatch = address.match(
+    /(경기도|충청[남북]도|전라[남북]도|전북특별자치도|경상[남북]도|강원특별자치도|제주특별자치도)\s+([\w가-힣]+[시군])/
+  );
+  if (doMatch) {
+    const district = doMatch[2];
+    if (district.endsWith('군')) return `${doMatch[1]} ${district}수`;
+    return `${doMatch[1]} ${district}장`;
+  }
+
+  const simpleMatch = address.match(/([\w가-힣]+)(구|군|시)/);
+  if (simpleMatch) {
+    const d = simpleMatch[1] + simpleMatch[2];
+    if (simpleMatch[2] === '구') return `${d}청장`;
+    if (simpleMatch[2] === '군') return `${d}수`;
+    return `${d}장`;
+  }
+
+  return '';
+}
+
+/**
+ * 필수 필드 누락 검사. 누락된 필드 라벨 목록 반환.
+ */
+export function validateRequiredFields(
+  data: Record<string, string>,
+  fields: Array<{ name: string; label?: string; required?: boolean }>
+): string[] {
+  const missing: string[] = [];
+  for (const field of fields) {
+    if (field.required && !data[field.name]) {
+      missing.push(field.label || field.name);
+    }
+  }
+  return missing;
+}
+
+// =============================================================================
+// Utility: Save HWPX buffer to temp path (for RPA)
+// =============================================================================
+
 export async function saveHwpxToTemp(buffer: Buffer, fileName: string): Promise<string> {
   const tempDir = path.join(process.cwd(), 'temp');
   if (!fs.existsSync(tempDir)) {

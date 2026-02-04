@@ -29,7 +29,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import { generateHwpx, saveHwpxToTemp } from '@/lib/hwpx';
+import { generateHwpx, saveHwpxToTemp, transformDataForHwpx, validateRequiredFields } from '@/lib/hwpx';
 import { Gov24Worker } from '@/lib/rpa/gov24Worker';
 import { z } from 'zod';
 import * as path from 'path';
@@ -147,7 +147,25 @@ export async function POST(request: NextRequest) {
       }
 
       const templatePath = path.join(process.cwd(), 'public', template.originalFileUrl || '');
-      const hwpxResult = await generateHwpx(templatePath, input.data, template.outputFileName || undefined);
+
+      // 필수 필드 검증
+      const fields = JSON.parse(template.fields || '[]');
+      const missingFields = validateRequiredFields(input.data, fields);
+      if (missingFields.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `필수 항목이 누락되어 제출할 수 없습니다: ${missingFields.join(', ')}. 다시 입력해 주시겠습니까?`,
+            missingFields,
+            step: 'validate',
+          },
+          { status: 400 }
+        );
+      }
+
+      // 데이터 변환 (체크박스, 날짜, 관할관청, 폴백)
+      const transformedData = transformDataForHwpx(input.data, fields);
+      const hwpxResult = await generateHwpx(templatePath, transformedData, template.outputFileName || undefined);
 
       if (!hwpxResult.success || !hwpxResult.buffer || !hwpxResult.fileName) {
         return NextResponse.json(
