@@ -7,13 +7,24 @@ import dynamic from "next/dynamic";
 // SolutionCard는 클라이언트에서만 로드
 const SolutionCard = dynamic(() => import("./SolutionCard"), { ssr: false });
 
+interface FileAttachment {
+  originalName: string;
+  savedPath: string;
+  fileType: string;
+  size: number;
+}
+
 interface MessageRendererProps {
   content: string;
   isUser?: boolean;
+  fileAttachment?: FileAttachment;
 }
 
 // 솔루션 카드 마커 패턴: [[DOCUMENT:templateKey]] 또는 [[DOCUMENT:templateKey:jsonData]]
 const SOLUTION_CARD_PATTERN = /\[\[DOCUMENT:([^\]:\s]+)(?::(\{[^}]+\}))?\]\]/g;
+
+// RPA 접수 마커 패턴: [[RPA_SUBMIT:filePath]]
+const RPA_SUBMIT_PATTERN = /\[\[RPA_SUBMIT:([^\]]+)\]\]/g;
 
 // 접수대행 불가 업무 (직접 방문 또는 개별 홈페이지 접수 필요)
 const DIRECT_VISIT_REQUIRED = [
@@ -304,6 +315,116 @@ function ServiceLinks({ content }: { content: string }) {
   );
 }
 
+// 파일 첨부 뱃지 (사용자 메시지용)
+function FileBadge({ file }: { file: FileAttachment }) {
+  const fileIcon = file.fileType === 'pdf' ? 'PDF' : file.fileType.toUpperCase();
+  return (
+    <div className="flex items-center gap-2 mt-2 px-3 py-2 bg-white/20 rounded-lg border border-white/30">
+      <div className="flex items-center justify-center w-8 h-8 bg-white/30 rounded text-xs font-bold">
+        {fileIcon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate">{file.originalName}</p>
+        <p className="text-xs opacity-75">{(file.size / 1024).toFixed(0)}KB</p>
+      </div>
+    </div>
+  );
+}
+
+// RPA 접수 카드 (AI 응답에서 [[RPA_SUBMIT:path]] 마커용)
+function RpaSubmitCard({ filePath }: { filePath: string }) {
+  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    setStatus('submitting');
+    setMessage('정부24 접수 준비 중...');
+
+    try {
+      const res = await fetch('/api/rpa/submit-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'upload',
+          filePath,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setStatus('success');
+        setSubmissionId(data.submissionId);
+        setMessage(data.message || '접수가 완료되었습니다.');
+      } else {
+        setStatus('error');
+        setMessage(data.error || '접수 중 오류가 발생했습니다.');
+      }
+    } catch (err) {
+      setStatus('error');
+      setMessage('서버 연결 오류가 발생했습니다.');
+    }
+  };
+
+  return (
+    <div className="my-3 p-4 bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 rounded-xl">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 bg-teal-600 rounded-lg flex items-center justify-center">
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div>
+          <h4 className="font-bold text-teal-900">접수 대행 (RPA 자동 접수)</h4>
+          <p className="text-xs text-teal-600">정부24에 자동으로 서류를 제출합니다</p>
+        </div>
+      </div>
+
+      {status === 'idle' && (
+        <button
+          onClick={handleSubmit}
+          className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+          접수하기
+        </button>
+      )}
+
+      {status === 'submitting' && (
+        <div className="flex items-center gap-3 py-3 px-4 bg-teal-100 rounded-lg">
+          <div className="w-5 h-5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
+          <span className="text-teal-700 text-sm font-medium">{message}</span>
+        </div>
+      )}
+
+      {status === 'success' && (
+        <div className="py-3 px-4 bg-green-100 border border-green-200 rounded-lg">
+          <p className="text-green-700 text-sm font-medium">{message}</p>
+          {submissionId && (
+            <p className="text-green-600 text-xs mt-1">접수번호: {submissionId}</p>
+          )}
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div className="space-y-2">
+          <div className="py-3 px-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-700 text-sm">{message}</p>
+          </div>
+          <button
+            onClick={handleSubmit}
+            className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+          >
+            다시 시도
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 접수대행/대리의뢰 버튼 섹션
 function SubmissionButtons({ content }: { content: string }) {
   const router = useRouter();
@@ -373,10 +494,22 @@ function SubmissionButtons({ content }: { content: string }) {
   );
 }
 
-export default function MessageRenderer({ content, isUser = false }: MessageRendererProps) {
+export default function MessageRenderer({ content, isUser = false, fileAttachment }: MessageRendererProps) {
   if (isUser) {
-    // 사용자 메시지는 그냥 텍스트로 렌더링
-    return <span>{content}</span>;
+    return (
+      <div>
+        <span>{content}</span>
+        {fileAttachment && <FileBadge file={fileAttachment} />}
+      </div>
+    );
+  }
+
+  // RPA 접수 카드 추출
+  const rpaSubmits: string[] = [];
+  let rpaMatch;
+  const rpaPattern = new RegExp(RPA_SUBMIT_PATTERN.source, "g");
+  while ((rpaMatch = rpaPattern.exec(content)) !== null) {
+    rpaSubmits.push(rpaMatch[1]);
   }
 
   // 솔루션 카드 추출
@@ -396,8 +529,11 @@ export default function MessageRenderer({ content, isUser = false }: MessageRend
     solutionCards.push({ templateKey, data });
   }
 
-  // 솔루션 카드 마커 제거한 콘텐츠
-  const contentWithoutCards = content.replace(SOLUTION_CARD_PATTERN, "").trim();
+  // 솔루션 카드 + RPA 마커 제거한 콘텐츠
+  const contentWithoutCards = content
+    .replace(SOLUTION_CARD_PATTERN, "")
+    .replace(RPA_SUBMIT_PATTERN, "")
+    .trim();
 
   // AI 응답 메시지 파싱 및 렌더링
   const renderContent = (textContent: string) => {
@@ -528,6 +664,11 @@ export default function MessageRenderer({ content, isUser = false }: MessageRend
           templateKey={card.templateKey}
           collectedData={card.data}
         />
+      ))}
+
+      {/* RPA 접수 카드 렌더링 */}
+      {rpaSubmits.map((filePath, index) => (
+        <RpaSubmitCard key={`rpa-${index}`} filePath={filePath} />
       ))}
 
       {showServiceLinks && <ServiceLinks content={contentWithoutCards} />}

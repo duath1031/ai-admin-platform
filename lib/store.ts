@@ -1,10 +1,18 @@
 import { create } from "zustand";
 
+interface FileAttachment {
+  originalName: string;
+  savedPath: string;
+  fileType: string;
+  size: number;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   createdAt: Date;
+  fileAttachment?: FileAttachment;
 }
 
 interface ChatState {

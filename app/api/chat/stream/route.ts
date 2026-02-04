@@ -238,7 +238,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { messages } = await req.json();
+    const { messages, fileContext } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return new Response(JSON.stringify({ error: "Messages are required" }), {
@@ -560,7 +560,34 @@ ${templateLines}
       console.log(`[Chat Stream] HWPX 템플릿 ${templateList.length}개 프롬프트 주입`);
     }
 
-    const enhancedPrompt = baseSystemPrompt + antiHallucinationInstruction + documentSelectionInstruction + additionalContext;
+    // Phase 15: 파일 첨부 + RPA 접수 대행 프롬프트
+    let fileContextInstruction = '';
+    if (fileContext && fileContext.path) {
+      const rpaIntentKeywords = ["접수", "제출", "신청해", "신고해", "올려", "넣어"];
+      const hasRpaIntent = rpaIntentKeywords.some(k => lastUserMessage.includes(k));
+
+      if (hasRpaIntent) {
+        fileContextInstruction = `
+
+[파일 첨부 + 접수 요청]
+사용자가 "${fileContext.name}" 파일 (${fileContext.type})을 첨부하고 접수를 요청했습니다.
+1. 먼저 "첨부하신 ${fileContext.name} 파일을 정부24에 접수하겠습니다." 라고 안내하세요.
+2. 접수 전 주의사항 (도장 날인 확인 등)을 간단히 안내하세요.
+3. 답변 마지막에 반드시 [[RPA_SUBMIT:${fileContext.path}]] 마커를 출력하세요.
+4. 이 마커가 출력되면 사용자 화면에 자동 접수 버튼이 나타납니다.`;
+        console.log(`[Chat Stream] 파일 첨부 + RPA 의도 감지: ${fileContext.name}`);
+      } else {
+        fileContextInstruction = `
+
+[파일 첨부됨]
+사용자가 "${fileContext.name}" 파일 (${fileContext.type})을 첨부했습니다.
+- 파일 내용에 대한 질문이면 적절히 답변하세요.
+- 사용자가 접수/제출/신청을 원한다면, "접수를 원하시면 '접수해줘'라고 말씀해주세요"라고 안내하세요.`;
+        console.log(`[Chat Stream] 파일 첨부 (RPA 의도 없음): ${fileContext.name}`);
+      }
+    }
+
+    const enhancedPrompt = baseSystemPrompt + antiHallucinationInstruction + documentSelectionInstruction + fileContextInstruction + additionalContext;
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder();

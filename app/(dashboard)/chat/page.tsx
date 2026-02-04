@@ -6,13 +6,23 @@ import { useChatStore } from "@/lib/store";
 import { Button, Textarea } from "@/components/ui";
 import MessageRenderer from "@/components/chat/MessageRenderer";
 
+interface UploadedFile {
+  originalName: string;
+  savedPath: string;
+  fileType: string;
+  size: number;
+}
+
 export default function ChatPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialQuestion = searchParams.get("q");
   const [input, setInput] = useState(initialQuestion || "");
+  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { messages, isLoading, addMessage, setLoading } = useChatStore();
 
@@ -26,13 +36,54 @@ export default function ChatPage() {
     }
   }, [initialQuestion]);
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/rpa/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (data.success && data.file) {
+        setUploadedFile({
+          originalName: data.file.originalName,
+          savedPath: data.file.savedPath,
+          fileType: data.file.fileType,
+          size: data.file.savedSize,
+        });
+      } else {
+        alert(data.error || "파일 업로드 실패");
+      }
+    } catch (err) {
+      console.error("File upload error:", err);
+      alert("파일 업로드 중 오류가 발생했습니다.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
+    const currentFile = uploadedFile;
     setInput("");
-    addMessage({ role: "user", content: userMessage });
+    setUploadedFile(null);
+
+    addMessage({
+      role: "user",
+      content: userMessage,
+      ...(currentFile ? { fileAttachment: currentFile } : {}),
+    });
     setLoading(true);
 
     // 스트리밍 응답을 위한 임시 메시지 ID
@@ -43,12 +94,23 @@ export default function ChatPage() {
       (m) => ({ role: m.role, content: m.content })
     );
 
+    // fileContext 포함
+    const requestBody: Record<string, unknown> = { messages: allMessages };
+    if (currentFile) {
+      requestBody.fileContext = {
+        name: currentFile.originalName,
+        path: currentFile.savedPath,
+        type: currentFile.fileType,
+        size: currentFile.size,
+      };
+    }
+
     try {
       // 먼저 스트리밍 시도
       const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: allMessages }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -187,6 +249,7 @@ export default function ChatPage() {
                     <MessageRenderer
                       content={message.content}
                       isUser={message.role === "user"}
+                      fileAttachment={message.fileAttachment}
                     />
                   </div>
                   <div
@@ -218,20 +281,64 @@ export default function ChatPage() {
         )}
       </div>
 
+      {/* File Preview */}
+      {uploadedFile && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg mb-2">
+          <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+          </svg>
+          <span className="text-sm text-blue-700 truncate flex-1">{uploadedFile.originalName}</span>
+          <span className="text-xs text-blue-500">{(uploadedFile.size / 1024).toFixed(0)}KB</span>
+          <button
+            type="button"
+            onClick={() => setUploadedFile(null)}
+            className="p-0.5 hover:bg-blue-100 rounded"
+          >
+            <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Input */}
       <form onSubmit={handleSubmit} className="flex gap-2 md:gap-3">
+        {/* File Upload Button */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.hwpx"
+          onChange={handleFileUpload}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading || isLoading}
+          className="flex items-center justify-center w-10 h-10 md:w-11 md:h-11 rounded-lg border border-gray-300 hover:bg-gray-50 text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50 flex-shrink-0 self-end"
+          title="파일 첨부 (PDF, JPG, PNG, HWPX)"
+        >
+          {isUploading ? (
+            <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          )}
+        </button>
+
         <div className="flex-1 relative">
           <Textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="질문을 입력하세요..."
+            placeholder={uploadedFile ? "파일과 함께 보낼 메시지를 입력하세요..." : "질문을 입력하세요..."}
             className="min-h-[44px] md:min-h-[48px] max-h-[150px] md:max-h-[200px] pr-2 resize-none text-sm md:text-base"
             rows={1}
           />
         </div>
-        <Button type="submit" disabled={!input.trim() || isLoading} className="px-3 md:px-4">
+        <Button type="submit" disabled={!input.trim() || isLoading} className="px-3 md:px-4 self-end">
           {isLoading ? (
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
