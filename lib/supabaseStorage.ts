@@ -12,6 +12,16 @@ const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || "";
 const BUCKET_NAME = "knowledge";
 
+/**
+ * 파일명을 Supabase Storage 호환 형식으로 변환
+ * - 한글, 공백, 특수문자 → UUID + 확장자
+ */
+function sanitizeFileName(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() || 'bin';
+  // UUID 기반 안전한 파일명 생성
+  return `${randomUUID()}.${ext}`;
+}
+
 function getClient() {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     throw new Error("SUPABASE_URL 또는 SUPABASE_SERVICE_KEY가 설정되지 않았습니다.");
@@ -30,7 +40,9 @@ export async function saveToSupabase(
 ): Promise<{ storagePath: string; storageProvider: string }> {
   const supabase = getClient();
   const uuid = randomUUID();
-  const storagePath = `${uuid}/${fileName}`;
+  // 한글/공백 파일명 → 안전한 UUID 기반 파일명으로 변환
+  const safeFileName = sanitizeFileName(fileName);
+  const storagePath = `${uuid}/${safeFileName}`;
 
   const { error } = await supabase.storage
     .from(BUCKET_NAME)
@@ -82,7 +94,9 @@ export async function saveTemplateToSupabase(
 ): Promise<{ storagePath: string; storageProvider: string }> {
   const supabase = getClient();
   const uuid = randomUUID();
-  const storagePath = `${uuid}/${fileName}`;
+  // 한글/공백 파일명 → 안전한 UUID 기반 파일명으로 변환
+  const safeFileName = sanitizeFileName(fileName);
+  const storagePath = `${uuid}/${safeFileName}`;
 
   const { error } = await supabase.storage
     .from(TEMPLATES_BUCKET)
