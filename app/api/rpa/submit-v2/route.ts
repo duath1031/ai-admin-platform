@@ -36,6 +36,144 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 // =============================================================================
+// SIMULATION MODE (Vercel Serverless 환경 - Puppeteer 인스턴스 유지 불가)
+// =============================================================================
+const SIMULATION_MODE = true; // UX 검증용 데모 모드
+
+/**
+ * 시뮬레이션 지연 함수
+ */
+function simulationDelay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 시뮬레이션 모드 - 초기 요청 처리 (2초 대기 후 auth_required 반환)
+ */
+async function handleSimulationInitial(
+  userId: string,
+  filePath: string,
+  fileType: string,
+  documentStatus: string,
+  serviceName: string
+) {
+  console.log('[Submit-V2] SIMULATION MODE: 초기 요청 처리 시작');
+
+  // 2초 대기
+  await simulationDelay(2000);
+
+  // DB에 제출 건 생성
+  const submission = await prisma.civilServiceSubmission.create({
+    data: {
+      serviceName: serviceName || '데모 파일 접수',
+      serviceCode: `demo_upload_${fileType}`,
+      targetSite: 'gov24',
+      targetUrl: '',
+      applicationData: JSON.stringify({ filePath, fileType, simulation: true }),
+      applicantName: '',
+      status: 'auth_required',
+      userId,
+      resultData: JSON.stringify({
+        filePath,
+        fileType,
+        documentStatus,
+        pipeline: 'v2_simulation',
+      }),
+    },
+  });
+
+  // 트래킹 로그 생성
+  await prisma.submissionTrackingLog.create({
+    data: {
+      submissionId: submission.id,
+      step: 'login_check',
+      stepOrder: 2,
+      status: 'pending',
+      message: '[데모] 정부24 로그인 시도 - 간편인증 요청',
+      startedAt: new Date(),
+    },
+  });
+
+  console.log(`[Submit-V2] SIMULATION MODE: auth_required 반환 (submissionId: ${submission.id})`);
+
+  return {
+    success: true,
+    submissionId: submission.id,
+    step: 'auth_required',
+    status: 'auth_required',
+    message: '📱 [데모] 간편인증 요청을 보냈습니다. 실제 환경에서는 카카오톡/네이버 앱에서 인증을 진행합니다. [✅ 인증 완료] 버튼을 눌러주세요.',
+    action: 'AUTHENTICATE',
+    documentStatus,
+    fileType,
+  };
+}
+
+/**
+ * 시뮬레이션 모드 - 인증 완료 후 처리 (3초 대기 후 success 반환)
+ */
+async function handleSimulationConfirm(submissionId: string, userId: string) {
+  console.log(`[Submit-V2] SIMULATION MODE: 인증 확인 요청 (submissionId: ${submissionId})`);
+
+  // 기존 제출 건 조회
+  const submission = await prisma.civilServiceSubmission.findUnique({
+    where: { id: submissionId },
+  });
+
+  if (!submission || submission.userId !== userId) {
+    return { success: false, error: '신청 건을 찾을 수 없습니다.' };
+  }
+
+  if (submission.status !== 'auth_required') {
+    return { success: false, error: `현재 상태: ${submission.status}. 인증 대기 상태가 아닙니다.` };
+  }
+
+  // 3초 대기 (서류 제출 시뮬레이션)
+  await simulationDelay(3000);
+
+  // 가상 접수번호 생성
+  const demoAppNumber = `DEMO-${Date.now().toString(36).toUpperCase()}`;
+
+  // DB 업데이트
+  await prisma.civilServiceSubmission.update({
+    where: { id: submissionId },
+    data: {
+      status: 'submitted',
+      applicationNumber: demoAppNumber,
+      completedAt: new Date(),
+      resultData: JSON.stringify({
+        ...JSON.parse(submission.resultData || '{}'),
+        simulation: true,
+        completedAt: new Date().toISOString(),
+      }),
+    },
+  });
+
+  // 트래킹 로그 추가
+  await prisma.submissionTrackingLog.create({
+    data: {
+      submissionId,
+      step: 'submitted',
+      stepOrder: 6,
+      status: 'success',
+      message: '[데모] 정부24 접수 완료',
+      startedAt: new Date(),
+      completedAt: new Date(),
+    },
+  });
+
+  console.log(`[Submit-V2] SIMULATION MODE: 접수 완료 (접수번호: ${demoAppNumber})`);
+
+  return {
+    success: true,
+    submissionId,
+    step: 'submitted',
+    status: 'submitted',
+    message: `✅ [데모] 정부24 접수가 완료되었습니다! 실제 환경에서는 정부24에서 접수번호를 발급받습니다.`,
+    applicationNumber: demoAppNumber,
+  };
+}
+
+// =============================================================================
 // Types & Schema
 // =============================================================================
 
@@ -214,6 +352,23 @@ export async function POST(request: NextRequest) {
       if (!input.serviceUrl) {
         console.log(`[Submit-V2] Real-Time RPA: serviceUrl 없음 → 정부24 로그인부터 시작`);
 
+        // =====================================================================
+        // SIMULATION MODE: Gov24Worker 대신 Mock 응답
+        // =====================================================================
+        if (SIMULATION_MODE) {
+          const simResult = await handleSimulationInitial(
+            session.user.id,
+            filePath,
+            fileType,
+            documentStatus,
+            input.serviceName || '채팅 파일 접수'
+          );
+          return NextResponse.json(simResult);
+        }
+
+        // =====================================================================
+        // PRODUCTION MODE: 실제 Gov24Worker 호출
+        // =====================================================================
         const submission = await prisma.civilServiceSubmission.create({
           data: {
             serviceName: input.serviceName || '채팅 파일 접수',
@@ -519,6 +674,20 @@ async function handleConfirm(request: NextRequest, userId: string) {
     return NextResponse.json({ success: false, error: 'submissionId 필요' }, { status: 400 });
   }
 
+  // =====================================================================
+  // SIMULATION MODE: 인증 완료 후 성공 반환
+  // =====================================================================
+  if (SIMULATION_MODE) {
+    const simResult = await handleSimulationConfirm(submissionId, userId);
+    if (!simResult.success) {
+      return NextResponse.json(simResult, { status: 400 });
+    }
+    return NextResponse.json(simResult);
+  }
+
+  // =====================================================================
+  // PRODUCTION MODE: 실제 Gov24Worker 호출
+  // =====================================================================
   const submission = await prisma.civilServiceSubmission.findUnique({
     where: { id: submissionId },
   });
@@ -583,22 +752,25 @@ async function handleConfirm(request: NextRequest, userId: string) {
 // =============================================================================
 
 export async function GET() {
-  const workerStatus = Gov24Worker.getWorkerStatus();
-  const hasSession = Gov24Worker.hasStoredSession();
+  // SIMULATION_MODE에서는 Gov24Worker 호출 생략
+  const workerStatus = SIMULATION_MODE ? { status: 'simulation', message: '시뮬레이션 모드 (Puppeteer 비활성)' } : Gov24Worker.getWorkerStatus();
+  const hasSession = SIMULATION_MODE ? false : Gov24Worker.hasStoredSession();
 
   return NextResponse.json({
     success: true,
     version: 'v2',
+    simulationMode: SIMULATION_MODE,
     worker: workerStatus,
     session: {
       exists: hasSession,
-      message: hasSession ? '저장된 세션 있음' : '세션 없음',
+      message: SIMULATION_MODE ? '시뮬레이션 모드 - 세션 불필요' : (hasSession ? '저장된 세션 있음' : '세션 없음'),
     },
     features: [
       '파일 형식 자동 감지 (HWPX/PDF/JPG/PNG)',
       '문서 상태 체크 (SIGNED/GENERATED/UPLOADED)',
       '업로드 파일 직접 제출',
       '단계별 상세 트래킹',
+      ...(SIMULATION_MODE ? ['[DEMO] 시뮬레이션 모드 활성 - UX 검증용'] : []),
     ],
     modes: {
       generate: {

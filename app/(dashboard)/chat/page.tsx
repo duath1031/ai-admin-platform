@@ -426,76 +426,98 @@ export default function ChatPage() {
 
       {/* RPA 실시간 상태 토스트 */}
       {rpaState.status !== 'idle' && (
-        <div className={`mt-2 px-4 py-3 rounded-lg flex items-center gap-3 text-sm font-medium transition-all ${
+        <div className={`mt-2 px-4 py-3 rounded-lg transition-all ${
           rpaState.status === 'error' ? 'bg-red-50 border border-red-200 text-red-700' :
           rpaState.status === 'submitted' ? 'bg-green-50 border border-green-200 text-green-700' :
           rpaState.status === 'auth_required' ? 'bg-amber-50 border border-amber-200 text-amber-800' :
           'bg-blue-50 border border-blue-200 text-blue-700'
         }`}>
-          {rpaState.status === 'connecting' && (
-            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-          )}
-          {rpaState.status === 'logging_in' && (
-            <span className="flex-shrink-0">🔑</span>
-          )}
-          {rpaState.status === 'auth_required' && (
-            <span className="flex-shrink-0">📱</span>
-          )}
-          {rpaState.status === 'uploading' && (
-            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-          )}
-          {rpaState.status === 'verifying' && (
-            <span className="flex-shrink-0">👀</span>
-          )}
-          {rpaState.status === 'submitted' && (
-            <span className="flex-shrink-0">✅</span>
-          )}
-          {rpaState.status === 'error' && (
-            <span className="flex-shrink-0">❌</span>
-          )}
-          <span className="flex-1">{rpaState.message}</span>
-          {(rpaState.status === 'error' || rpaState.status === 'submitted' || rpaState.status === 'auth_required') && (
+          <div className="flex items-center gap-3 text-sm font-medium">
+            {rpaState.status === 'connecting' && (
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            )}
+            {rpaState.status === 'logging_in' && (
+              <span className="flex-shrink-0">🔑</span>
+            )}
+            {rpaState.status === 'auth_required' && (
+              <span className="flex-shrink-0">📱</span>
+            )}
+            {rpaState.status === 'uploading' && (
+              <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            )}
+            {rpaState.status === 'verifying' && (
+              <span className="flex-shrink-0">👀</span>
+            )}
+            {rpaState.status === 'submitted' && (
+              <span className="flex-shrink-0">✅</span>
+            )}
+            {rpaState.status === 'error' && (
+              <span className="flex-shrink-0">❌</span>
+            )}
+            <span className="flex-1">{rpaState.message}</span>
+            {(rpaState.status === 'error' || rpaState.status === 'submitted') && (
+              <button
+                onClick={() => resetRpaState()}
+                className="p-1 hover:bg-black/5 rounded flex-shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {/* auth_required 상태: 인증 완료 버튼 표시 */}
+          {rpaState.status === 'auth_required' && rpaState.submissionId && (
             <button
-              onClick={() => resetRpaState()}
-              className="p-1 hover:bg-black/5 rounded flex-shrink-0"
+              onClick={async () => {
+                setRpaState({ status: 'uploading', message: '서류 제출 중...' });
+                try {
+                  const res = await fetch('/api/rpa/submit-v2?action=confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ submissionId: rpaState.submissionId }),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    setRpaState({ status: 'submitted', message: data.message || '접수 완료!' });
+                    setTimeout(() => resetRpaState(), 5000);
+                  } else {
+                    setRpaState({ status: 'error', message: data.error || '접수 실패' });
+                  }
+                } catch (err) {
+                  setRpaState({ status: 'error', message: '서버 연결 오류' });
+                }
+              }}
+              className="mt-3 w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-base font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 animate-pulse"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <span className="text-lg">✅</span>
+              인증 완료 및 접수 계속하기
             </button>
           )}
         </div>
       )}
 
-      {/* 접수 방식 선택 (3분할) + 보조 버튼 */}
+      {/* 접수 방식 선택 (2분할: 로봇 vs 행정사) + 보조 버튼 */}
       <div className="mt-2 md:mt-3 space-y-2">
-        {/* 메인 3분할 버튼 */}
-        <div className="grid grid-cols-3 gap-2">
-          {/* 로봇 접수 */}
+        {/* 메인 2분할 버튼 */}
+        <div className="grid grid-cols-2 gap-3">
+          {/* 🚀 정부24 자동 접수 (로봇) */}
           <button
             onClick={handleRobotSubmit}
             disabled={rpaState.status !== 'idle' && rpaState.status !== 'error'}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-sm font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            <span className="text-lg">🚀</span>
-            <div className="text-center leading-tight">정부24<br/>자동접수</div>
+            <span className="text-xl">🚀</span>
+            <span>정부24 자동접수 (로봇)</span>
           </button>
-          {/* 접수대행 */}
+          {/* 👨‍💼 행정사 대행 의뢰 (사람) */}
           <button
             onClick={() => setShowHumanModal(true)}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
+            className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-sm font-bold rounded-xl transition-all shadow-md"
           >
-            <span className="text-lg">👨‍💼</span>
-            <div className="text-center leading-tight">행정사<br/>접수대행</div>
+            <span className="text-xl">👨‍💼</span>
+            <span>행정사 대행의뢰 (사람)</span>
           </button>
-          {/* 대리인 선임 */}
-          <a
-            href="/submission?type=delegate"
-            className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
-          >
-            <span className="text-lg">📝</span>
-            <div className="text-center leading-tight">행정사<br/>대리인선임</div>
-          </a>
         </div>
         {/* 보조 버튼 */}
         <div className="flex justify-center gap-2">

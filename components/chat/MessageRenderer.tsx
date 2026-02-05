@@ -396,6 +396,41 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
     }
   };
 
+  // 인증 완료 후 접수 계속하기 (confirm 엔드포인트 호출)
+  const handleAuthConfirm = async () => {
+    if (!submissionId) {
+      setStatus('error');
+      setMessage('접수 정보를 찾을 수 없습니다. 다시 시도해주세요.');
+      return;
+    }
+
+    setStatus('submitting');
+    setMessage('서류 제출 중...');
+
+    try {
+      const res = await fetch('/api/rpa/submit-v2?action=confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setStatus('success');
+        setMessage(data.message || '정부24 접수가 완료되었습니다!');
+        // 글로벌 상태 업데이트
+        const { setRpaState } = useChatStore.getState();
+        setRpaState({ status: 'success', message: data.message, submissionId: data.submissionId });
+      } else {
+        setStatus('error');
+        setMessage(data.error || '접수 중 오류가 발생했습니다.');
+      }
+    } catch (err) {
+      setStatus('error');
+      setMessage('서버 연결 오류가 발생했습니다.');
+    }
+  };
+
   return (
     <div className="my-3 p-4 bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 rounded-xl">
       <div className="flex items-center gap-2 mb-3">
@@ -427,15 +462,17 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
       )}
 
       {status === 'auth_required' && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="py-3 px-4 bg-amber-50 border border-amber-200 rounded-lg">
             <p className="text-amber-800 text-sm font-medium">📱 {message}</p>
+            <p className="text-amber-600 text-xs mt-1">카카오톡/네이버 앱에서 인증을 완료한 후 아래 버튼을 눌러주세요.</p>
           </div>
           <button
-            onClick={handleSubmit}
-            className="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
+            onClick={handleAuthConfirm}
+            className="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-base font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 animate-pulse"
           >
-            인증 완료 - 접수 계속하기
+            <span className="text-lg">✅</span>
+            인증 완료 및 접수 계속하기
           </button>
         </div>
       )}
