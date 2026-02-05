@@ -15,12 +15,23 @@ interface Message {
   fileAttachment?: FileAttachment;
 }
 
+/** RPA 실시간 상태 */
+type RpaStatus = 'idle' | 'connecting' | 'logging_in' | 'auth_required' | 'uploading' | 'verifying' | 'submitted' | 'error';
+
+interface RpaState {
+  status: RpaStatus;
+  message: string;
+  submissionId: string | null;
+}
+
 interface ChatState {
   messages: Message[];
   isLoading: boolean;
   currentChatId: string | null;
   /** 업로드된 파일의 base64 데이터 (path → base64) */
   uploadedFileData: Record<string, string>;
+  /** RPA 실시간 상태 */
+  rpaState: RpaState;
   addMessage: (message: Omit<Message, "createdAt" | "id"> & { id?: string }) => void;
   updateMessage: (id: string, content: string) => void;
   setMessages: (messages: Message[]) => void;
@@ -28,13 +39,18 @@ interface ChatState {
   setCurrentChatId: (id: string | null) => void;
   clearMessages: () => void;
   setUploadedFileData: (path: string, base64: string) => void;
+  setRpaState: (state: Partial<RpaState>) => void;
+  resetRpaState: () => void;
 }
+
+const DEFAULT_RPA_STATE: RpaState = { status: 'idle', message: '', submissionId: null };
 
 export const useChatStore = create<ChatState>((set) => ({
   messages: [],
   isLoading: false,
   currentChatId: null,
   uploadedFileData: {},
+  rpaState: { ...DEFAULT_RPA_STATE },
   addMessage: (message) =>
     set((state) => ({
       messages: [
@@ -55,11 +71,16 @@ export const useChatStore = create<ChatState>((set) => ({
   setMessages: (messages) => set({ messages }),
   setLoading: (isLoading) => set({ isLoading }),
   setCurrentChatId: (currentChatId) => set({ currentChatId }),
-  clearMessages: () => set({ messages: [], uploadedFileData: {} }),
+  clearMessages: () => set({ messages: [], uploadedFileData: {}, rpaState: { ...DEFAULT_RPA_STATE } }),
   setUploadedFileData: (path, base64) =>
     set((state) => ({
       uploadedFileData: { ...state.uploadedFileData, [path]: base64 },
     })),
+  setRpaState: (partial) =>
+    set((state) => ({
+      rpaState: { ...state.rpaState, ...partial },
+    })),
+  resetRpaState: () => set({ rpaState: { ...DEFAULT_RPA_STATE } }),
 }));
 
 interface Document {

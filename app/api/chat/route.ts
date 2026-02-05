@@ -566,11 +566,14 @@ ${profileLines.join('\n')}
       if (bestDoc) {
         knowledgeFiles = [bestDoc.filePart];
         console.log(`[Chat] Knowledge Base 연동: ${bestDoc.title} (점수: ${bestDoc.score.toFixed(2)})`);
-        additionalContext += `\n\n[Knowledge Base 문서 참고]
+        additionalContext += `\n\n[Knowledge Base 문서 참고 - 최우선 인용 의무]
 📚 첨부된 문서: ${bestDoc.title}
-- 이 문서는 질문과 관련성이 높습니다. 문서 내용을 적극적으로 인용하여 답변하세요.
-- 인용 시 "[출처: ${bestDoc.title}]" 형식으로 출처를 명시하세요.
-- 문서에 없는 내용은 전문 지식과 Google 검색을 활용하세요.
+
+🔴 **절대 규칙: 검색된 문서 최우선 인용**
+1. 이 문서의 내용이 질문과 관련이 있다면, 네가 사전에 학습한 지식보다 **반드시 이 문서(매뉴얼/법령/편람)의 내용을 최우선으로 인용**하여 답변하라.
+2. 답변 본문에서 문서 내용을 직접 인용하고, 답변 끝에 반드시 **[근거: ${bestDoc.title}]** 형식으로 출처를 명시하라.
+3. 문서에 없는 내용은 자체 전문 지식과 Google 검색으로 보완하되, 보완한 부분은 별도로 구분하라.
+4. 문서 내용과 자체 지식이 충돌하면 문서 내용을 우선한다.
 `;
       } else {
         console.log("[Chat] Knowledge Base: 관련 문서 없음 - 시스템 프롬프트만 사용");

@@ -137,15 +137,24 @@ export default function CivilServiceListPage() {
           </h1>
           <p className="text-gray-500 mt-1">전자위임장 기반 민원 자동 접수 서비스</p>
         </div>
-        <Link
-          href="/civil-service/new"
-          className="btn-primary flex items-center gap-2 justify-center"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          새 민원 접수
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/chat"
+            className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-medium hover:from-blue-700 hover:to-indigo-700 flex items-center gap-2 text-sm shadow-md"
+          >
+            <span>🚀</span>
+            로봇 자동접수
+          </Link>
+          <Link
+            href="/civil-service/new"
+            className="btn-primary flex items-center gap-2 justify-center"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            새 민원 접수
+          </Link>
+        </div>
       </div>
 
       {/* Stats Cards */}

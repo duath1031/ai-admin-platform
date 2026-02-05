@@ -306,6 +306,34 @@ export default function SubmissionPage() {
             </CardContent>
           </Card>
 
+          {/* 2분할 빠른 접수 버튼 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <a
+              href="/chat"
+              className="flex items-center gap-4 p-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl"
+            >
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-2xl">🚀</span>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg">정부24 자동접수 (로봇)</h4>
+                <p className="text-sm text-blue-100">AI가 서류를 분석하고 정부24에 자동 접수합니다</p>
+              </div>
+            </a>
+            <button
+              onClick={() => { setActiveTab("proxy"); setForm({ ...form, type: "proxy" }); }}
+              className="flex items-center gap-4 p-5 bg-gradient-to-r from-teal-600 to-green-600 text-white rounded-xl hover:from-teal-700 hover:to-green-700 transition-all shadow-lg hover:shadow-xl text-left"
+            >
+              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-2xl">👨‍💼</span>
+              </div>
+              <div>
+                <h4 className="font-bold text-lg">행정사 대행의뢰 (사람)</h4>
+                <p className="text-sm text-teal-100">전문 행정사가 직접 접수를 대행합니다</p>
+              </div>
+            </button>
+          </div>
+
           {/* 민원 검색 */}
           <div>
             <div className="relative mb-4">
@@ -438,12 +466,18 @@ export default function SubmissionPage() {
                     행정사합동사무소 정의에서 접수대행 또는 대리 서비스를 제공해 드립니다.
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <a
+                    href="/chat"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-1"
+                  >
+                    🚀 로봇 자동접수
+                  </a>
                   <button
                     onClick={() => { setActiveTab("proxy"); setForm({ ...form, type: "proxy" }); }}
                     className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700"
                   >
-                    접수대행 신청
+                    👨‍💼 접수대행 신청
                   </button>
                   <a
                     href="tel:070-8657-1888"

@@ -156,6 +156,43 @@ export const authOptions: NextAuthOptions = {
     error: "/login", // Error redirect
   },
 
+  // 모바일 인앱 브라우저(카카오톡 등) 호환성을 위한 쿠키 설정
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Secure-next-auth.session-token'
+        : 'next-auth.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    callbackUrl: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Secure-next-auth.callback-url'
+        : 'next-auth.callback-url',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+    csrfToken: {
+      name: process.env.NODE_ENV === 'production'
+        ? '__Host-next-auth.csrf-token'
+        : 'next-auth.csrf-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+      },
+    },
+  },
+
   debug: process.env.NODE_ENV === "development",
 };
 

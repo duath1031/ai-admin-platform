@@ -334,16 +334,23 @@ function FileBadge({ file }: { file: FileAttachment }) {
 
 // RPA 접수 카드 (AI 응답에서 [[RPA_SUBMIT:path]] 마커용)
 function RpaSubmitCard({ filePath }: { filePath: string }) {
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'connecting' | 'logging_in' | 'auth_required' | 'submitting' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [submissionId, setSubmissionId] = useState<string | null>(null);
 
+  const statusLabels: Record<string, { icon: string; text: string }> = {
+    connecting: { icon: '⏳', text: '정부24 접속 중...' },
+    logging_in: { icon: '🔑', text: '로그인 시도 중...' },
+    auth_required: { icon: '📱', text: '' },
+    submitting: { icon: '📤', text: '서류 제출 중...' },
+  };
+
   const handleSubmit = async () => {
-    setStatus('submitting');
-    setMessage('접수 준비 중...');
+    setStatus('connecting');
+    setMessage('정부24 접속 중...');
 
     // zustand에서 base64 데이터 조회
-    const { uploadedFileData } = useChatStore.getState();
+    const { uploadedFileData, setRpaState } = useChatStore.getState();
     const fileBase64 = uploadedFileData[filePath];
 
     if (!fileBase64) {
@@ -353,6 +360,9 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
     }
 
     try {
+      setStatus('logging_in');
+      setMessage('로그인 시도 중...');
+
       const res = await fetch('/api/rpa/submit-v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -365,9 +375,17 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
       const data = await res.json();
 
       if (data.success) {
-        setStatus('success');
-        setSubmissionId(data.submissionId);
-        setMessage(data.message || '접수가 완료되었습니다.');
+        if (data.action === 'AUTHENTICATE') {
+          setStatus('auth_required');
+          setSubmissionId(data.submissionId);
+          setMessage(data.message);
+          // 글로벌 RPA 상태도 업데이트
+          setRpaState({ status: 'auth_required', message: data.message, submissionId: data.submissionId });
+        } else {
+          setStatus('success');
+          setSubmissionId(data.submissionId);
+          setMessage(data.message || '접수가 완료되었습니다.');
+        }
       } else {
         setStatus('error');
         setMessage(data.error || '접수 중 오류가 발생했습니다.');
@@ -381,39 +399,50 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
   return (
     <div className="my-3 p-4 bg-gradient-to-br from-teal-50 to-emerald-50 border border-teal-200 rounded-xl">
       <div className="flex items-center gap-2 mb-3">
-        <div className="w-8 h-8 bg-teal-600 rounded-lg flex items-center justify-center">
-          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
+        <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-emerald-600 rounded-lg flex items-center justify-center">
+          <span className="text-white text-sm">🚀</span>
         </div>
         <div>
-          <h4 className="font-bold text-teal-900">접수 대행 (RPA 자동 접수)</h4>
-          <p className="text-xs text-teal-600">정부24에 자동으로 서류를 제출합니다</p>
+          <h4 className="font-bold text-teal-900">정부24 자동 접수</h4>
+          <p className="text-xs text-teal-600">RPA가 자동으로 서류를 제출합니다</p>
         </div>
       </div>
 
       {status === 'idle' && (
         <button
           onClick={handleSubmit}
-          className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+          className="w-full py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white font-medium rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-          접수하기
+          🚀 정부24 자동 접수 시작
         </button>
       )}
 
-      {status === 'submitting' && (
+      {(status === 'connecting' || status === 'logging_in' || status === 'submitting') && (
         <div className="flex items-center gap-3 py-3 px-4 bg-teal-100 rounded-lg">
           <div className="w-5 h-5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin" />
-          <span className="text-teal-700 text-sm font-medium">{message}</span>
+          <span className="text-teal-700 text-sm font-medium">
+            {statusLabels[status]?.icon} {statusLabels[status]?.text || message}
+          </span>
+        </div>
+      )}
+
+      {status === 'auth_required' && (
+        <div className="space-y-2">
+          <div className="py-3 px-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <p className="text-amber-800 text-sm font-medium">📱 {message}</p>
+          </div>
+          <button
+            onClick={handleSubmit}
+            className="w-full py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            인증 완료 - 접수 계속하기
+          </button>
         </div>
       )}
 
       {status === 'success' && (
         <div className="py-3 px-4 bg-green-100 border border-green-200 rounded-lg">
-          <p className="text-green-700 text-sm font-medium">{message}</p>
+          <p className="text-green-700 text-sm font-medium">✅ {message}</p>
           {submissionId && (
             <p className="text-green-600 text-xs mt-1">접수번호: {submissionId}</p>
           )}
@@ -423,7 +452,7 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
       {status === 'error' && (
         <div className="space-y-2">
           <div className="py-3 px-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-700 text-sm">{message}</p>
+            <p className="text-red-700 text-sm">❌ {message}</p>
           </div>
           <button
             onClick={handleSubmit}

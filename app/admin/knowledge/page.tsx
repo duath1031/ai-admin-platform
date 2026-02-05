@@ -73,7 +73,7 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "학습 완료",
   ready: "학습 완료",
   failed: "실패",
-  expired: "만료됨",
+  expired: "갱신 대기",
   pending: "대기 중",
 };
 
@@ -324,14 +324,24 @@ export default function KnowledgePage() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  // 만료 시간 계산
-  const getExpiryStatus = (expiresAt: string | null) => {
+  // 만료 시간 계산 — completed 문서는 항상 "활성 (영구 보존)"
+  // Gemini 캐시(48h)는 cron job이 자동 갱신하므로 사용자에게 "만료됨"을 표시하지 않음
+  const getExpiryStatus = (doc: KnowledgeDocument) => {
+    // completed 문서는 항상 활성 — 자동 갱신으로 영구 유지
+    if (doc.status === "completed") {
+      return { text: "활성 (영구 보존)", color: "text-green-600" };
+    }
+
+    const expiresAt = doc.geminiExpiresAt;
     if (!expiresAt) return null;
+
     const expires = new Date(expiresAt);
     const now = new Date();
     const hoursLeft = Math.floor((expires.getTime() - now.getTime()) / (1000 * 60 * 60));
 
-    if (hoursLeft < 0) return { text: "만료됨", color: "text-red-600" };
+    if (hoursLeft < 0) {
+      return { text: "갱신 대기", color: "text-blue-600" };
+    }
     if (hoursLeft < 6) return { text: `${hoursLeft}시간 남음`, color: "text-orange-600" };
     if (hoursLeft < 24) return { text: `${hoursLeft}시간 남음`, color: "text-yellow-600" };
     return { text: `${Math.floor(hoursLeft / 24)}일 남음`, color: "text-green-600" };
@@ -346,7 +356,7 @@ export default function KnowledgePage() {
       completed: "bg-green-100 text-green-800",
       ready: "bg-green-100 text-green-800",
       failed: "bg-red-100 text-red-800",
-      expired: "bg-gray-100 text-gray-800",
+      expired: "bg-blue-100 text-blue-800",
     };
 
     return (
@@ -418,8 +428,8 @@ export default function KnowledgePage() {
             <div className="text-sm text-gray-500">실패</div>
           </div>
           <div className="bg-white rounded-lg shadow p-4 text-center">
-            <div className="text-3xl font-bold text-gray-400">{stats.expired}</div>
-            <div className="text-sm text-gray-500">만료</div>
+            <div className="text-3xl font-bold text-blue-400">{stats.expired}</div>
+            <div className="text-sm text-gray-500">갱신 대기</div>
           </div>
         </div>
       )}
@@ -644,7 +654,7 @@ export default function KnowledgePage() {
             </thead>
             <tbody className="divide-y">
               {documents.map((doc) => {
-                const expiry = getExpiryStatus(doc.geminiExpiresAt);
+                const expiry = getExpiryStatus(doc);
                 return (
                   <tr key={doc.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
@@ -705,7 +715,7 @@ export default function KnowledgePage() {
           <li><strong>대용량 지원:</strong> 최대 100MB 파일까지 10초 이내에 학습 완료됩니다.</li>
           <li><strong>자동 라우팅:</strong> 4.5MB 이상 파일은 자동으로 RPA Worker를 통해 업로드됩니다.</li>
           <li><strong>전체 컨텍스트:</strong> 문서 전체가 AI에게 전달되어 정확한 답변이 가능합니다.</li>
-          <li><strong>유효기간:</strong> 파일은 Google 서버에 48시간 보관됩니다. 만료 후 재업로드가 필요합니다.</li>
+          <li><strong>자동 영구 보존:</strong> Gemini 캐시(48시간)가 만료되면 자동으로 갱신됩니다. 재업로드 불필요.</li>
         </ul>
       </div>
     </div>

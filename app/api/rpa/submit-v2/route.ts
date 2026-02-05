@@ -210,8 +210,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // serviceUrl 미제공 시: 파일 접수 준비만 완료 (Gov24 미연동)
+      // serviceUrl 미제공 시: 정부24 로그인 → 간편인증 요청 (Real-Time RPA)
       if (!input.serviceUrl) {
+        console.log(`[Submit-V2] Real-Time RPA: serviceUrl 없음 → 정부24 로그인부터 시작`);
+
         const submission = await prisma.civilServiceSubmission.create({
           data: {
             serviceName: input.serviceName || '채팅 파일 접수',
@@ -220,12 +222,13 @@ export async function POST(request: NextRequest) {
             targetUrl: '',
             applicationData: JSON.stringify({ filePath: input.fileName || filePath, fileType }),
             applicantName: session.user.name || '',
-            status: 'pending_review',
+            status: 'auth_required',
             userId: session.user.id,
             resultData: JSON.stringify({
+              filePath,
               fileType,
               documentStatus,
-              pipeline: 'v2_chat',
+              pipeline: 'v2_realtime',
             }),
           },
         });
@@ -233,21 +236,33 @@ export async function POST(request: NextRequest) {
         await prisma.submissionTrackingLog.create({
           data: {
             submissionId: submission.id,
-            step: 'generate',
-            stepOrder: 1,
-            status: 'success',
-            message: `파일 접수 준비 완료 (${fileType})`,
+            step: 'login_check',
+            stepOrder: 2,
+            status: 'pending',
+            message: '정부24 로그인 시도 중 - 간편인증 요청',
             startedAt: new Date(),
-            completedAt: new Date(),
           },
         });
+
+        // Gov24 로그인 페이지 접속 시도 (간편인증 버튼 클릭까지)
+        let authMessage = '📱 정부24 간편인증을 진행해주세요. 카카오톡 또는 네이버 앱에서 인증 요청을 확인하고 승인해주세요.';
+        try {
+          const worker = new Gov24Worker();
+          const loginResult = await worker.initiateLogin();
+          if (loginResult.success) {
+            authMessage = loginResult.message || authMessage;
+          }
+        } catch (loginErr) {
+          console.warn('[Submit-V2] Gov24 로그인 시도 오류 (계속 진행):', loginErr);
+        }
 
         return NextResponse.json({
           success: true,
           submissionId: submission.id,
-          step: 'pending_review',
-          status: 'pending_review',
-          message: '파일이 접수 준비되었습니다. 행정사가 확인 후 정부24에 접수합니다.',
+          step: 'auth_required',
+          status: 'auth_required',
+          message: authMessage,
+          action: 'AUTHENTICATE',
           documentStatus,
           fileType,
         });

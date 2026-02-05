@@ -286,6 +286,91 @@ export class Gov24Worker {
   }
 
   // ---------------------------------------------------------------------------
+  // Core: Initiate Login (간편인증 요청)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 정부24 로그인 페이지에 접속하여 간편인증 버튼을 클릭한다.
+   * 사용자가 카카오톡/네이버 앱에서 인증을 승인하도록 안내한다.
+   */
+  async initiateLogin(): Promise<{ success: boolean; message: string; screenshotPath?: string }> {
+    try {
+      // 이미 유효한 세션이 있으면 바로 성공
+      if (Gov24Worker.hasStoredSession()) {
+        const session = await this.checkSession();
+        if (session.valid) {
+          return {
+            success: true,
+            message: '정부24 로그인 세션이 유효합니다. 바로 접수를 진행할 수 있습니다.',
+          };
+        }
+      }
+
+      // 브라우저 초기화 (세션 없이)
+      await this.initBrowser(false);
+      if (!this.page) {
+        return { success: false, message: '브라우저 초기화 실패' };
+      }
+
+      // 정부24 로그인 페이지 접속
+      console.log('[Gov24Worker] 정부24 로그인 페이지 접속 중...');
+      await this.page.goto(GOV24_URLS.login, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await this.page.waitForTimeout(2000);
+
+      // 간편인증 탭/버튼 클릭 시도
+      const easyAuthSelectors = [
+        'button:has-text("간편인증")',
+        'a:has-text("간편인증")',
+        'li:has-text("간편인증")',
+        '[data-tab="simple"]',
+        '#easyAuthTab',
+        '.tab-item:has-text("간편인증")',
+      ];
+
+      let clicked = false;
+      for (const selector of easyAuthSelectors) {
+        try {
+          const btn = await this.page.$(selector);
+          if (btn) {
+            await btn.click();
+            clicked = true;
+            console.log(`[Gov24Worker] 간편인증 탭 클릭: ${selector}`);
+            await this.page.waitForTimeout(1500);
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      const screenshot = await this.takeScreenshot('login_initiate');
+      await this.cleanup();
+
+      if (clicked) {
+        return {
+          success: true,
+          message: '📱 정부24 간편인증을 진행해주세요. 카카오톡 또는 네이버 앱에서 인증 요청을 확인하고 승인해주세요. 승인 완료 후 [확인] 버튼을 눌러주세요.',
+          screenshotPath: screenshot,
+        };
+      }
+
+      return {
+        success: true,
+        message: '📱 정부24 로그인 페이지에 접속했습니다. 간편인증(카카오톡/네이버)으로 로그인해주세요. 인증 완료 후 [확인] 버튼을 눌러주세요.',
+        screenshotPath: screenshot,
+      };
+    } catch (error) {
+      await this.cleanup();
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error('[Gov24Worker] initiateLogin 오류:', msg);
+      return {
+        success: false,
+        message: `정부24 접속 중 오류가 발생했습니다: ${msg}`,
+      };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Core: Upload Document (파일 업로드 전담)
   // ---------------------------------------------------------------------------
 

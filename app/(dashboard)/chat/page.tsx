@@ -24,7 +24,8 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { messages, isLoading, addMessage, setLoading, setUploadedFileData } = useChatStore();
+  const { messages, isLoading, addMessage, setLoading, setUploadedFileData, rpaState, setRpaState, resetRpaState } = useChatStore();
+  const [showHumanModal, setShowHumanModal] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -197,6 +198,76 @@ export default function ChatPage() {
     }
   };
 
+  // RPA 자동 접수 핸들러 (로봇 버튼)
+  const handleRobotSubmit = async () => {
+    // 파일이 없으면 파일 선택 유도
+    if (!uploadedFile) {
+      fileInputRef.current?.click();
+      return;
+    }
+
+    const { uploadedFileData } = useChatStore.getState();
+    const fileBase64 = uploadedFileData[uploadedFile.savedPath];
+
+    if (!fileBase64) {
+      alert("파일 데이터를 찾을 수 없습니다. 파일을 다시 첨부해주세요.");
+      return;
+    }
+
+    // RPA 상태 업데이트: 접속 중
+    setRpaState({ status: 'connecting', message: '정부24 접속 중...' });
+
+    try {
+      setRpaState({ status: 'logging_in', message: '로그인 시도 중...' });
+
+      const res = await fetch('/api/rpa/submit-v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'upload',
+          fileBase64,
+          fileName: uploadedFile.originalName,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        if (data.action === 'AUTHENTICATE') {
+          setRpaState({
+            status: 'auth_required',
+            message: data.message,
+            submissionId: data.submissionId,
+          });
+        } else if (data.step === 'verify') {
+          setRpaState({
+            status: 'verifying',
+            message: '제출 전 확인 대기 중...',
+            submissionId: data.submissionId,
+          });
+        } else if (data.step === 'submitted') {
+          setRpaState({
+            status: 'submitted',
+            message: '접수 완료!',
+            submissionId: data.submissionId,
+          });
+          setTimeout(() => resetRpaState(), 5000);
+        } else {
+          setRpaState({
+            status: 'auth_required',
+            message: data.message || '처리 중...',
+            submissionId: data.submissionId,
+          });
+        }
+      } else {
+        setRpaState({ status: 'error', message: data.error || '접수 실패' });
+        setTimeout(() => resetRpaState(), 5000);
+      }
+    } catch (err) {
+      setRpaState({ status: 'error', message: '서버 연결 오류' });
+      setTimeout(() => resetRpaState(), 5000);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto h-[calc(100vh-7rem)] md:h-[calc(100vh-8rem)] flex flex-col">
       {/* Header */}
@@ -353,47 +424,150 @@ export default function ChatPage() {
         </Button>
       </form>
 
-      {/* 고정 바로가기 버튼 */}
-      <div className="mt-2 md:mt-3 flex flex-wrap justify-center gap-2">
-        <button
-          onClick={() => router.push("/submission?type=proxy")}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-medium rounded-lg transition-colors"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          행정사 접수대행
-        </button>
-        <button
-          onClick={() => router.push("/submission?type=delegate")}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-          대리의뢰
-        </button>
-        <a
-          href="tel:070-8657-1888"
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white text-xs font-medium rounded-lg transition-colors"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-          </svg>
-          상담전화
-        </a>
-        <a
-          href="https://www.jungeui.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-          </svg>
-          공식홈페이지
-        </a>
+      {/* RPA 실시간 상태 토스트 */}
+      {rpaState.status !== 'idle' && (
+        <div className={`mt-2 px-4 py-3 rounded-lg flex items-center gap-3 text-sm font-medium transition-all ${
+          rpaState.status === 'error' ? 'bg-red-50 border border-red-200 text-red-700' :
+          rpaState.status === 'submitted' ? 'bg-green-50 border border-green-200 text-green-700' :
+          rpaState.status === 'auth_required' ? 'bg-amber-50 border border-amber-200 text-amber-800' :
+          'bg-blue-50 border border-blue-200 text-blue-700'
+        }`}>
+          {rpaState.status === 'connecting' && (
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          )}
+          {rpaState.status === 'logging_in' && (
+            <span className="flex-shrink-0">🔑</span>
+          )}
+          {rpaState.status === 'auth_required' && (
+            <span className="flex-shrink-0">📱</span>
+          )}
+          {rpaState.status === 'uploading' && (
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+          )}
+          {rpaState.status === 'verifying' && (
+            <span className="flex-shrink-0">👀</span>
+          )}
+          {rpaState.status === 'submitted' && (
+            <span className="flex-shrink-0">✅</span>
+          )}
+          {rpaState.status === 'error' && (
+            <span className="flex-shrink-0">❌</span>
+          )}
+          <span className="flex-1">{rpaState.message}</span>
+          {(rpaState.status === 'error' || rpaState.status === 'submitted' || rpaState.status === 'auth_required') && (
+            <button
+              onClick={() => resetRpaState()}
+              className="p-1 hover:bg-black/5 rounded flex-shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 접수 방식 선택 (2분할) + 보조 버튼 */}
+      <div className="mt-2 md:mt-3 space-y-2">
+        {/* 메인 2분할 버튼 */}
+        <div className="grid grid-cols-2 gap-2">
+          {/* 로봇 접수 */}
+          <button
+            onClick={handleRobotSubmit}
+            disabled={rpaState.status !== 'idle' && rpaState.status !== 'error'}
+            className="flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+          >
+            <span className="text-base">🚀</span>
+            <div className="text-left">
+              <div className="leading-tight">정부24 자동접수</div>
+              <div className="text-[10px] font-normal opacity-80">로봇</div>
+            </div>
+          </button>
+          {/* 사람 의뢰 */}
+          <button
+            onClick={() => setShowHumanModal(true)}
+            className="flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+          >
+            <span className="text-base">👨‍💼</span>
+            <div className="text-left">
+              <div className="leading-tight">행정사 대행의뢰</div>
+              <div className="text-[10px] font-normal opacity-80">사람</div>
+            </div>
+          </button>
+        </div>
+        {/* 보조 버튼 */}
+        <div className="flex justify-center gap-2">
+          <a
+            href="tel:070-8657-1888"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+            </svg>
+            상담전화
+          </a>
+          <a
+            href="https://www.jungeui.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+            </svg>
+            공식홈페이지
+          </a>
+        </div>
       </div>
+
+      {/* 행정사 대행 의뢰 모달 */}
+      {showHumanModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-900">👨‍💼 행정사 대행 의뢰</h3>
+                <button onClick={() => setShowHumanModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                  <p className="text-sm text-indigo-800">
+                    행정사가 대리인으로서 민원 접수부터 완료까지 모든 절차를 대행합니다.
+                    복잡한 인허가, 수수료 납부, 방문 접수 등이 필요한 경우에 적합합니다.
+                  </p>
+                </div>
+                <div className="p-3 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl text-white">
+                  <h4 className="font-bold mb-1 text-sm">행정사합동사무소 정의</h4>
+                  <p className="text-xs text-blue-100 mb-2">염현수 대표 행정사</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <a href="tel:070-8657-1888" className="flex items-center justify-center gap-1 py-2 bg-white text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-50">
+                      📞 070-8657-1888
+                    </a>
+                    <a href="https://pf.kakao.com/_jWfwb" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 py-2 bg-yellow-400 text-yellow-900 rounded-lg text-xs font-medium hover:bg-yellow-300">
+                      💬 카카오 상담
+                    </a>
+                    <a
+                      href="https://www.jungeui.com/%EB%AC%B8%EC%9D%98%ED%95%98%EA%B8%B0"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 col-span-2"
+                    >
+                      📝 온라인 의뢰하기
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowHumanModal(false)} className="mt-3 w-full py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
