@@ -306,30 +306,42 @@ export default function SubmissionPage() {
             </CardContent>
           </Card>
 
-          {/* 2분할 빠른 접수 버튼 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 3분할 빠른 접수 버튼 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <a
               href="/chat"
-              className="flex items-center gap-4 p-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl"
+              className="flex items-center gap-3 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all shadow-lg hover:shadow-xl"
             >
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-                <span className="text-2xl">🚀</span>
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-xl">🚀</span>
               </div>
               <div>
-                <h4 className="font-bold text-lg">정부24 자동접수 (로봇)</h4>
-                <p className="text-sm text-blue-100">AI가 서류를 분석하고 정부24에 자동 접수합니다</p>
+                <h4 className="font-bold text-sm">정부24 자동접수</h4>
+                <p className="text-xs text-blue-100">로봇이 자동 접수</p>
               </div>
             </a>
             <button
               onClick={() => { setActiveTab("proxy"); setForm({ ...form, type: "proxy" }); }}
-              className="flex items-center gap-4 p-5 bg-gradient-to-r from-teal-600 to-green-600 text-white rounded-xl hover:from-teal-700 hover:to-green-700 transition-all shadow-lg hover:shadow-xl text-left"
+              className="flex items-center gap-3 p-4 bg-gradient-to-r from-teal-600 to-green-600 text-white rounded-xl hover:from-teal-700 hover:to-green-700 transition-all shadow-lg hover:shadow-xl text-left"
             >
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-                <span className="text-2xl">👨‍💼</span>
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-xl">👨‍💼</span>
               </div>
               <div>
-                <h4 className="font-bold text-lg">행정사 대행의뢰 (사람)</h4>
-                <p className="text-sm text-teal-100">전문 행정사가 직접 접수를 대행합니다</p>
+                <h4 className="font-bold text-sm">행정사 접수대행</h4>
+                <p className="text-xs text-teal-100">행정사가 대신 접수</p>
+              </div>
+            </button>
+            <button
+              onClick={() => { setActiveTab("delegate"); setForm({ ...form, type: "delegate" }); }}
+              className="flex items-center gap-3 p-4 bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl hover:from-amber-600 hover:to-orange-700 transition-all shadow-lg hover:shadow-xl text-left"
+            >
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <span className="text-xl">📝</span>
+              </div>
+              <div>
+                <h4 className="font-bold text-sm">행정사 대리인선임</h4>
+                <p className="text-xs text-amber-100">행정사가 대리인으로</p>
               </div>
             </button>
           </div>
@@ -469,19 +481,25 @@ export default function SubmissionPage() {
                 <div className="flex flex-wrap gap-2">
                   <a
                     href="/chat"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-1"
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1"
                   >
                     🚀 로봇 자동접수
                   </a>
                   <button
                     onClick={() => { setActiveTab("proxy"); setForm({ ...form, type: "proxy" }); }}
-                    className="px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium hover:bg-teal-700"
+                    className="px-3 py-2 bg-teal-600 text-white rounded-lg text-xs font-medium hover:bg-teal-700"
                   >
-                    👨‍💼 접수대행 신청
+                    👨‍💼 접수대행
+                  </button>
+                  <button
+                    onClick={() => { setActiveTab("delegate"); setForm({ ...form, type: "delegate" }); }}
+                    className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-medium hover:bg-amber-700"
+                  >
+                    📝 대리인선임
                   </button>
                   <a
                     href="tel:070-8657-1888"
-                    className="px-4 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700"
+                    className="px-3 py-2 bg-gray-600 text-white rounded-lg text-xs font-medium hover:bg-gray-700"
                   >
                     전화 상담
                   </a>

@@ -467,33 +467,35 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 접수 방식 선택 (2분할) + 보조 버튼 */}
+      {/* 접수 방식 선택 (3분할) + 보조 버튼 */}
       <div className="mt-2 md:mt-3 space-y-2">
-        {/* 메인 2분할 버튼 */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* 메인 3분할 버튼 */}
+        <div className="grid grid-cols-3 gap-2">
           {/* 로봇 접수 */}
           <button
             onClick={handleRobotSubmit}
             disabled={rpaState.status !== 'idle' && rpaState.status !== 'error'}
-            className="flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-xs font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
           >
-            <span className="text-base">🚀</span>
-            <div className="text-left">
-              <div className="leading-tight">정부24 자동접수</div>
-              <div className="text-[10px] font-normal opacity-80">로봇</div>
-            </div>
+            <span className="text-lg">🚀</span>
+            <div className="text-center leading-tight">정부24<br/>자동접수</div>
           </button>
-          {/* 사람 의뢰 */}
+          {/* 접수대행 */}
           <button
             onClick={() => setShowHumanModal(true)}
-            className="flex items-center justify-center gap-2 px-3 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-sm font-semibold rounded-xl transition-all shadow-sm"
+            className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
           >
-            <span className="text-base">👨‍💼</span>
-            <div className="text-left">
-              <div className="leading-tight">행정사 대행의뢰</div>
-              <div className="text-[10px] font-normal opacity-80">사람</div>
-            </div>
+            <span className="text-lg">👨‍💼</span>
+            <div className="text-center leading-tight">행정사<br/>접수대행</div>
           </button>
+          {/* 대리인 선임 */}
+          <a
+            href="/submission?type=delegate"
+            className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-semibold rounded-xl transition-all shadow-sm"
+          >
+            <span className="text-lg">📝</span>
+            <div className="text-center leading-tight">행정사<br/>대리인선임</div>
+          </a>
         </div>
         {/* 보조 버튼 */}
         <div className="flex justify-center gap-2">
