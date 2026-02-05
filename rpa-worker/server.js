@@ -212,18 +212,25 @@ app.post('/execute-task', validateApiKey, async (req, res) => {
 });
 
 /**
- * 정부24 간편인증 요청
+ * 정부24 비회원 간편인증 요청
  * POST /gov24/auth/request
  */
 app.post('/gov24/auth/request', validateApiKey, async (req, res) => {
-  const { name, birthDate, phoneNumber, carrier, authMethod } = req.body;
+  const { name, rrn1, rrn2, phoneNumber, carrier, authMethod } = req.body;
 
-  console.log('[Gov24 Auth Request] Received:', { name, birthDate: '***', phoneNumber: '***', carrier, authMethod });
+  console.log('[Gov24 Auth Request] Received:', { name, rrn1: '******', rrn2: '*******', phoneNumber: '***', carrier, authMethod });
 
-  if (!name || !birthDate || !phoneNumber) {
+  if (!name || !rrn1 || !rrn2 || !phoneNumber) {
     return res.status(400).json({
       success: false,
-      error: '이름, 생년월일, 전화번호는 필수입니다.',
+      error: '이름, 주민등록번호(앞자리/뒷자리), 전화번호는 필수입니다.',
+    });
+  }
+
+  if (rrn1.length !== 6 || rrn2.length !== 7) {
+    return res.status(400).json({
+      success: false,
+      error: '주민등록번호 형식이 올바르지 않습니다. (앞자리 6자리, 뒷자리 7자리)',
     });
   }
 
@@ -241,7 +248,8 @@ app.post('/gov24/auth/request', validateApiKey, async (req, res) => {
   try {
     const result = await requestGov24Auth({
       name,
-      birthDate,
+      rrn1,
+      rrn2,
       phoneNumber,
       carrier,
       authMethod,
