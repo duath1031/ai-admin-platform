@@ -420,7 +420,7 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
         setMessage(data.message || '정부24 접수가 완료되었습니다!');
         // 글로벌 상태 업데이트
         const { setRpaState } = useChatStore.getState();
-        setRpaState({ status: 'success', message: data.message, submissionId: data.submissionId });
+        setRpaState({ status: 'submitted', message: data.message, submissionId: data.submissionId });
       } else {
         setStatus('error');
         setMessage(data.error || '접수 중 오류가 발생했습니다.');

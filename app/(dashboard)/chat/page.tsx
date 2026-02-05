@@ -26,6 +26,15 @@ export default function ChatPage() {
 
   const { messages, isLoading, addMessage, setLoading, setUploadedFileData, rpaState, setRpaState, resetRpaState } = useChatStore();
   const [showHumanModal, setShowHumanModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authData, setAuthData] = useState({
+    name: '',
+    rrn1: '', // 주민번호 앞자리 (6자리)
+    rrn2: '', // 주민번호 뒷자리 (7자리)
+    phoneNumber: '',
+    carrier: '',
+    authMethod: 'kakao' as 'kakao' | 'naver' | 'pass' | 'toss',
+  });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -198,8 +207,8 @@ export default function ChatPage() {
     }
   };
 
-  // RPA 자동 접수 핸들러 (로봇 버튼)
-  const handleRobotSubmit = async () => {
+  // RPA 자동 접수 핸들러 (로봇 버튼) - 인증 수단 선택 모달 열기
+  const handleRobotSubmit = () => {
     // 파일이 없으면 파일 선택 유도
     if (!uploadedFile) {
       fileInputRef.current?.click();
@@ -214,11 +223,32 @@ export default function ChatPage() {
       return;
     }
 
-    // RPA 상태 업데이트: 접속 중
+    // 인증 수단 선택 모달 열기
+    setShowAuthModal(true);
+  };
+
+  // 실제 RPA 접수 실행 (인증 정보 포함)
+  const executeRpaSubmit = async () => {
+    if (!uploadedFile) return;
+
+    // 필수 입력 검증 (주민번호: rrn1 6자리, rrn2 7자리)
+    if (!authData.name || !authData.rrn1 || !authData.rrn2 || !authData.phoneNumber) {
+      alert("이름, 주민등록번호, 휴대폰번호를 모두 입력해주세요.");
+      return;
+    }
+    if (authData.rrn1.length !== 6 || authData.rrn2.length !== 7) {
+      alert("주민등록번호를 올바르게 입력해주세요. (앞 6자리, 뒤 7자리)");
+      return;
+    }
+
+    const { uploadedFileData } = useChatStore.getState();
+    const fileBase64 = uploadedFileData[uploadedFile.savedPath];
+
+    setShowAuthModal(false);
     setRpaState({ status: 'connecting', message: '정부24 접속 중...' });
 
     try {
-      setRpaState({ status: 'logging_in', message: '로그인 시도 중...' });
+      setRpaState({ status: 'logging_in', message: `${authData.authMethod} 인증 요청 중...` });
 
       const res = await fetch('/api/rpa/submit-v2', {
         method: 'POST',
@@ -227,6 +257,14 @@ export default function ChatPage() {
           mode: 'upload',
           fileBase64,
           fileName: uploadedFile.originalName,
+          authData: {
+            name: authData.name,
+            rrn1: authData.rrn1,      // 주민번호 앞자리
+            rrn2: authData.rrn2,      // 주민번호 뒷자리
+            phoneNumber: authData.phoneNumber,
+            carrier: authData.carrier || undefined,
+            authMethod: authData.authMethod,
+          },
         }),
       });
       const data = await res.json();
@@ -236,12 +274,6 @@ export default function ChatPage() {
           setRpaState({
             status: 'auth_required',
             message: data.message,
-            submissionId: data.submissionId,
-          });
-        } else if (data.step === 'verify') {
-          setRpaState({
-            status: 'verifying',
-            message: '제출 전 확인 대기 중...',
             submissionId: data.submissionId,
           });
         } else if (data.step === 'submitted') {
@@ -588,6 +620,139 @@ export default function ChatPage() {
               <button onClick={() => setShowHumanModal(false)} className="mt-3 w-full py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
                 닫기
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 간편인증 수단 선택 모달 */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-900">🔐 정부24 간편인증</h3>
+                <button onClick={() => setShowAuthModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* 인증 수단 선택 */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">인증 수단 선택</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'kakao', label: '카카오톡', color: 'bg-yellow-400 hover:bg-yellow-500 text-yellow-900' },
+                    { id: 'naver', label: '네이버', color: 'bg-green-500 hover:bg-green-600 text-white' },
+                    { id: 'pass', label: 'PASS', color: 'bg-red-500 hover:bg-red-600 text-white' },
+                    { id: 'toss', label: '토스', color: 'bg-blue-500 hover:bg-blue-600 text-white' },
+                  ].map((method) => (
+                    <button
+                      key={method.id}
+                      type="button"
+                      onClick={() => setAuthData({ ...authData, authMethod: method.id as typeof authData.authMethod })}
+                      className={`py-3 rounded-lg text-sm font-bold transition-all ${
+                        authData.authMethod === method.id
+                          ? `${method.color} ring-2 ring-offset-2 ring-gray-400`
+                          : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {method.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 개인정보 입력 */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">이름 *</label>
+                  <input
+                    type="text"
+                    value={authData.name}
+                    onChange={(e) => setAuthData({ ...authData, name: e.target.value })}
+                    placeholder="홍길동"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">주민등록번호 *</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={authData.rrn1}
+                      onChange={(e) => setAuthData({ ...authData, rrn1: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                      placeholder="앞 6자리"
+                      maxLength={6}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-center focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                    <span className="text-gray-400 font-bold">-</span>
+                    <input
+                      type="password"
+                      value={authData.rrn2}
+                      onChange={(e) => setAuthData({ ...authData, rrn2: e.target.value.replace(/\D/g, '').slice(0, 7) })}
+                      placeholder="뒤 7자리"
+                      maxLength={7}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-center focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">정부24 비회원 인증에 필요합니다. 안전하게 암호화됩니다.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">휴대폰번호 *</label>
+                  <input
+                    type="tel"
+                    value={authData.phoneNumber}
+                    onChange={(e) => setAuthData({ ...authData, phoneNumber: e.target.value.replace(/\D/g, '') })}
+                    placeholder="01012345678"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">통신사 (선택)</label>
+                  <select
+                    value={authData.carrier}
+                    onChange={(e) => setAuthData({ ...authData, carrier: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  >
+                    <option value="">선택 안함</option>
+                    <option value="SKT">SKT</option>
+                    <option value="KT">KT</option>
+                    <option value="LGU">LG U+</option>
+                    <option value="SKT_MVNO">SKT 알뜰폰</option>
+                    <option value="KT_MVNO">KT 알뜰폰</option>
+                    <option value="LGU_MVNO">LG U+ 알뜰폰</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* 안내 문구 */}
+              <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <p className="text-xs text-amber-800">
+                  <strong>📱 인증 진행 안내</strong><br/>
+                  아래 버튼을 누르면 선택한 앱으로 인증 요청이 전송됩니다.
+                  스마트폰에서 인증을 완료한 후, 화면의 [인증 완료] 버튼을 눌러주세요.
+                </p>
+              </div>
+
+              {/* 버튼 */}
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={() => setShowAuthModal(false)}
+                  className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200"
+                >
+                  취소
+                </button>
+                <button
+                  onClick={executeRpaSubmit}
+                  disabled={!authData.name || authData.rrn1.length !== 6 || authData.rrn2.length !== 7 || !authData.phoneNumber}
+                  className="flex-1 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  🚀 인증 요청 시작
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -38,17 +38,18 @@ async function saveScreenshot(page, prefix = 'screenshot') {
 }
 
 /**
- * 정부24 간편인증 요청 (Phase 1)
+ * 정부24 비회원 간편인증 요청 (Phase 1)
  * @param {Object} params - 인증 요청 파라미터
  * @param {string} params.name - 이름
- * @param {string} params.birthDate - 생년월일 (YYMMDD)
+ * @param {string} params.rrn1 - 주민번호 앞자리 (6자리)
+ * @param {string} params.rrn2 - 주민번호 뒷자리 (7자리)
  * @param {string} params.phoneNumber - 전화번호 (01012345678)
  * @param {string} params.carrier - 통신사 (SKT, KT, LGU, SKT_MVNO, KT_MVNO, LGU_MVNO)
- * @param {string} params.authMethod - 인증방법 (kakao, pass, samsung, naver)
+ * @param {string} params.authMethod - 인증방법 (kakao, pass, samsung, naver, toss)
  * @returns {Object} - 인증 요청 결과
  */
 async function requestGov24Auth(params) {
-  const { name, birthDate, phoneNumber, carrier, authMethod = 'pass' } = params;
+  const { name, rrn1, rrn2, phoneNumber, carrier, authMethod = 'pass' } = params;
   const taskId = uuidv4();
   const logs = [];
 
@@ -99,12 +100,13 @@ async function requestGov24Auth(params) {
 
     log('select_auth', `인증 방법 선택: ${authMethod}`);
 
-    // 인증 방법 선택 (카카오, PASS, 삼성패스 등)
+    // 인증 방법 선택 (카카오, PASS, 네이버, 토스 등)
     const authMethodMap = {
       kakao: '카카오',
       pass: 'PASS',
       samsung: '삼성패스',
       naver: '네이버',
+      toss: '토스',
     };
 
     const authMethodText = authMethodMap[authMethod] || 'PASS';
@@ -131,8 +133,12 @@ async function requestGov24Auth(params) {
     await secureInput(page, 'input[name*="name"], input[placeholder*="이름"]', name);
     await humanDelay(300, 700);
 
-    // 생년월일 입력
-    await secureInput(page, 'input[name*="birth"], input[placeholder*="생년월일"]', birthDate);
+    // 주민등록번호 앞자리 입력 (비회원 로그인용)
+    await secureInput(page, 'input[name*="jumin1"], input[name*="rrn1"], input[name*="ssn1"], input[placeholder*="앞자리"]', rrn1);
+    await humanDelay(300, 700);
+
+    // 주민등록번호 뒷자리 입력 (보안 입력)
+    await secureInput(page, 'input[name*="jumin2"], input[name*="rrn2"], input[name*="ssn2"], input[placeholder*="뒷자리"], input[type="password"]', rrn2);
     await humanDelay(300, 700);
 
     // 전화번호 입력
