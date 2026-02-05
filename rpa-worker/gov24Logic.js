@@ -81,91 +81,37 @@ async function requestGov24Auth(params) {
     log('navigate', '정부24 로그인 페이지 이동');
     await humanDelay(300, 800);
 
-    // 정부24 로그인 페이지 접속 (여러 URL 시도)
-    const loginUrls = [
-      'https://www.gov.kr/nlogin',
-      'https://www.gov.kr/portal/login',
-      'https://www.gov.kr/nlogin/login',
-    ];
-
-    let pageLoaded = false;
-    for (const url of loginUrls) {
-      try {
-        log('navigate', `시도: ${url}`);
-        await page.goto(url, {
-          waitUntil: 'networkidle',
-          timeout: TIMEOUTS.navigation,
-        });
-
-        // 페이지가 에러 페이지인지 확인
-        const isErrorPage = await page.locator('.errorWrap, .error-page').first().isVisible({ timeout: 2000 }).catch(() => false);
-        if (!isErrorPage) {
-          pageLoaded = true;
-          log('navigate', `성공: ${url}`);
-          break;
-        }
-        log('navigate', `에러 페이지 감지, 다음 URL 시도`);
-      } catch (navErr) {
-        log('navigate', `실패: ${url} - ${navErr.message}`);
-      }
-    }
-
-    if (!pageLoaded) {
-      // 메인 페이지에서 로그인 버튼 찾기
-      log('navigate', '메인 페이지에서 로그인 버튼 찾기');
-      await page.goto('https://www.gov.kr', { waitUntil: 'networkidle', timeout: TIMEOUTS.navigation });
-      await humanDelay(500, 1000);
-
-      const loginBtnSelectors = ['a:has-text("로그인")', 'button:has-text("로그인")', '.login-btn', '#loginBtn'];
-      for (const selector of loginBtnSelectors) {
-        try {
-          const loginBtn = await page.locator(selector).first();
-          if (await loginBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await humanClick(page, cursor, selector);
-            await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
-            pageLoaded = true;
-            log('navigate', `로그인 버튼 클릭 성공: ${selector}`);
-            break;
-          }
-        } catch {
-          continue;
-        }
-      }
-    }
+    // 정부24 로그인 페이지 접속 (기본 URL)
+    await page.goto('https://www.gov.kr/nlogin', {
+      waitUntil: 'networkidle',
+      timeout: TIMEOUTS.navigation,
+    });
 
     await saveScreenshot(page, `${taskId}_01_login_page`);
     log('screenshot', '로그인 페이지 스크린샷 저장');
 
-    // 팝업 닫기 (화면 가리는 팝업 제거 - 강화)
-    log('popup', '팝업 닫기 시도 (강화)');
-    try {
-      const popupCloseSelectors = [
-        '.layer_popup .btn_close',
-        '.popup_wrap .btn_close',
-        '.popup_zone .close',
-        '.modal .close',
-        '.modal-close',
-        'button[aria-label="닫기"]',
-        'button[title="닫기"]',
-        '.dimmed_layer .btn_close',
-        '.ly_pop .btn_close',
-        '.popup button:has-text("닫기")',
-        '.popup button:has-text("확인")',
-      ];
-      for (const selector of popupCloseSelectors) {
-        try {
-          const closeBtn = await page.locator(selector).first();
-          if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
-            await closeBtn.click();
-            log('popup', `팝업 닫기 성공: ${selector}`);
-            await humanDelay(200, 400);
-          }
-        } catch {
-          // 개별 셀렉터 실패는 무시
+    // 팝업 닫기 (화면 가리는 팝업 제거)
+    log('popup', '팝업 닫기 시도');
+    const popupCloseSelectors = [
+      '.layer_popup .btn_close',
+      '.popup_wrap .btn_close',
+      '.popup_zone .close',
+      '.modal .close',
+      'button[aria-label="닫기"]',
+      '.dimmed_layer .btn_close',
+      '.ly_pop .btn_close',
+    ];
+    for (const selector of popupCloseSelectors) {
+      try {
+        const closeBtn = await page.locator(selector).first();
+        if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+          await closeBtn.click();
+          log('popup', `팝업 닫기 성공: ${selector}`);
+          await humanDelay(200, 400);
         }
+      } catch {
+        // 무시
       }
-    } catch (popupErr) {
-      log('popup', '팝업 처리 완료');
     }
 
     await humanDelay(500, 1000);

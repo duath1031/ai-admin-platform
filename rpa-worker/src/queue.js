@@ -1,95 +1,122 @@
 /**
- * BullMQ 작업 큐 시스템
- * Redis 기반 작업 대기열 관리 (Producer)
+ * In-Memory Job Queue System
+ * Redis 없이 메모리 기반으로 작업 관리
+ *
+ * Note: 서버 재시작 시 작업 상태가 초기화됨
  */
 
-const { Queue } = require('bullmq');
-const IORedis = require('ioredis');
+// 인메모리 작업 저장소
+const jobs = new Map();
 
-// Redis 연결 (Upstash/Railway Redis)
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+// 작업 상태 enum
+const JobStatus = {
+  PENDING: 'pending',
+  PROCESSING: 'processing',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+};
 
-let connection;
-try {
-  connection = new IORedis(REDIS_URL, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-  });
-  console.log('[Queue] Redis 연결 성공');
-} catch (err) {
-  console.warn('[Queue] Redis 연결 실패 - 직접 실행 모드로 동작:', err.message);
-  connection = null;
+/**
+ * 작업 ID 생성
+ */
+function generateJobId() {
+  return `job_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
-
-// 작업 큐 정의
-const rpaQueue = connection ? new Queue('rpa-tasks', {
-  connection,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: { count: 100 },
-    removeOnFail: { count: 50 },
-  },
-}) : null;
 
 /**
  * 작업 큐에 추가
  * @param {string} jobType - 작업 유형 (gov24_auth, gov24_submit, etc.)
  * @param {object} data - 작업 데이터
- * @param {object} opts - BullMQ 옵션
- * @returns {object} job 정보 또는 null (Redis 미연결 시)
+ * @returns {object} job 정보
  */
-async function addJob(jobType, data, opts = {}) {
-  if (!rpaQueue) {
-    console.warn('[Queue] Redis 미연결 - 큐 적재 불가, 직접 실행 필요');
-    return null;
-  }
-
-  const job = await rpaQueue.add(jobType, {
-    ...data,
+async function addJob(jobType, data) {
+  const jobId = generateJobId();
+  const job = {
+    id: jobId,
+    type: jobType,
+    data,
+    status: JobStatus.PENDING,
+    progress: 0,
+    result: null,
+    error: null,
     createdAt: new Date().toISOString(),
-  }, {
-    priority: data.priority || 0,
-    ...opts,
-  });
+    updatedAt: new Date().toISOString(),
+  };
 
-  console.log(`[Queue] 작업 등록: ${jobType} (jobId: ${job.id})`);
-  return { jobId: job.id, jobType, status: 'queued' };
+  jobs.set(jobId, job);
+  console.log(`[Queue] 작업 등록: ${jobType} (jobId: ${jobId})`);
+
+  return { jobId, jobType, status: 'queued' };
+}
+
+/**
+ * 작업 상태 업데이트
+ */
+function updateJob(jobId, updates) {
+  const job = jobs.get(jobId);
+  if (!job) return null;
+
+  Object.assign(job, updates, { updatedAt: new Date().toISOString() });
+  jobs.set(jobId, job);
+  return job;
 }
 
 /**
  * 작업 상태 조회
  */
 async function getJobStatus(jobId) {
-  if (!rpaQueue) return null;
-  const job = await rpaQueue.getJob(jobId);
+  const job = jobs.get(jobId);
   if (!job) return null;
 
-  const state = await job.getState();
   return {
     jobId: job.id,
-    jobType: job.name,
-    state,
+    jobType: job.type,
+    state: job.status,
     progress: job.progress,
     data: job.data,
-    result: job.returnvalue,
-    failedReason: job.failedReason,
-    attemptsMade: job.attemptsMade,
-    timestamp: job.timestamp,
+    result: job.result,
+    failedReason: job.error,
+    timestamp: job.createdAt,
   };
 }
 
 /**
- * Redis 연결 상태 확인
+ * 큐 사용 가능 여부 (인메모리는 항상 true)
  */
 function isQueueAvailable() {
-  return connection !== null && rpaQueue !== null;
+  return true;
 }
 
+/**
+ * 오래된 작업 정리 (1시간 이상 지난 완료/실패 작업)
+ */
+function cleanupOldJobs() {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  let cleaned = 0;
+
+  for (const [jobId, job] of jobs.entries()) {
+    if (
+      (job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED) &&
+      job.updatedAt < oneHourAgo
+    ) {
+      jobs.delete(jobId);
+      cleaned++;
+    }
+  }
+
+  if (cleaned > 0) {
+    console.log(`[Queue] 오래된 작업 ${cleaned}개 정리됨`);
+  }
+}
+
+// 10분마다 오래된 작업 정리
+setInterval(cleanupOldJobs, 10 * 60 * 1000);
+
 module.exports = {
-  rpaQueue,
-  connection,
+  jobs,
+  JobStatus,
   addJob,
+  updateJob,
   getJobStatus,
   isQueueAvailable,
 };

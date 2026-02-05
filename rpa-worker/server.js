@@ -84,9 +84,9 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '1.2.0',
-    features: ['gov24-rpa', 'rag-pipeline', 'bullmq-queue', 'stealth-browser'],
-    queue: isQueueAvailable() ? 'connected' : 'direct-mode',
+    version: '1.3.0',
+    features: ['gov24-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
+    queue: 'in-memory',
   });
 });
 
@@ -430,7 +430,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log('='.repeat(60));
-  console.log('RPA Worker Server v1.2.0');
+  console.log('RPA Worker Server v1.3.0 (In-Memory Queue)');
   console.log('='.repeat(60));
   console.log(`Port: ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -438,20 +438,14 @@ app.listen(PORT, () => {
   console.log('='.repeat(60));
 
   // 환경변수 디버그 로그
-  console.log('[ENV] DATABASE_URL:', process.env.DATABASE_URL ? 'SET (length: ' + process.env.DATABASE_URL.length + ')' : 'NOT SET');
-  console.log('[ENV] SUPABASE_DATABASE_URL:', process.env.SUPABASE_DATABASE_URL ? 'SET' : 'NOT SET');
+  console.log('[ENV] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
   console.log('[ENV] GOOGLE_AI_API_KEY:', process.env.GOOGLE_AI_API_KEY ? 'SET' : 'NOT SET');
   console.log('[ENV] WORKER_API_KEY:', process.env.WORKER_API_KEY ? 'SET' : 'NOT SET');
-  console.log('[ENV] REDIS_URL:', process.env.REDIS_URL ? 'SET' : 'NOT SET (local fallback)');
   console.log('='.repeat(60));
 
-  // BullMQ Worker 시작
+  // In-Memory Worker 시작
   const worker = startWorker();
-  if (worker) {
-    console.log('[Server] BullMQ Worker 활성화');
-  } else {
-    console.log('[Server] BullMQ Worker 비활성화 (직접 실행 모드)');
-  }
+  console.log('[Server] In-Memory Worker 활성화');
 });
 
 // Graceful shutdown
