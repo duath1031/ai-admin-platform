@@ -536,26 +536,34 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 접수 방식 선택 (2분할: 로봇 vs 행정사) + 보조 버튼 */}
+      {/* 접수 방식 선택 (3분할: 로봇 / 접수대행 / 대리인선임) + 보조 버튼 */}
       <div className="mt-2 md:mt-3 space-y-2">
-        {/* 메인 2분할 버튼 */}
-        <div className="grid grid-cols-2 gap-3">
-          {/* 🚀 정부24 자동 접수 (로봇) */}
+        {/* 메인 3분할 버튼 */}
+        <div className="grid grid-cols-3 gap-2">
+          {/* 🚀 로봇 자동접수 */}
           <button
             onClick={handleRobotSubmit}
             disabled={rpaState.status !== 'idle' && rpaState.status !== 'error'}
-            className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-sm font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
             <span className="text-xl">🚀</span>
-            <span>정부24 자동접수 (로봇)</span>
+            <span>로봇 자동접수</span>
           </button>
-          {/* 👨‍💼 행정사 대행 의뢰 (사람) */}
+          {/* 📋 행정사 접수대행 */}
           <button
             onClick={() => setShowHumanModal(true)}
-            className="flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-sm font-bold rounded-xl transition-all shadow-md"
+            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
           >
-            <span className="text-xl">👨‍💼</span>
-            <span>행정사 대행의뢰 (사람)</span>
+            <span className="text-xl">📋</span>
+            <span>접수대행</span>
+          </button>
+          {/* 🤝 행정사 대리인선임 */}
+          <button
+            onClick={() => router.push('/submission?type=delegate')}
+            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
+          >
+            <span className="text-xl">🤝</span>
+            <span>대리인선임</span>
           </button>
         </div>
         {/* 보조 버튼 */}
