@@ -38,6 +38,8 @@ interface KnowledgeDocument {
   geminiMimeType: string | null;
   geminiExpiresAt: string | null;
   processingMode: string | null;
+  // 영구 저장소 (자동 갱신 가능 여부 판단)
+  storagePath: string | null;
 }
 
 // 업로드 작업 상태
@@ -324,24 +326,42 @@ export default function KnowledgePage() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  // 만료 시간 계산 — completed 문서는 항상 "활성 (영구 보존)"
-  // Gemini 캐시(48h)는 cron job이 자동 갱신하므로 사용자에게 "만료됨"을 표시하지 않음
+  // 만료 시간 계산 — storagePath 유무로 자동 갱신 가능 여부 판단
   const getExpiryStatus = (doc: KnowledgeDocument) => {
-    // completed 문서는 항상 활성 — 자동 갱신으로 영구 유지
+    const hasStorage = !!doc.storagePath;
+    const expiresAt = doc.geminiExpiresAt;
+    const now = new Date();
+
+    // Gemini 캐시 만료 여부
+    const isExpired = expiresAt ? new Date(expiresAt).getTime() < now.getTime() : true;
+
+    // completed 문서 처리
     if (doc.status === "completed") {
-      return { text: "활성 (영구 보존)", color: "text-green-600" };
+      if (hasStorage) {
+        // storagePath 있음 → 자동 갱신 가능
+        if (isExpired) {
+          return { text: "갱신 대기 (자동)", color: "text-blue-600" };
+        }
+        return { text: "활성 (영구 보존)", color: "text-green-600" };
+      } else {
+        // storagePath 없음 → 재업로드 필요!
+        if (isExpired) {
+          return { text: "⚠️ 재업로드 필요", color: "text-red-600" };
+        }
+        // 아직 만료 안됨 - 시간 표시
+        const hoursLeft = Math.floor((new Date(expiresAt!).getTime() - now.getTime()) / (1000 * 60 * 60));
+        if (hoursLeft < 24) {
+          return { text: `⚠️ ${hoursLeft}h 후 만료 (재업로드 필요)`, color: "text-orange-600" };
+        }
+        return { text: `${Math.floor(hoursLeft / 24)}일 남음 (재업로드 권장)`, color: "text-yellow-600" };
+      }
     }
 
-    const expiresAt = doc.geminiExpiresAt;
+    // completed 아닌 경우
     if (!expiresAt) return null;
 
-    const expires = new Date(expiresAt);
-    const now = new Date();
-    const hoursLeft = Math.floor((expires.getTime() - now.getTime()) / (1000 * 60 * 60));
-
-    if (hoursLeft < 0) {
-      return { text: "갱신 대기", color: "text-blue-600" };
-    }
+    const hoursLeft = Math.floor((new Date(expiresAt).getTime() - now.getTime()) / (1000 * 60 * 60));
+    if (hoursLeft < 0) return { text: "갱신 대기", color: "text-blue-600" };
     if (hoursLeft < 6) return { text: `${hoursLeft}시간 남음`, color: "text-orange-600" };
     if (hoursLeft < 24) return { text: `${hoursLeft}시간 남음`, color: "text-yellow-600" };
     return { text: `${Math.floor(hoursLeft / 24)}일 남음`, color: "text-green-600" };

@@ -250,6 +250,8 @@ export async function GET(req: NextRequest) {
         geminiMimeType: true,
         geminiExpiresAt: true,
         processingMode: true,
+        // 영구 저장소 (자동 갱신 가능 여부)
+        storagePath: true,
       },
     });
 
