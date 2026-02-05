@@ -245,10 +245,17 @@ export default function ChatPage() {
     const fileBase64 = uploadedFileData[uploadedFile.savedPath];
 
     setShowAuthModal(false);
-    setRpaState({ status: 'connecting', message: '정부24 접속 중...' });
+    setRpaState({ status: 'connecting', message: '🤖 로봇이 정부24에 접속 중입니다... (화면은 뜨지 않습니다)' });
 
     try {
-      setRpaState({ status: 'logging_in', message: `${authData.authMethod} 인증 요청 중...` });
+      // 1초 후 안내 메시지 업데이트
+      setTimeout(() => {
+        if (useChatStore.getState().rpaState.status === 'connecting') {
+          setRpaState({ status: 'connecting', message: '🤖 로봇이 정부24에 접속 중입니다...\n잠시 후 휴대폰으로 인증 알림이 발송됩니다.' });
+        }
+      }, 1500);
+
+      setRpaState({ status: 'logging_in', message: '🔐 간편인증 요청 중... 휴대폰 알림을 확인해주세요.' });
 
       const res = await fetch('/api/rpa/submit-v2', {
         method: 'POST',
@@ -273,7 +280,7 @@ export default function ChatPage() {
         if (data.action === 'AUTHENTICATE') {
           setRpaState({
             status: 'auth_required',
-            message: data.message,
+            message: '✅ 휴대폰으로 인증 요청이 전송되었습니다!\n앱에서 인증을 완료한 후 아래 버튼을 눌러주세요.',
             submissionId: data.submissionId,
           });
         } else if (data.step === 'submitted') {

@@ -78,42 +78,142 @@ async function requestGov24Auth(params) {
       await dialog.accept();
     });
 
-    log('navigate', '정부24 로그인 페이지 이동');
+    log('navigate', '정부24 로그인 페이지 직접 이동');
     await humanDelay(300, 800);
 
-    // 정부24 로그인 페이지 접속
-    await page.goto('https://www.gov.kr/nlogin/login', {
+    // 정부24 로그인 페이지 직접 접속 (메인 페이지 거치지 않음)
+    await page.goto('https://www.gov.kr/nlogin/loginMain', {
       waitUntil: 'networkidle',
       timeout: TIMEOUTS.navigation,
     });
 
     await saveScreenshot(page, `${taskId}_01_login_page`);
 
-    log('tab', '간편인증 탭 클릭');
-    await humanDelay(500, 1200);
+    // 팝업 닫기 (화면 가리는 팝업 제거)
+    log('popup', '팝업 닫기 시도');
+    try {
+      const popupCloseSelectors = [
+        '.layer_popup .btn_close',
+        '.popup_wrap .btn_close',
+        '.modal .close',
+        'button[aria-label="닫기"]',
+        '.dimmed_layer .btn_close',
+      ];
+      for (const selector of popupCloseSelectors) {
+        const closeBtn = await page.locator(selector).first();
+        if (await closeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await closeBtn.click();
+          log('popup', `팝업 닫기 성공: ${selector}`);
+          await humanDelay(300, 500);
+        }
+      }
+    } catch (popupErr) {
+      log('popup', '팝업 없음 또는 닫기 실패 (무시)');
+    }
 
-    // 간편인증 탭 클릭 (ghost-cursor 사용)
-    await humanClick(page, cursor, 'text=간편인증');
+    await humanDelay(500, 1000);
+
+    // 비회원 로그인 탭 클릭 (비회원 간편인증)
+    log('tab', '비회원 로그인 탭 클릭');
+    const nonMemberSelectors = [
+      '#tab_nonMember',
+      'a[href*="nonMember"]',
+      '.tab_menu a:has-text("비회원")',
+      'text=비회원 로그인',
+      'text=비회원',
+    ];
+
+    let tabClicked = false;
+    for (const selector of nonMemberSelectors) {
+      try {
+        const tab = await page.locator(selector).first();
+        if (await tab.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await humanClick(page, cursor, selector);
+          tabClicked = true;
+          log('tab', `비회원 탭 클릭 성공: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!tabClicked) {
+      log('tab', '비회원 탭을 찾을 수 없음, 간편인증 탭 시도');
+    }
+
     await humanDelay(800, 1500);
+    await saveScreenshot(page, `${taskId}_02_nonmember_tab`);
 
-    await saveScreenshot(page, `${taskId}_02_simple_auth_tab`);
+    // 간편인증 탭/버튼 클릭 (Robust Selectors)
+    log('tab', '간편인증 선택');
+    const simpleAuthSelectors = [
+      '#btn_SimpleAuth',
+      '#simpleAuth',
+      '.tab_cont a:has-text("간편인증")',
+      'a[href*="simpleAuth"]',
+      'img[alt*="간편인증"]',
+      'button:has-text("간편인증")',
+      'text=간편인증',
+    ];
+
+    let authTabClicked = false;
+    for (const selector of simpleAuthSelectors) {
+      try {
+        const authTab = await page.locator(selector).first();
+        if (await authTab.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await humanClick(page, cursor, selector);
+          authTabClicked = true;
+          log('tab', `간편인증 클릭 성공: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!authTabClicked) {
+      throw new Error('간편인증 버튼을 찾을 수 없습니다. 정부24 페이지 구조가 변경되었을 수 있습니다.');
+    }
+
+    await humanDelay(800, 1500);
+    await saveScreenshot(page, `${taskId}_03_simple_auth_tab`);
 
     log('select_auth', `인증 방법 선택: ${authMethod}`);
 
-    // 인증 방법 선택 (카카오, PASS, 네이버, 토스 등)
-    const authMethodMap = {
-      kakao: '카카오',
-      pass: 'PASS',
-      samsung: '삼성패스',
-      naver: '네이버',
-      toss: '토스',
+    // 인증 방법 선택 (Robust Selectors)
+    const authMethodSelectors = {
+      kakao: ['#kakao', 'img[alt*="카카오"]', 'button:has-text("카카오")', 'a:has-text("카카오")', 'text=카카오'],
+      naver: ['#naver', 'img[alt*="네이버"]', 'button:has-text("네이버")', 'a:has-text("네이버")', 'text=네이버'],
+      pass: ['#pass', 'img[alt*="PASS"]', 'button:has-text("PASS")', 'a:has-text("PASS")', 'text=PASS'],
+      toss: ['#toss', 'img[alt*="토스"]', 'button:has-text("토스")', 'a:has-text("토스")', 'text=토스'],
+      samsung: ['#samsung', 'img[alt*="삼성"]', 'button:has-text("삼성")', 'text=삼성패스'],
     };
 
-    const authMethodText = authMethodMap[authMethod] || 'PASS';
-    await humanClick(page, cursor, `text=${authMethodText}`);
+    const selectors = authMethodSelectors[authMethod] || authMethodSelectors.pass;
+    let methodClicked = false;
+
+    for (const selector of selectors) {
+      try {
+        const methodBtn = await page.locator(selector).first();
+        if (await methodBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await humanClick(page, cursor, selector);
+          methodClicked = true;
+          log('select_auth', `인증 방법 클릭 성공: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!methodClicked) {
+      log('select_auth', `${authMethod} 버튼을 찾을 수 없음, 기본값으로 진행`);
+    }
+
     await humanDelay(800, 1500);
 
-    log('input', '개인정보 입력 (보호 우회)');
+    log('input', '개인정보 입력 (비회원 간편인증)');
 
     // iframe 내부 처리 (정부24 로그인은 iframe 사용)
     let targetPage = page;
@@ -129,38 +229,71 @@ async function requestGov24Auth(params) {
       log('iframe', 'iframe 없음 → 메인 페이지 처리');
     }
 
-    // 이름 입력 (secureInput 사용)
-    await secureInput(page, 'input[name*="name"], input[placeholder*="이름"]', name);
+    // 이름 입력 (다중 셀렉터)
+    const nameSelectors = 'input[name*="name"], input[name*="nm"], input[id*="name"], input[placeholder*="이름"], #userName';
+    await secureInput(page, nameSelectors, name);
     await humanDelay(300, 700);
 
     // 주민등록번호 앞자리 입력 (비회원 로그인용)
-    await secureInput(page, 'input[name*="jumin1"], input[name*="rrn1"], input[name*="ssn1"], input[placeholder*="앞자리"]', rrn1);
+    const rrn1Selectors = 'input[name*="jumin1"], input[name*="rrn1"], input[name*="ssn1"], input[name*="ihidnum1"], input[id*="jumin1"], input[placeholder*="앞자리"], input[placeholder*="주민번호"]';
+    await secureInput(page, rrn1Selectors, rrn1);
     await humanDelay(300, 700);
 
-    // 주민등록번호 뒷자리 입력 (보안 입력)
-    await secureInput(page, 'input[name*="jumin2"], input[name*="rrn2"], input[name*="ssn2"], input[placeholder*="뒷자리"], input[type="password"]', rrn2);
+    // 주민등록번호 뒷자리 입력 (보안 입력 - password type)
+    const rrn2Selectors = 'input[name*="jumin2"], input[name*="rrn2"], input[name*="ssn2"], input[name*="ihidnum2"], input[id*="jumin2"], input[type="password"][maxlength="7"], input[placeholder*="뒷자리"]';
+    await secureInput(page, rrn2Selectors, rrn2);
     await humanDelay(300, 700);
 
     // 전화번호 입력
-    await secureInput(page, 'input[name*="phone"], input[name*="mobile"], input[placeholder*="휴대폰"]', phoneNumber);
+    const phoneSelectors = 'input[name*="phone"], input[name*="mobile"], input[name*="mbtlnum"], input[id*="phone"], input[placeholder*="휴대폰"], input[placeholder*="전화"]';
+    await secureInput(page, phoneSelectors, phoneNumber);
     await humanDelay(300, 700);
 
     // 통신사 선택
     if (carrier) {
-      await secureSelect(page, 'select[name*="carrier"], select[name*="telecom"]', carrier);
+      const carrierSelectors = 'select[name*="carrier"], select[name*="telecom"], select[name*="mobileCo"], select[id*="carrier"]';
+      await secureSelect(page, carrierSelectors, carrier);
       await humanDelay(300, 700);
     }
 
-    await saveScreenshot(page, `${taskId}_03_input_complete`);
+    await saveScreenshot(page, `${taskId}_04_input_complete`);
 
     log('request', '인증 요청 버튼 클릭');
     await humanDelay(500, 1000);
 
-    // 인증 요청 버튼 클릭 (ghost-cursor 사용)
-    await humanClick(page, cursor, 'button:has-text("인증 요청"), button:has-text("인증요청"), button:has-text("본인확인")');
+    // 인증 요청 버튼 클릭 (Robust Selectors)
+    const requestBtnSelectors = [
+      '#btn_request',
+      '#btnRequest',
+      'button[type="submit"]',
+      'button:has-text("인증요청")',
+      'button:has-text("인증 요청")',
+      'button:has-text("본인확인")',
+      'a:has-text("인증요청")',
+      'input[type="button"][value*="인증"]',
+    ];
+
+    let requestClicked = false;
+    for (const selector of requestBtnSelectors) {
+      try {
+        const btn = await page.locator(selector).first();
+        if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await humanClick(page, cursor, selector);
+          requestClicked = true;
+          log('request', `인증 요청 클릭 성공: ${selector}`);
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    if (!requestClicked) {
+      throw new Error('인증 요청 버튼을 찾을 수 없습니다.');
+    }
 
     await humanDelay(1500, 2500);
-    await saveScreenshot(page, `${taskId}_04_auth_requested`);
+    await saveScreenshot(page, `${taskId}_05_auth_requested`);
 
     log('success', '인증 요청 완료 - 사용자 앱 인증 대기');
 
