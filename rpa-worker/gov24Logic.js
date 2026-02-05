@@ -78,37 +78,94 @@ async function requestGov24Auth(params) {
       await dialog.accept();
     });
 
-    log('navigate', '정부24 로그인 페이지 직접 이동');
+    log('navigate', '정부24 로그인 페이지 이동');
     await humanDelay(300, 800);
 
-    // 정부24 로그인 페이지 직접 접속 (메인 페이지 거치지 않음)
-    await page.goto('https://www.gov.kr/nlogin/loginMain', {
-      waitUntil: 'networkidle',
-      timeout: TIMEOUTS.navigation,
-    });
+    // 정부24 로그인 페이지 접속 (여러 URL 시도)
+    const loginUrls = [
+      'https://www.gov.kr/nlogin',
+      'https://www.gov.kr/portal/login',
+      'https://www.gov.kr/nlogin/login',
+    ];
+
+    let pageLoaded = false;
+    for (const url of loginUrls) {
+      try {
+        log('navigate', `시도: ${url}`);
+        await page.goto(url, {
+          waitUntil: 'networkidle',
+          timeout: TIMEOUTS.navigation,
+        });
+
+        // 페이지가 에러 페이지인지 확인
+        const isErrorPage = await page.locator('.errorWrap, .error-page').first().isVisible({ timeout: 2000 }).catch(() => false);
+        if (!isErrorPage) {
+          pageLoaded = true;
+          log('navigate', `성공: ${url}`);
+          break;
+        }
+        log('navigate', `에러 페이지 감지, 다음 URL 시도`);
+      } catch (navErr) {
+        log('navigate', `실패: ${url} - ${navErr.message}`);
+      }
+    }
+
+    if (!pageLoaded) {
+      // 메인 페이지에서 로그인 버튼 찾기
+      log('navigate', '메인 페이지에서 로그인 버튼 찾기');
+      await page.goto('https://www.gov.kr', { waitUntil: 'networkidle', timeout: TIMEOUTS.navigation });
+      await humanDelay(500, 1000);
+
+      const loginBtnSelectors = ['a:has-text("로그인")', 'button:has-text("로그인")', '.login-btn', '#loginBtn'];
+      for (const selector of loginBtnSelectors) {
+        try {
+          const loginBtn = await page.locator(selector).first();
+          if (await loginBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await humanClick(page, cursor, selector);
+            await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
+            pageLoaded = true;
+            log('navigate', `로그인 버튼 클릭 성공: ${selector}`);
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
 
     await saveScreenshot(page, `${taskId}_01_login_page`);
+    log('screenshot', '로그인 페이지 스크린샷 저장');
 
-    // 팝업 닫기 (화면 가리는 팝업 제거)
-    log('popup', '팝업 닫기 시도');
+    // 팝업 닫기 (화면 가리는 팝업 제거 - 강화)
+    log('popup', '팝업 닫기 시도 (강화)');
     try {
       const popupCloseSelectors = [
         '.layer_popup .btn_close',
         '.popup_wrap .btn_close',
+        '.popup_zone .close',
         '.modal .close',
+        '.modal-close',
         'button[aria-label="닫기"]',
+        'button[title="닫기"]',
         '.dimmed_layer .btn_close',
+        '.ly_pop .btn_close',
+        '.popup button:has-text("닫기")',
+        '.popup button:has-text("확인")',
       ];
       for (const selector of popupCloseSelectors) {
-        const closeBtn = await page.locator(selector).first();
-        if (await closeBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await closeBtn.click();
-          log('popup', `팝업 닫기 성공: ${selector}`);
-          await humanDelay(300, 500);
+        try {
+          const closeBtn = await page.locator(selector).first();
+          if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+            await closeBtn.click();
+            log('popup', `팝업 닫기 성공: ${selector}`);
+            await humanDelay(200, 400);
+          }
+        } catch {
+          // 개별 셀렉터 실패는 무시
         }
       }
     } catch (popupErr) {
-      log('popup', '팝업 없음 또는 닫기 실패 (무시)');
+      log('popup', '팝업 처리 완료');
     }
 
     await humanDelay(500, 1000);
@@ -145,15 +202,30 @@ async function requestGov24Auth(params) {
     await humanDelay(800, 1500);
     await saveScreenshot(page, `${taskId}_02_nonmember_tab`);
 
-    // 간편인증 탭/버튼 클릭 (Robust Selectors)
-    log('tab', '간편인증 선택');
+    // 간편인증 탭/버튼 클릭 (Phase 22: Multi-Selector Strategy)
+    log('tab', '간편인증 선택 (다중 셀렉터 전략)');
     const simpleAuthSelectors = [
+      // 가장 정확한 셀렉터 우선
+      'a[title="간편인증 로그인"]',
+      'a[title*="간편인증"]',
       '#btn_SimpleAuth',
       '#simpleAuth',
+      '#tabSimple',
+      // 탭 내부 링크
       '.tab_cont a:has-text("간편인증")',
+      '.tab_menu a:has-text("간편인증")',
+      '.login_tab a:has-text("간편인증")',
+      // href 기반
       'a[href*="simpleAuth"]',
+      'a[href*="simple"]',
+      // 이미지 버튼
+      'img[alt="간편인증"]',
       'img[alt*="간편인증"]',
+      // 버튼/링크 텍스트
       'button:has-text("간편인증")',
+      'a:has-text("간편인증")',
+      // 최후의 수단
+      'text="간편인증"',
       'text=간편인증',
     ];
 
@@ -173,7 +245,16 @@ async function requestGov24Auth(params) {
     }
 
     if (!authTabClicked) {
-      throw new Error('간편인증 버튼을 찾을 수 없습니다. 정부24 페이지 구조가 변경되었을 수 있습니다.');
+      // 에러 스크린샷 저장 (Phase 22)
+      await saveScreenshot(page, `${taskId}_error_simpleauth_not_found`);
+      log('error', '간편인증 버튼을 찾지 못함 - 스크린샷 저장됨');
+
+      // 현재 페이지 URL과 HTML 일부 로깅
+      const currentUrl = page.url();
+      const pageTitle = await page.title().catch(() => 'unknown');
+      log('debug', `현재 URL: ${currentUrl}, 타이틀: ${pageTitle}`);
+
+      throw new Error(`간편인증 버튼을 찾을 수 없습니다. (URL: ${currentUrl}) 스크린샷이 저장되었습니다. 서버 로그를 확인하세요.`);
     }
 
     await humanDelay(800, 1500);
@@ -289,7 +370,9 @@ async function requestGov24Auth(params) {
     }
 
     if (!requestClicked) {
-      throw new Error('인증 요청 버튼을 찾을 수 없습니다.');
+      await saveScreenshot(page, `${taskId}_error_request_btn_not_found`);
+      log('error', '인증 요청 버튼을 찾지 못함 - 스크린샷 저장됨');
+      throw new Error('인증 요청 버튼을 찾을 수 없습니다. 스크린샷이 저장되었습니다. 서버 로그를 확인하세요.');
     }
 
     await humanDelay(1500, 2500);
