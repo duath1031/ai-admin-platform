@@ -156,18 +156,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 동시 세션 제한 (서버 부하 방지)
-    const activeSessionCount = getActiveSessionCount();
-    if (activeSessionCount >= 10) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Server busy',
-          message: '현재 서버가 바쁩니다. 잠시 후 다시 시도해주세요.',
-        },
-        { status: 503 }
-      );
-    }
+    // 세션 제한은 Railway worker에서 처리됨
 
     // Request Body 파싱
     const body = await request.json();
