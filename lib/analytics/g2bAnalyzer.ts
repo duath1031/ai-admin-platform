@@ -222,15 +222,19 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
   // 나라장터 API는 동일 월 내 검색만 안정적으로 지원
   const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
+  // 키워드 검색시 더 많은 결과를 가져와서 클라이언트 필터링
+  const fetchRows = params.keyword ? 100 : (params.numOfRows || 20);
+
   const queryParams: Record<string, string> = {
     pageNo: String(params.pageNo || 1),
-    numOfRows: String(params.numOfRows || 20),
+    numOfRows: String(fetchRows),
     inqryDiv: '1',
     inqryBgnDt: (params.startDate || formatDate(defaultStart)) + '0000',
     inqryEndDt: (params.endDate || formatDate(today)) + '2359',
     type: 'json',
   };
 
+  // API에도 키워드 전달 (부분 필터링 지원되는 경우를 위해)
   if (params.keyword) {
     queryParams.bidNtceNm = params.keyword;
   }
@@ -266,8 +270,25 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
     };
   });
 
-  // 금액 필터 (프론트에서 만원 단위 입력)
+  // 필터링
   let filtered = items;
+
+  // 키워드 필터링 (공고명에서 키워드 포함 여부 확인)
+  if (params.keyword && params.keyword.trim()) {
+    const keyword = params.keyword.trim().toLowerCase();
+    const keywords = keyword.split(/\s+/).filter(k => k.length > 0);
+    console.log(`[G2B] Keyword filter: "${params.keyword}" -> keywords: [${keywords.join(', ')}], items before: ${items.length}`);
+
+    filtered = filtered.filter((i) => {
+      const name = i.bidNtceNm.toLowerCase();
+      // 모든 키워드가 포함되어야 함
+      return keywords.every(kw => name.includes(kw));
+    });
+
+    console.log(`[G2B] Keyword filter result: ${filtered.length} items after filtering`);
+  }
+
+  // 금액 필터 (프론트에서 만원 단위 입력)
   if (params.minAmount) {
     const minWon = params.minAmount * 10000;
     filtered = filtered.filter((i) => i.presmptPrce >= minWon);
@@ -295,7 +316,8 @@ export async function searchBids(params: BidSearchParams): Promise<BidAnalysis> 
     ? `현재 마감 전 공고 ${openBids.length}건이 있습니다. 평균 추정가격 ${formatKRW(summary.avgAmount)}입니다.`
     : '현재 검색 조건에 맞는 진행 중인 공고가 없습니다. 검색 범위를 넓혀보세요.';
 
-  return { items: filtered, totalCount, summary, recommendation };
+  // 필터링된 결과 개수 반환 (키워드 검색시)
+  return { items: filtered, totalCount: filtered.length, summary, recommendation };
 }
 
 // ─────────────────────────────────────────
@@ -314,23 +336,20 @@ export async function searchPreSpecs(params: {
   const today = new Date();
   const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
-  // 키워드 있으면 PPSSrch 엔드포인트 사용
-  const operation = params.keyword
-    ? 'getPublicPrcureThngInfoServcPPSSrch'
-    : 'getPublicPrcureThngInfoServc';
+  // 키워드 검색시 더 많은 결과를 가져와서 클라이언트 필터링
+  const fetchRows = params.keyword ? 100 : (params.numOfRows || 20);
+
+  // 키워드 있어도 기본 엔드포인트 사용 (PPSSrch는 물품분류명 전용)
+  const operation = 'getPublicPrcureThngInfoServc';
 
   const queryParts = [
     `serviceKey=${apiKey}`,
     `pageNo=${params.pageNo || 1}`,
-    `numOfRows=${params.numOfRows || 20}`,
+    `numOfRows=${fetchRows}`,
     `inqryDiv=1`,
     `inqryBgnDt=${formatDate(defaultStart)}0000`,
     `inqryEndDt=${formatDate(today)}2359`,
   ];
-
-  if (params.keyword) {
-    queryParts.push(`prdctClsfcNoNm=${encodeURIComponent(params.keyword)}`);
-  }
 
   // type=json 사용 불가 → XML 응답
   const url = `${G2B_BASE}/ao/HrcspSsstndrdInfoService/${operation}?${queryParts.join('&')}`;
@@ -368,7 +387,7 @@ export async function searchPreSpecs(params: {
   const rawItems = body?.items?.item;
   const itemArray: Record<string, string | number>[] = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
 
-  const items: PreSpecItem[] = itemArray.map((item) => {
+  let items: PreSpecItem[] = itemArray.map((item) => {
     const opninCloseDate = parseDateString(String(item.opninRgstClseDt || ''));
     const daysRemaining = opninCloseDate
       ? Math.ceil((opninCloseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
@@ -386,10 +405,24 @@ export async function searchPreSpecs(params: {
     };
   });
 
+  // 키워드 필터링 (사전규격명에서 키워드 포함 여부 확인)
+  if (params.keyword && params.keyword.trim()) {
+    const keyword = params.keyword.trim().toLowerCase();
+    const keywords = keyword.split(/\s+/).filter(k => k.length > 0);
+    console.log(`[G2B PreSpec] Keyword filter: "${params.keyword}" -> keywords: [${keywords.join(', ')}], items before: ${items.length}`);
+
+    items = items.filter((i) => {
+      const name = i.prcureReqstNm.toLowerCase();
+      return keywords.every(kw => name.includes(kw));
+    });
+
+    console.log(`[G2B PreSpec] Keyword filter result: ${items.length} items after filtering`);
+  }
+
   const budgets = items.map((i) => i.asignBdgtAmt).filter((a) => a > 0);
   return {
     items,
-    totalCount,
+    totalCount: items.length,  // 필터링된 결과 개수 반환
     summary: {
       avgBudget: budgets.length > 0 ? Math.round(budgets.reduce((a, b) => a + b, 0) / budgets.length) : 0,
       totalBudget: budgets.reduce((a, b) => a + b, 0),
@@ -418,15 +451,19 @@ export async function searchWinningBids(params: {
   // 나라장터 API는 동일 월 내 검색만 안정적으로 지원
   const defaultStart = new Date(today.getFullYear(), today.getMonth(), 1);
 
+  // 키워드 검색시 더 많은 결과를 가져와서 클라이언트 필터링
+  const fetchRows = params.keyword ? 100 : (params.numOfRows || 20);
+
   const queryParams: Record<string, string> = {
     pageNo: String(params.pageNo || 1),
-    numOfRows: String(params.numOfRows || 20),
+    numOfRows: String(fetchRows),
     inqryDiv: '1',
     inqryBgnDt: formatDate(defaultStart) + '0000',
     inqryEndDt: formatDate(today) + '2359',
     type: 'json',
   };
 
+  // API에도 키워드 전달 (부분 필터링 지원되는 경우를 위해)
   if (params.keyword) {
     queryParams.bidNtceNm = params.keyword;
   }
@@ -437,7 +474,7 @@ export async function searchWinningBids(params: {
     queryParams,
   );
 
-  const items: WinningBidItem[] = rawItems.map((item) => {
+  let items: WinningBidItem[] = rawItems.map((item) => {
     const sucsfbidAmt = Number(item.sucsfbidAmt) || 0;
     // API가 낙찰률을 직접 제공 (예: "90" = 90%)
     const sucsfbidRate = Number(item.sucsfbidRate) || 0;
@@ -456,6 +493,20 @@ export async function searchWinningBids(params: {
       sucsfbidMthdNm: String(item.sucsfbidMthdNm || ''),
     };
   });
+
+  // 키워드 필터링 (공고명에서 키워드 포함 여부 확인)
+  if (params.keyword && params.keyword.trim()) {
+    const keyword = params.keyword.trim().toLowerCase();
+    const keywords = keyword.split(/\s+/).filter(k => k.length > 0);
+    console.log(`[G2B Winning] Keyword filter: "${params.keyword}" -> keywords: [${keywords.join(', ')}], items before: ${items.length}`);
+
+    items = items.filter((i) => {
+      const name = i.bidNtceNm.toLowerCase();
+      return keywords.every(kw => name.includes(kw));
+    });
+
+    console.log(`[G2B Winning] Keyword filter result: ${items.length} items after filtering`);
+  }
 
   // 낙찰률 분석
   const rates = items.map((i) => i.sucsfbidRate).filter((r) => r > 0 && r < 200);
@@ -487,8 +538,9 @@ export async function searchWinningBids(params: {
     byMethod,
   };
 
+  const filteredCount = items.length;
   const recommendation = rates.length > 0
-    ? `이번 달 낙찰 ${totalCount}건 분석: 평균 낙찰률 ${summary.avgRate}%, 평균 낙찰금액 ${formatKRW(summary.avgAmount)}. ${
+    ? `이번 달 낙찰 ${filteredCount}건 분석: 평균 낙찰률 ${summary.avgRate}%, 평균 낙찰금액 ${formatKRW(summary.avgAmount)}. ${
         summary.avgRate > 85
           ? '투찰률이 높은 편이므로 적극적 참여를 권장합니다.'
           : summary.avgRate > 70
@@ -497,7 +549,7 @@ export async function searchWinningBids(params: {
       }`
     : '조건에 맞는 낙찰 정보가 없습니다.';
 
-  return { items, totalCount, summary, recommendation };
+  return { items, totalCount: filteredCount, summary, recommendation };
 }
 
 // ─────────────────────────────────────────

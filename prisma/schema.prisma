@@ -570,3 +570,89 @@ model KnowledgeChunk {
   @@index([chunkIndex])
   @@index([embedding], map: "knowledge_chunk_embedding_idx")
 }
+
+// ─────────────────────────────────────────
+// 조달 데이터 아카이빙 (Phase 25)
+// ─────────────────────────────────────────
+
+enum ProcurementType {
+  SERVICE      // 용역
+  GOODS        // 물품
+  CONSTRUCTION // 공사
+}
+
+enum ProcurementStatus {
+  OPEN         // 진행중
+  CLOSED       // 마감
+  AWARDED      // 낙찰완료
+}
+
+model Procurement {
+  id              String            @id @default(cuid())
+
+  // 공고 식별정보
+  bidNo           String            @unique  // 공고번호
+  bidNtceNm       String                     // 공고명
+
+  // 발주처 정보
+  agency          String                     // 발주기관
+  demandAgency    String?                    // 수요기관
+  region          String?                    // 지역
+
+  // 금액 정보 (원 단위)
+  foundationAmt   BigInt?                    // 기초금액
+  preAmt          BigInt?                    // 예정가격 (사정률 적용 후)
+  bidWinAmt       BigInt?                    // 낙찰금액
+
+  // 낙찰 정보
+  winner          String?                    // 낙찰업체명
+  winnerBizNo     String?                    // 낙찰업체 사업자번호
+  bidRate         Float?                     // 낙찰률 (%)
+  participantCnt  Int?                       // 참가업체수
+
+  // 분류 및 메타데이터
+  type            ProcurementType            // 용역/물품/공사
+  status          ProcurementStatus @default(OPEN)
+  bidMethod       String?                    // 입찰방법 (일반경쟁/제한경쟁 등)
+  awardMethod     String?                    // 낙찰방법 (최저가/적격심사 등)
+
+  // 일자
+  announceDt      DateTime?                  // 공고일
+  openingDt       DateTime?                  // 개찰일
+  closeDt         DateTime?                  // 마감일
+
+  // URL
+  detailUrl       String?                    // 상세 페이지 URL
+
+  // 수집 메타
+  collectedAt     DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  source          String            @default("g2b") // 데이터 소스
+
+  @@index([agency])
+  @@index([type])
+  @@index([status])
+  @@index([region])
+  @@index([announceDt])
+  @@index([openingDt])
+  @@index([winner])
+}
+
+// 사용자별 관심 키워드 알림 설정
+model BidAlertKeyword {
+  id          String   @id @default(cuid())
+  userId      String
+  keyword     String
+  type        ProcurementType?  // null이면 전체
+  region      String?           // null이면 전체
+  minAmount   BigInt?           // 최소 금액 필터
+  maxAmount   BigInt?           // 최대 금액 필터
+  isActive    Boolean  @default(true)
+  lastAlertAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isActive])
+  @@unique([userId, keyword, type, region])
+}

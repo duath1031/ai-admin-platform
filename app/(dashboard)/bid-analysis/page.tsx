@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui";
+import { BidCalculator, AgencyBiasAnalyzer, CompetitorProfile } from "@/components/procurement";
 
 // ─── Types ───
 
@@ -117,13 +118,16 @@ export default function BidAnalysisPage() {
   const [maxAmount, setMaxAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [showTools, setShowTools] = useState(false);
 
   // 탭별 결과
   const [bidResult, setBidResult] = useState<BidResult | null>(null);
   const [preSpecResult, setPreSpecResult] = useState<PreSpecResult | null>(null);
   const [winningResult, setWinningResult] = useState<WinningBidResult | null>(null);
 
-  const handleSearch = async () => {
+  const handleSearch = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
@@ -171,24 +175,69 @@ export default function BidAnalysisPage() {
         if (!data.success) throw new Error(data.error || "검색 실패");
         setWinningResult(data);
       }
+      setLastUpdated(new Date());
     } catch (e) {
       setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeTab, keyword, bidType, region, minAmount, maxAmount]);
+
+  // 자동 새로고침 (5분마다)
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const interval = setInterval(() => {
+      handleSearch();
+    }, 5 * 60 * 1000); // 5분
+
+    return () => clearInterval(interval);
+  }, [autoRefresh, handleSearch]);
 
   const currentResult = activeTab === "bid" ? bidResult : activeTab === "prespec" ? preSpecResult : winningResult;
 
   return (
     <div className="max-w-6xl mx-auto">
       {/* 헤더 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">나라장터 입찰 분석</h1>
-        <p className="text-gray-500 mt-1">
-          공공조달 입찰공고 검색, 사전규격 조회, 낙찰률 분석을 제공합니다.
-        </p>
+      <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">나라장터 입찰 분석</h1>
+          <p className="text-gray-500 mt-1">
+            공공조달 입찰공고 검색, 사전규격 조회, 낙찰률 분석을 제공합니다.
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          {/* 자동 새로고침 토글 */}
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="w-4 h-4 rounded text-teal-600 focus:ring-teal-500"
+            />
+            <span className="text-gray-600">자동 새로고침</span>
+            {autoRefresh && <span className="text-xs text-gray-400">(5분)</span>}
+          </label>
+          {/* 분석도구 토글 */}
+          <button
+            onClick={() => setShowTools(!showTools)}
+            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              showTools
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            {showTools ? "도구 숨기기" : "분석 도구"}
+          </button>
+        </div>
       </div>
+
+      {/* 마지막 업데이트 시간 */}
+      {lastUpdated && (
+        <div className="mb-4 text-xs text-gray-400 text-right">
+          마지막 업데이트: {lastUpdated.toLocaleTimeString("ko-KR")}
+        </div>
+      )}
 
       {/* 탭 */}
       <div className="flex border-b border-gray-200 mb-6">
@@ -347,6 +396,17 @@ export default function BidAnalysisPage() {
         </CardContent>
       </Card>
 
+      {/* ─── 분석 도구 섹션 ─── */}
+      {showTools && (
+        <div className="mt-6 space-y-6">
+          <div className="grid md:grid-cols-2 gap-6">
+            <BidCalculator />
+            <AgencyBiasAnalyzer />
+          </div>
+          <CompetitorProfile region={region || undefined} bidType={bidType} />
+        </div>
+      )}
+
       {/* ─── 공공 입찰 결과 ─── */}
       {activeTab === "bid" && bidResult && (
         <div className="mt-6 space-y-4">
@@ -372,40 +432,40 @@ export default function BidAnalysisPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-gray-50 border-b text-left">
-                        <th className="px-4 py-3 font-medium text-gray-600">공고명</th>
-                        <th className="px-4 py-3 font-medium text-gray-600">공고기관</th>
-                        <th className="px-4 py-3 font-medium text-gray-600 text-right">추정가격</th>
-                        <th className="px-4 py-3 font-medium text-gray-600">마감</th>
-                        <th className="px-4 py-3 font-medium text-gray-600">방식</th>
-                        <th className="px-4 py-3 font-medium text-gray-600 text-center">링크</th>
+                        <th className="px-3 py-3 font-medium text-gray-600">공고명</th>
+                        <th className="px-3 py-3 font-medium text-gray-600">공고기관</th>
+                        <th className="px-3 py-3 font-medium text-gray-600 text-right">추정가격</th>
+                        <th className="px-2 py-3 font-medium text-gray-600">마감</th>
+                        <th className="px-2 py-3 font-medium text-gray-600">방식</th>
+                        <th className="px-2 py-3 font-medium text-gray-600 text-center">링크</th>
                       </tr>
                     </thead>
                     <tbody>
                       {bidResult.items.map((item, i) => (
                         <tr key={i} className="border-b hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-3 max-w-xs">
+                          <td className="px-3 py-3 max-w-xs">
                             <p className="font-medium text-gray-800 truncate" title={item.bidNtceNm}>
                               {item.bidNtceNm}
                             </p>
                           </td>
-                          <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{item.ntceInsttNm}</td>
-                          <td className="px-4 py-3 text-right font-medium text-gray-800 whitespace-nowrap">
+                          <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{item.ntceInsttNm}</td>
+                          <td className="px-3 py-3 text-right font-medium text-gray-800 whitespace-nowrap">
                             {formatKRW(item.presmptPrce)}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          <td className="px-2 py-3 whitespace-nowrap">
                             <DdayBadge days={item.daysRemaining} />
                           </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">
+                          <td className="px-2 py-3 text-gray-500 text-xs whitespace-nowrap max-w-[80px] truncate" title={item.sucsfbidMthdNm || item.bidMethdNm}>
                             {item.sucsfbidMthdNm || item.bidMethdNm}
                           </td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-2 py-3 text-center">
                             <a
                               href={item.bidNtceUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-teal-600 hover:text-teal-800 font-medium text-xs"
+                              className="inline-flex items-center gap-1 text-teal-600 hover:text-teal-800 font-medium text-xs bg-teal-50 px-2 py-1 rounded hover:bg-teal-100 transition-colors"
                             >
-                              상세보기
+                              상세
                             </a>
                           </td>
                         </tr>

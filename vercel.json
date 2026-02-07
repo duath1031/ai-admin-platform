@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/keep-alive",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/procurement",
+      "schedule": "0 0,9 * * *"
     }
   ],
   "functions": {
