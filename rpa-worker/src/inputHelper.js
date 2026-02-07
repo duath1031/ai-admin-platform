@@ -101,11 +101,16 @@ async function typeWithPlaywright(page, selector, text, opts = {}) {
       await element.fill(text);
     }
 
-    // 입력 이벤트 디스패치 (보호된 필드에서 이벤트 누락 방지)
+    // [Phase 24.5] 입력 이벤트 디스패치 강화 (input, change, blur)
     await element.evaluate((el, value) => {
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true })); // 유효성 검사 트리거
     }, text);
+
+    // 포커스 해제 (다음 필드로 이동)
+    await page.keyboard.press('Tab');
+    await _microDelay();
 
     console.log(`[InputHelper] Playwright ${opts.humanLike ? 'type' : 'fill'} 성공: ${selector}`);
     return true;
@@ -137,7 +142,7 @@ async function insertViaExecCommand(page, selector, text) {
     await page.keyboard.press('Control+a');
     await _microDelay();
 
-    // execCommand insertText
+    // execCommand insertText + [Phase 24.5] blur 이벤트 추가
     const success = await element.evaluate((el, value) => {
       el.focus();
       // 기존 값 제거
@@ -147,6 +152,7 @@ async function insertViaExecCommand(page, selector, text) {
       const result = document.execCommand('insertText', false, value);
       el.dispatchEvent(new Event('input', { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true })); // 유효성 검사 트리거
       return result;
     }, text);
 

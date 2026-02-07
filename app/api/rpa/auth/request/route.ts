@@ -22,11 +22,10 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  requestGov24Auth,
-  AuthCarrier,
-  getActiveSessionCount,
-} from '@/lib/rpa/gov24Login';
+
+// Railway RPA Worker URL
+const RPA_WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
+const RPA_WORKER_API_KEY = process.env.RPA_WORKER_API_KEY || '';
 
 // =============================================================================
 // Request Validation Schema
@@ -99,6 +98,40 @@ function checkRateLimit(identifier: string): boolean {
 }
 
 // =============================================================================
+// Railway Worker API 호출
+// =============================================================================
+
+interface RpaWorkerResponse {
+  success: boolean;
+  taskId?: string;
+  phase?: string;
+  message?: string;
+  error?: string;
+  logs?: Array<{ step: string; message: string; status: string }>;
+  sessionData?: {
+    sessionActive?: boolean;
+  };
+}
+
+async function callRpaWorker(endpoint: string, data: Record<string, unknown>): Promise<RpaWorkerResponse> {
+  const response = await fetch(`${RPA_WORKER_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': RPA_WORKER_API_KEY,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`RPA Worker error: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+// =============================================================================
 // POST Handler
 // =============================================================================
 
@@ -158,14 +191,19 @@ export async function POST(request: NextRequest) {
 
     const input = validationResult.data;
 
-    console.log(`[Auth Request API] Starting auth for: ${input.name.substring(0, 1)}**`);
+    console.log(`[Auth Request API] Starting auth for: ${input.name.substring(0, 1)}** via Railway worker`);
 
-    // 간편인증 요청 시작
-    const result = await requestGov24Auth({
+    // Railway RPA Worker로 인증 요청 전달
+    // birthDate (YYYYMMDD) → rrn1 (6자리) 변환
+    const rrn1 = input.birthDate.substring(2); // YYMMDD
+
+    const result = await callRpaWorker('/gov24/auth/request', {
       name: input.name,
-      birthDate: input.birthDate,
+      rrn1: rrn1,
+      rrn2: '1000000', // 비회원 인증에는 뒷자리 전체가 필요하지 않을 수 있음
       phoneNumber: input.phoneNumber,
-      carrier: input.carrier as AuthCarrier,
+      carrier: input.carrier,
+      authMethod: 'pass', // 기본값: PASS 인증
     });
 
     const responseTime = Date.now() - startTime;
@@ -173,30 +211,31 @@ export async function POST(request: NextRequest) {
     if (result.success) {
       return NextResponse.json({
         success: true,
-        sessionId: result.sessionId,
-        status: result.status,
-        message: result.message,
+        sessionId: result.taskId,
+        status: result.phase === 'waiting' ? 'waiting_auth' : result.phase,
+        message: result.message || '인증 요청이 전송되었습니다. 스마트폰 앱에서 인증을 완료해주세요.',
         expiresIn: 300, // 5분
         nextStep: {
-          description: '카카오톡에서 인증을 완료한 후 아래 API를 호출하세요',
+          description: 'PASS/카카오톡에서 인증을 완료한 후 아래 API를 호출하세요',
           endpoint: '/api/rpa/auth/confirm',
           method: 'POST',
           body: {
-            sessionId: result.sessionId,
+            sessionId: result.taskId,
           },
         },
         metadata: {
           requestedAt: new Date().toISOString(),
           responseTime: `${responseTime}ms`,
+          worker: 'railway',
         },
       });
     } else {
       return NextResponse.json(
         {
           success: false,
-          sessionId: result.sessionId,
-          status: result.status,
-          message: result.message,
+          sessionId: result.taskId,
+          status: 'failed',
+          message: result.message || result.error || 'RPA 인증 요청 실패',
           fallback: {
             description: 'RPA 인증에 실패했습니다. 수동으로 정부24에서 인증해주세요.',
             gov24Url: 'https://www.gov.kr/nlogin',

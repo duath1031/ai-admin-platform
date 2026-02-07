@@ -333,10 +333,87 @@ async function requestGov24Auth(params) {
     await secureInput(page, phoneSelectors, phoneNumber);
     await humanDelay(300, 700);
 
-    // 통신사 선택
+    // ═══════════════════════════════════════════════════════════════
+    // [Phase 24.5] 통신사 선택 강화 (라디오 버튼/탭 클릭)
+    // ═══════════════════════════════════════════════════════════════
     if (carrier) {
-      const carrierSelectors = 'select[name*="carrier"], select[name*="telecom"], select[name*="mobileCo"], select[id*="carrier"]';
-      await secureSelect(page, carrierSelectors, carrier);
+      log('carrier', `통신사 선택: ${carrier}`);
+
+      // 통신사 매핑 (다양한 텍스트 패턴)
+      const carrierTextMap = {
+        'SKT': ['SKT', 'SK텔레콤', 'SK 텔레콤', 'skt'],
+        'KT': ['KT', '케이티', 'kt'],
+        'LGU': ['LG U+', 'LGU+', 'LG유플러스', 'LG 유플러스', 'lgu'],
+        'SKT_MVNO': ['SKT 알뜰폰', 'SK 알뜰', '알뜰폰(SKT)'],
+        'KT_MVNO': ['KT 알뜰폰', 'KT 알뜰', '알뜰폰(KT)'],
+        'LGU_MVNO': ['LG 알뜰폰', 'LGU+ 알뜰', '알뜰폰(LG)'],
+      };
+
+      const carrierTexts = carrierTextMap[carrier] || [carrier];
+      let carrierSelected = false;
+
+      // 1순위: 라디오 버튼/라벨 클릭
+      for (const text of carrierTexts) {
+        const radioSelectors = [
+          `label:has-text("${text}")`,
+          `input[type="radio"][value*="${text}"]`,
+          `span:has-text("${text}")`,
+          `.radio-item:has-text("${text}")`,
+          `div[role="radio"]:has-text("${text}")`,
+        ];
+
+        for (const sel of radioSelectors) {
+          try {
+            const elem = await page.locator(sel).first();
+            if (await elem.isVisible({ timeout: 1000 }).catch(() => false)) {
+              await humanClick(page, cursor, sel);
+              log('carrier', `통신사 클릭 성공: ${sel}`);
+              carrierSelected = true;
+              break;
+            }
+          } catch { continue; }
+        }
+        if (carrierSelected) break;
+      }
+
+      // 2순위: Select 드롭다운
+      if (!carrierSelected) {
+        const selectSelectors = 'select[name*="carrier"], select[name*="telecom"], select[name*="mobileCo"], select[id*="carrier"]';
+        const selectResult = await secureSelect(page, selectSelectors, carrier);
+        if (selectResult) {
+          log('carrier', `통신사 Select 성공: ${carrier}`);
+          carrierSelected = true;
+        }
+      }
+
+      // 3순위: JavaScript로 강제 선택
+      if (!carrierSelected) {
+        const jsResult = await page.evaluate((carrierValue) => {
+          // 라디오 버튼 찾기
+          const radios = document.querySelectorAll('input[type="radio"]');
+          for (const radio of radios) {
+            const label = radio.closest('label') || document.querySelector(`label[for="${radio.id}"]`);
+            const text = (label?.textContent || radio.value || '').toLowerCase();
+            if (text.includes(carrierValue.toLowerCase())) {
+              radio.checked = true;
+              radio.dispatchEvent(new Event('change', { bubbles: true }));
+              radio.dispatchEvent(new Event('click', { bubbles: true }));
+              return true;
+            }
+          }
+          return false;
+        }, carrier);
+
+        if (jsResult) {
+          log('carrier', `통신사 JS 강제 선택 성공: ${carrier}`);
+          carrierSelected = true;
+        }
+      }
+
+      if (!carrierSelected) {
+        log('carrier', `통신사 선택 실패: ${carrier}`, 'warn');
+      }
+
       await humanDelay(300, 700);
     }
 
