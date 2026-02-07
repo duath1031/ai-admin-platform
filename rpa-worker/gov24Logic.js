@@ -1,11 +1,11 @@
 /**
  * =============================================================================
- * 정부24 간편인증 로직
+ * 정부24 간편인증 로직 (Phase 25: Force Injection Rewrite)
  * =============================================================================
- * [핵심 기능]
- * - 정부24 간편인증(카카오/PASS/삼성패스 등) 로그인 자동화
- * - iframe 처리 및 팝업 핸들링
- * - 인증 완료 대기 및 세션 쿠키 추출
+ * [핵심 변경사항]
+ * 1. Force Value Injection - page.evaluate()로 DOM 직접 주입
+ * 2. Alert/Dialog Catch - 경고창 메시지 감지 및 로깅
+ * 3. Final Evidence Screenshot - 버튼 클릭 직전 증거 스크린샷
  *
  * [주의사항]
  * - 모든 에러는 try-catch로 처리하고 스크린샷 저장
@@ -19,8 +19,6 @@ const {
   humanDelay,
   saveScreenshot: stealthScreenshot,
 } = require('./src/stealthBrowser');
-const { secureInput, secureSelect } = require('./src/inputHelper');
-const { typeOnKeypad } = require('./src/keypadSolver');
 
 // 타임아웃 설정
 const TIMEOUTS = {
@@ -36,9 +34,6 @@ const TIMEOUTS = {
 // =============================================================================
 const browserSessions = new Map();
 
-/**
- * 세션 저장
- */
 function saveSession(taskId, sessionData) {
   browserSessions.set(taskId, {
     ...sessionData,
@@ -47,14 +42,9 @@ function saveSession(taskId, sessionData) {
   console.log(`[Session] Saved: ${taskId}`);
 }
 
-/**
- * 세션 조회
- */
 function getSession(taskId) {
   const session = browserSessions.get(taskId);
   if (!session) return null;
-
-  // 만료 확인
   if (Date.now() - session.createdAt > TIMEOUTS.sessionTTL) {
     console.log(`[Session] Expired: ${taskId}`);
     cleanupSession(taskId);
@@ -63,9 +53,6 @@ function getSession(taskId) {
   return session;
 }
 
-/**
- * 세션 정리
- */
 async function cleanupSession(taskId) {
   const session = browserSessions.get(taskId);
   if (session) {
@@ -87,28 +74,139 @@ setInterval(() => {
   }
 }, 60000);
 
-/**
- * 스크린샷 저장 (stealthBrowser 위임)
- */
 async function saveScreenshot(page, prefix = 'screenshot') {
   return stealthScreenshot(page, prefix);
 }
 
+// =============================================================================
+// [Phase 25] 💉 Force Value Injection 헬퍼 함수
+// page.type()을 믿지 않고 DOM에 직접 값을 강제 주입
+// =============================================================================
+
 /**
- * 정부24 비회원 간편인증 요청 (Phase 1)
- * @param {Object} params - 인증 요청 파라미터
- * @param {string} params.name - 이름
- * @param {string} params.rrn1 - 주민번호 앞자리 (6자리)
- * @param {string} params.rrn2 - 주민번호 뒷자리 (7자리)
- * @param {string} params.phoneNumber - 전화번호 (01012345678)
- * @param {string} params.carrier - 통신사 (SKT, KT, LGU, SKT_MVNO, KT_MVNO, LGU_MVNO)
- * @param {string} params.authMethod - 인증방법 (kakao, pass, samsung, naver, toss)
- * @returns {Object} - 인증 요청 결과
+ * 강제 입력 - DOM에 직접 값을 주입하고 모든 이벤트 발생
+ * @param {Page} page - Playwright Page
+ * @param {string} selector - CSS 셀렉터
+ * @param {string} value - 입력할 값
+ * @returns {Promise<boolean>} 성공 여부
  */
+async function forceInput(page, selector, value) {
+  try {
+    const result = await page.evaluate(({ sel, val }) => {
+      const el = document.querySelector(sel);
+      if (!el) return { success: false, error: 'Element not found', selector: sel };
+
+      // 값 직접 할당
+      el.value = val;
+
+      // 모든 필요한 이벤트 발생
+      el.dispatchEvent(new Event('focus', { bubbles: true }));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+
+      // 값이 실제로 설정되었는지 확인
+      return {
+        success: el.value === val,
+        actualValue: el.value,
+        selector: sel
+      };
+    }, { sel: selector, val: value });
+
+    console.log(`[ForceInput] ${selector}: ${JSON.stringify(result)}`);
+    return result.success;
+  } catch (err) {
+    console.error(`[ForceInput] Error: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * 다중 셀렉터로 강제 입력 시도
+ * @param {Page} page - Playwright Page
+ * @param {string[]} selectors - 시도할 셀렉터 배열
+ * @param {string} value - 입력할 값
+ * @param {string} fieldName - 필드 이름 (로깅용)
+ * @returns {Promise<boolean>} 성공 여부
+ */
+async function forceInputMultiple(page, selectors, value, fieldName) {
+  for (const selector of selectors) {
+    const exists = await page.evaluate((sel) => !!document.querySelector(sel), selector);
+    if (exists) {
+      const result = await forceInput(page, selector, value);
+      if (result) {
+        console.log(`[ForceInput] ✅ ${fieldName} 성공: ${selector}`);
+        return true;
+      }
+    }
+  }
+  console.log(`[ForceInput] ❌ ${fieldName} 모든 셀렉터 실패`);
+  return false;
+}
+
+/**
+ * 강제 Select 선택
+ * @param {Page} page - Playwright Page
+ * @param {string} selector - CSS 셀렉터
+ * @param {string} value - 선택할 값
+ * @returns {Promise<boolean>} 성공 여부
+ */
+async function forceSelect(page, selector, value) {
+  try {
+    const result = await page.evaluate(({ sel, val }) => {
+      const el = document.querySelector(sel);
+      if (!el) return { success: false, error: 'Element not found' };
+
+      // value로 직접 선택
+      el.value = val;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+
+      // 선택 확인
+      return { success: el.value === val, actualValue: el.value };
+    }, { sel: selector, val: value });
+
+    console.log(`[ForceSelect] ${selector}: ${JSON.stringify(result)}`);
+    return result.success;
+  } catch (err) {
+    console.error(`[ForceSelect] Error: ${err.message}`);
+    return false;
+  }
+}
+
+/**
+ * 강제 체크박스 체크
+ * @param {Page} page - Playwright Page
+ * @param {string} selector - CSS 셀렉터
+ * @returns {Promise<boolean>} 성공 여부
+ */
+async function forceCheck(page, selector) {
+  try {
+    const result = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { success: false, error: 'Element not found' };
+
+      el.checked = true;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('click', { bubbles: true }));
+
+      return { success: el.checked, selector: sel };
+    }, selector);
+
+    return result.success;
+  } catch (err) {
+    return false;
+  }
+}
+
+// =============================================================================
+// [Phase 25] 정부24 비회원 간편인증 요청 (완전 재작성)
+// =============================================================================
+
 async function requestGov24Auth(params) {
   const { name, rrn1, rrn2, phoneNumber, carrier, authMethod = 'pass' } = params;
   const taskId = uuidv4();
   const logs = [];
+  const dialogMessages = []; // 🚨 알림창 메시지 수집
 
   let browser = null;
   let context = null;
@@ -120,60 +218,48 @@ async function requestGov24Auth(params) {
   };
 
   try {
-    log('init', '스텔스 브라우저 시작');
+    log('init', '🚀 Phase 25: Force Injection 방식으로 스텔스 브라우저 시작');
 
-    // 스텔스 브라우저 시작 (ghost-cursor + stealth plugin)
+    // 스텔스 브라우저 시작
     const stealth = await launchStealthBrowser();
     browser = stealth.browser;
     context = stealth.context;
     const page = stealth.page;
     const cursor = stealth.cursor;
 
-    // 다이얼로그 자동 수락
-    context.on('dialog', async (dialog) => {
-      log('dialog', `Alert: ${dialog.message()}`);
-      await dialog.accept();
+    // ═══════════════════════════════════════════════════════════════
+    // [Phase 25] 🚨 Alert & Dialog Catch - 모든 경고창 감지
+    // ═══════════════════════════════════════════════════════════════
+    page.on('dialog', async (dialog) => {
+      const message = dialog.message();
+      dialogMessages.push(message);
+      log('🚨 DIALOG', `알림창 감지: "${message}"`);
+      console.log(`🚨🚨🚨 알림창 감지: ${message}`);
+      await dialog.dismiss();
     });
 
     log('navigate', '정부24 로그인 페이지 이동');
     await humanDelay(300, 800);
 
-    // 정부24 로그인 페이지 접속 (기본 URL)
+    // 정부24 로그인 페이지 접속
     await page.goto('https://www.gov.kr/nlogin', {
       waitUntil: 'networkidle',
       timeout: TIMEOUTS.navigation,
     });
 
     await saveScreenshot(page, `${taskId}_01_login_page`);
-    log('screenshot', '로그인 페이지 스크린샷 저장');
 
-    // 팝업 닫기 (화면 가리는 팝업 제거)
+    // 팝업 닫기
     log('popup', '팝업 닫기 시도');
-    const popupCloseSelectors = [
-      '.layer_popup .btn_close',
-      '.popup_wrap .btn_close',
-      '.popup_zone .close',
-      '.modal .close',
-      'button[aria-label="닫기"]',
-      '.dimmed_layer .btn_close',
-      '.ly_pop .btn_close',
-    ];
-    for (const selector of popupCloseSelectors) {
-      try {
-        const closeBtn = await page.locator(selector).first();
-        if (await closeBtn.isVisible({ timeout: 500 }).catch(() => false)) {
-          await closeBtn.click();
-          log('popup', `팝업 닫기 성공: ${selector}`);
-          await humanDelay(200, 400);
-        }
-      } catch {
-        // 무시
-      }
-    }
-
+    await page.evaluate(() => {
+      const closeButtons = document.querySelectorAll('.btn_close, .close, [aria-label="닫기"]');
+      closeButtons.forEach(btn => btn.click());
+    });
     await humanDelay(500, 1000);
 
-    // 비회원 로그인 탭 클릭 (비회원 간편인증)
+    // ═══════════════════════════════════════════════════════════════
+    // Step 1: 비회원 로그인 탭 클릭
+    // ═══════════════════════════════════════════════════════════════
     log('tab', '비회원 로그인 탭 클릭');
     const nonMemberSelectors = [
       '#tab_nonMember',
@@ -193,42 +279,22 @@ async function requestGov24Auth(params) {
           log('tab', `비회원 탭 클릭 성공: ${selector}`);
           break;
         }
-      } catch {
-        continue;
-      }
-    }
-
-    if (!tabClicked) {
-      log('tab', '비회원 탭을 찾을 수 없음, 간편인증 탭 시도');
+      } catch { continue; }
     }
 
     await humanDelay(800, 1500);
     await saveScreenshot(page, `${taskId}_02_nonmember_tab`);
 
-    // 간편인증 탭/버튼 클릭 (Phase 22: Multi-Selector Strategy)
-    log('tab', '간편인증 선택 (다중 셀렉터 전략)');
+    // ═══════════════════════════════════════════════════════════════
+    // Step 2: 간편인증 탭 클릭
+    // ═══════════════════════════════════════════════════════════════
+    log('tab', '간편인증 선택');
     const simpleAuthSelectors = [
-      // 가장 정확한 셀렉터 우선
       'a[title="간편인증 로그인"]',
       'a[title*="간편인증"]',
       '#btn_SimpleAuth',
-      '#simpleAuth',
-      '#tabSimple',
-      // 탭 내부 링크
-      '.tab_cont a:has-text("간편인증")',
-      '.tab_menu a:has-text("간편인증")',
-      '.login_tab a:has-text("간편인증")',
-      // href 기반
-      'a[href*="simpleAuth"]',
-      'a[href*="simple"]',
-      // 이미지 버튼
-      'img[alt="간편인증"]',
-      'img[alt*="간편인증"]',
-      // 버튼/링크 텍스트
       'button:has-text("간편인증")',
       'a:has-text("간편인증")',
-      // 최후의 수단
-      'text="간편인증"',
       'text=간편인증',
     ];
 
@@ -242,386 +308,292 @@ async function requestGov24Auth(params) {
           log('tab', `간편인증 클릭 성공: ${selector}`);
           break;
         }
-      } catch {
-        continue;
-      }
-    }
-
-    if (!authTabClicked) {
-      // 에러 스크린샷 저장 (Phase 22)
-      await saveScreenshot(page, `${taskId}_error_simpleauth_not_found`);
-      log('error', '간편인증 버튼을 찾지 못함 - 스크린샷 저장됨');
-
-      // 현재 페이지 URL과 HTML 일부 로깅
-      const currentUrl = page.url();
-      const pageTitle = await page.title().catch(() => 'unknown');
-      log('debug', `현재 URL: ${currentUrl}, 타이틀: ${pageTitle}`);
-
-      throw new Error(`간편인증 버튼을 찾을 수 없습니다. (URL: ${currentUrl}) 스크린샷이 저장되었습니다. 서버 로그를 확인하세요.`);
-    }
-
-    await humanDelay(800, 1500);
-    await saveScreenshot(page, `${taskId}_03_simple_auth_tab`);
-
-    log('select_auth', `인증 방법 선택: ${authMethod}`);
-
-    // 인증 방법 선택 (Robust Selectors)
-    const authMethodSelectors = {
-      kakao: ['#kakao', 'img[alt*="카카오"]', 'button:has-text("카카오")', 'a:has-text("카카오")', 'text=카카오'],
-      naver: ['#naver', 'img[alt*="네이버"]', 'button:has-text("네이버")', 'a:has-text("네이버")', 'text=네이버'],
-      pass: ['#pass', 'img[alt*="PASS"]', 'button:has-text("PASS")', 'a:has-text("PASS")', 'text=PASS'],
-      toss: ['#toss', 'img[alt*="토스"]', 'button:has-text("토스")', 'a:has-text("토스")', 'text=토스'],
-      samsung: ['#samsung', 'img[alt*="삼성"]', 'button:has-text("삼성")', 'text=삼성패스'],
-    };
-
-    const selectors = authMethodSelectors[authMethod] || authMethodSelectors.pass;
-    let methodClicked = false;
-
-    for (const selector of selectors) {
-      try {
-        const methodBtn = await page.locator(selector).first();
-        if (await methodBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await humanClick(page, cursor, selector);
-          methodClicked = true;
-          log('select_auth', `인증 방법 클릭 성공: ${selector}`);
-          break;
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    if (!methodClicked) {
-      log('select_auth', `${authMethod} 버튼을 찾을 수 없음, 기본값으로 진행`);
-    }
-
-    await humanDelay(800, 1500);
-
-    log('input', '개인정보 입력 (비회원 간편인증)');
-
-    // ═══════════════════════════════════════════════════════════════
-    // [Phase 24.6] 새로운 정부24 모달 폼 지원
-    // 2024년 변경된 UI: 모달 팝업 형태의 간편인증 폼
-    // ═══════════════════════════════════════════════════════════════
-
-    // 모달이 열릴 때까지 대기
-    await humanDelay(1000, 1500);
-
-    // 1. 통신사PASS 또는 인증서 선택 (왼쪽 아이콘)
-    log('auth_provider', '인증 제공자 선택 (PASS)');
-    const passSelectors = [
-      'img[alt*="PASS"]',
-      'img[alt*="통신사"]',
-      'button:has-text("PASS")',
-      'div:has-text("통신사PASS")',
-      '[class*="pass"]',
-      'span:has-text("PASS")',
-    ];
-
-    for (const sel of passSelectors) {
-      try {
-        const elem = await page.locator(sel).first();
-        if (await elem.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await elem.click();
-          log('auth_provider', `PASS 선택 성공: ${sel}`);
-          await humanDelay(500, 800);
-          break;
-        }
       } catch { continue; }
     }
 
-    // 2. 이름 입력 (새 UI: 모달 내 input)
-    log('input', '이름 입력');
+    if (!authTabClicked) {
+      await saveScreenshot(page, `${taskId}_error_simpleauth_not_found`);
+      const currentUrl = page.url();
+      throw new Error(`간편인증 버튼을 찾을 수 없습니다. (URL: ${currentUrl})`);
+    }
+
+    await humanDelay(1000, 1500);
+    await saveScreenshot(page, `${taskId}_03_simple_auth_tab`);
+
+    // ═══════════════════════════════════════════════════════════════
+    // Step 3: 인증 방법 선택 (PASS/카카오 등)
+    // ═══════════════════════════════════════════════════════════════
+    log('select_auth', `인증 방법 선택: ${authMethod}`);
+
+    const authMethodMap = {
+      kakao: ['카카오', 'kakao'],
+      pass: ['PASS', 'pass', '통신사'],
+      naver: ['네이버', 'naver'],
+      toss: ['토스', 'toss'],
+    };
+
+    const methodTexts = authMethodMap[authMethod] || authMethodMap.pass;
+
+    // 클릭 가능한 요소 찾아서 클릭
+    for (const text of methodTexts) {
+      const clicked = await page.evaluate((searchText) => {
+        const elements = document.querySelectorAll('button, a, img, div, span, label');
+        for (const el of elements) {
+          const elText = (el.textContent || el.alt || el.title || '').toLowerCase();
+          if (elText.includes(searchText.toLowerCase())) {
+            el.click();
+            return true;
+          }
+        }
+        return false;
+      }, text);
+
+      if (clicked) {
+        log('select_auth', `✅ 인증 방법 클릭 성공: ${text}`);
+        break;
+      }
+    }
+
+    await humanDelay(1000, 1500);
+
+    // ═══════════════════════════════════════════════════════════════
+    // [Phase 25] 💉 Force Value Injection - 개인정보 입력
+    // page.type()을 믿지 않고 DOM에 직접 값을 꽂아 넣는다!
+    // ═══════════════════════════════════════════════════════════════
+    log('input', '💉 Force Injection 방식으로 개인정보 입력 시작');
+
+    // 현재 페이지의 모든 input 필드 분석
+    const inputAnalysis = await page.evaluate(() => {
+      const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
+      return Array.from(inputs).map((input, idx) => ({
+        index: idx,
+        id: input.id,
+        name: input.name,
+        placeholder: input.placeholder,
+        type: input.type,
+        className: input.className,
+        parentText: input.parentElement?.textContent?.substring(0, 50),
+      }));
+    });
+    log('debug', `입력 필드 분석: ${JSON.stringify(inputAnalysis)}`);
+
+    // 1. 이름 입력
+    log('input', `이름 입력: ${name}`);
     const nameSelectors = [
-      // 모달 내 입력 필드 (라벨 기반)
       'input[placeholder*="홍길동"]',
       'input[placeholder*="이름"]',
-      'div:has-text("이름") + input',
-      'label:has-text("이름") ~ input',
-      'td:has-text("이름") ~ td input',
-      // 기존 셀렉터
       'input[name*="name"]',
       'input[name*="nm"]',
       'input[id*="name"]',
+      'input[id*="nm"]',
       '#userName',
-    ].join(', ');
+      '#userNm',
+    ];
 
-    const nameResult = await secureInput(page, nameSelectors, name);
-    if (!nameResult) {
-      // JavaScript 직접 입력 시도
-      await page.evaluate((val) => {
+    let nameSuccess = await forceInputMultiple(page, nameSelectors, name, '이름');
+
+    if (!nameSuccess) {
+      // 최후의 수단: 첫 번째 text input에 이름 입력
+      nameSuccess = await page.evaluate((val) => {
         const inputs = document.querySelectorAll('input[type="text"]');
-        for (const input of inputs) {
-          const label = input.closest('tr')?.querySelector('td')?.textContent || '';
-          if (label.includes('이름') || input.placeholder?.includes('홍길동')) {
-            input.value = val;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            break;
-          }
+        if (inputs[0]) {
+          inputs[0].value = val;
+          inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+          inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+          inputs[0].dispatchEvent(new Event('blur', { bubbles: true }));
+          return true;
         }
+        return false;
       }, name);
-      log('input', '이름 JS 직접 입력');
+      log('input', `이름 최후의 수단 입력: ${nameSuccess}`);
     }
-    await humanDelay(300, 500);
+    await humanDelay(200, 400);
 
-    // 3. 생년월일 입력 (rrn1 = YYMMDD → 변환: 19YYMMDD 또는 20YYMMDD)
-    log('input', '생년월일 입력');
-    // rrn1이 6자리면 앞에 19 또는 20 추가
+    // 2. 생년월일 입력 (YYYYMMDD 형식)
     let birthDate = rrn1;
     if (rrn1.length === 6) {
       const yearPrefix = parseInt(rrn1.substring(0, 2)) > 30 ? '19' : '20';
       birthDate = yearPrefix + rrn1;
     }
 
+    log('input', `생년월일 입력: ${birthDate}`);
     const birthSelectors = [
       'input[placeholder*="19900101"]',
       'input[placeholder*="생년월일"]',
-      'div:has-text("생년월일") + input',
-      'label:has-text("생년월일") ~ input',
-      'td:has-text("생년월일") ~ td input',
+      'input[placeholder*="YYYYMMDD"]',
       'input[name*="birth"]',
       'input[id*="birth"]',
-    ].join(', ');
+      'input[name*="brdt"]',
+    ];
 
-    const birthResult = await secureInput(page, birthSelectors, birthDate);
-    if (!birthResult) {
-      await page.evaluate((val) => {
+    let birthSuccess = await forceInputMultiple(page, birthSelectors, birthDate, '생년월일');
+
+    if (!birthSuccess) {
+      birthSuccess = await page.evaluate((val) => {
         const inputs = document.querySelectorAll('input[type="text"]');
-        for (const input of inputs) {
-          const label = input.closest('tr')?.querySelector('td')?.textContent || '';
-          if (label.includes('생년월일') || input.placeholder?.includes('19900101')) {
-            input.value = val;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            break;
-          }
+        if (inputs[1]) {
+          inputs[1].value = val;
+          inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+          inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
+          inputs[1].dispatchEvent(new Event('blur', { bubbles: true }));
+          return true;
         }
+        return false;
       }, birthDate);
-      log('input', '생년월일 JS 직접 입력');
+      log('input', `생년월일 최후의 수단 입력: ${birthSuccess}`);
     }
-    await humanDelay(300, 500);
+    await humanDelay(200, 400);
 
-    // 4. 휴대폰 번호 입력 (010-XXXX-XXXX 형식 또는 분리)
-    log('input', '휴대폰 번호 입력');
-
-    // 전화번호 분리 (01012345678 → 010, 1234, 5678 또는 010, 12345678)
+    // 3. 휴대폰 번호 입력
     const phonePart1 = phoneNumber.substring(0, 3); // 010
-    const phonePart2 = phoneNumber.substring(3); // 나머지
+    const phonePart2 = phoneNumber.substring(3);    // 12345678
 
-    // Select 드롭다운 (010, 011 등)
-    const phoneSelectSelectors = 'select:has(option[value="010"]), select[name*="phone"], select[id*="phone"]';
-    try {
-      const phoneSelect = await page.locator(phoneSelectSelectors).first();
-      if (await phoneSelect.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await phoneSelect.selectOption(phonePart1);
-        log('input', `전화번호 앞자리 선택: ${phonePart1}`);
+    log('input', `휴대폰 번호 입력: ${phonePart1}-${phonePart2}`);
+
+    // 3-1. 통신사 앞자리 Select
+    const phoneSelectSuccess = await page.evaluate((val) => {
+      const selects = document.querySelectorAll('select');
+      for (const select of selects) {
+        const options = Array.from(select.options);
+        if (options.some(opt => opt.value === '010' || opt.text.includes('010'))) {
+          select.value = val;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
       }
-    } catch {}
+      return false;
+    }, phonePart1);
+    log('input', `전화번호 앞자리 Select: ${phoneSelectSuccess}`);
 
-    // 전화번호 뒷자리 입력
-    const phoneInputSelectors = [
-      'input[placeholder*="12341234"]',
+    // 3-2. 전화번호 뒷자리 입력
+    const phoneSelectors = [
+      'input[placeholder*="1234"]',
       'input[placeholder*="전화"]',
       'input[placeholder*="휴대폰"]',
-      'td:has-text("휴대폰") ~ td input[type="text"]:not([readonly])',
-      'div:has-text("휴대폰") input[type="text"]',
-      'input[name*="phone"]:not([type="hidden"])',
+      'input[name*="phone"]',
+      'input[name*="mobile"]',
       'input[id*="phone"]',
-    ].join(', ');
+      'input[type="tel"]',
+    ];
 
-    const phoneResult = await secureInput(page, phoneInputSelectors, phonePart2);
-    if (!phoneResult) {
-      await page.evaluate((val) => {
+    let phoneSuccess = await forceInputMultiple(page, phoneSelectors, phonePart2, '전화번호');
+
+    if (!phoneSuccess) {
+      phoneSuccess = await page.evaluate((val) => {
         const inputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
-        for (const input of inputs) {
-          const label = input.closest('tr')?.querySelector('td')?.textContent || '';
-          if (label.includes('휴대폰') || label.includes('전화') || input.placeholder?.includes('1234')) {
-            input.value = val;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-            break;
-          }
+        // 마지막 input이 전화번호일 가능성 높음
+        const lastInput = inputs[inputs.length - 1];
+        if (lastInput) {
+          lastInput.value = val;
+          lastInput.dispatchEvent(new Event('input', { bubbles: true }));
+          lastInput.dispatchEvent(new Event('change', { bubbles: true }));
+          lastInput.dispatchEvent(new Event('blur', { bubbles: true }));
+          return true;
         }
+        return false;
       }, phonePart2);
-      log('input', '전화번호 JS 직접 입력');
+      log('input', `전화번호 최후의 수단 입력: ${phoneSuccess}`);
     }
-    await humanDelay(300, 500);
+    await humanDelay(200, 400);
 
-    // ═══════════════════════════════════════════════════════════════
-    // [Phase 24.5] 통신사 선택 강화 (라디오 버튼/탭 클릭)
-    // ═══════════════════════════════════════════════════════════════
+    // 4. 통신사 선택
     if (carrier) {
       log('carrier', `통신사 선택: ${carrier}`);
 
-      // 통신사 매핑 (다양한 텍스트 패턴)
-      const carrierTextMap = {
-        'SKT': ['SKT', 'SK텔레콤', 'SK 텔레콤', 'skt'],
-        'KT': ['KT', '케이티', 'kt'],
-        'LGU': ['LG U+', 'LGU+', 'LG유플러스', 'LG 유플러스', 'lgu'],
-        'SKT_MVNO': ['SKT 알뜰폰', 'SK 알뜰', '알뜰폰(SKT)'],
-        'KT_MVNO': ['KT 알뜰폰', 'KT 알뜰', '알뜰폰(KT)'],
-        'LGU_MVNO': ['LG 알뜰폰', 'LGU+ 알뜰', '알뜰폰(LG)'],
+      const carrierMap = {
+        'SKT': ['SKT', 'SK텔레콤'],
+        'KT': ['KT', '케이티'],
+        'LGU': ['LG U+', 'LGU+', 'LG유플러스'],
+        'SKT_MVNO': ['SKT 알뜰폰', 'SK알뜰'],
+        'KT_MVNO': ['KT 알뜰폰', 'KT알뜰'],
+        'LGU_MVNO': ['LG 알뜰폰', 'LG알뜰'],
       };
 
-      const carrierTexts = carrierTextMap[carrier] || [carrier];
-      let carrierSelected = false;
+      const carrierTexts = carrierMap[carrier] || [carrier];
 
-      // 1순위: 라디오 버튼/라벨 클릭
-      for (const text of carrierTexts) {
-        const radioSelectors = [
-          `label:has-text("${text}")`,
-          `input[type="radio"][value*="${text}"]`,
-          `span:has-text("${text}")`,
-          `.radio-item:has-text("${text}")`,
-          `div[role="radio"]:has-text("${text}")`,
-        ];
+      const carrierSelected = await page.evaluate((texts) => {
+        // 라디오 버튼 찾기
+        const radios = document.querySelectorAll('input[type="radio"]');
+        for (const radio of radios) {
+          const label = radio.closest('label') || document.querySelector(`label[for="${radio.id}"]`);
+          const text = (label?.textContent || radio.value || '').toUpperCase();
 
-        for (const sel of radioSelectors) {
-          try {
-            const elem = await page.locator(sel).first();
-            if (await elem.isVisible({ timeout: 1000 }).catch(() => false)) {
-              await humanClick(page, cursor, sel);
-              log('carrier', `통신사 클릭 성공: ${sel}`);
-              carrierSelected = true;
-              break;
-            }
-          } catch { continue; }
-        }
-        if (carrierSelected) break;
-      }
-
-      // 2순위: Select 드롭다운
-      if (!carrierSelected) {
-        const selectSelectors = 'select[name*="carrier"], select[name*="telecom"], select[name*="mobileCo"], select[id*="carrier"]';
-        const selectResult = await secureSelect(page, selectSelectors, carrier);
-        if (selectResult) {
-          log('carrier', `통신사 Select 성공: ${carrier}`);
-          carrierSelected = true;
-        }
-      }
-
-      // 3순위: JavaScript로 강제 선택
-      if (!carrierSelected) {
-        const jsResult = await page.evaluate((carrierValue) => {
-          // 라디오 버튼 찾기
-          const radios = document.querySelectorAll('input[type="radio"]');
-          for (const radio of radios) {
-            const label = radio.closest('label') || document.querySelector(`label[for="${radio.id}"]`);
-            const text = (label?.textContent || radio.value || '').toLowerCase();
-            if (text.includes(carrierValue.toLowerCase())) {
+          for (const searchText of texts) {
+            if (text.includes(searchText.toUpperCase())) {
               radio.checked = true;
               radio.dispatchEvent(new Event('change', { bubbles: true }));
               radio.dispatchEvent(new Event('click', { bubbles: true }));
               return true;
             }
           }
-          return false;
-        }, carrier);
-
-        if (jsResult) {
-          log('carrier', `통신사 JS 강제 선택 성공: ${carrier}`);
-          carrierSelected = true;
         }
-      }
 
-      if (!carrierSelected) {
-        log('carrier', `통신사 선택 실패: ${carrier}`, 'warn');
-      }
+        // 라벨 클릭 시도
+        const labels = document.querySelectorAll('label, span, div');
+        for (const label of labels) {
+          for (const searchText of texts) {
+            if (label.textContent?.includes(searchText)) {
+              label.click();
+              return true;
+            }
+          }
+        }
 
-      await humanDelay(300, 700);
+        return false;
+      }, carrierTexts);
+
+      log('carrier', `통신사 선택 결과: ${carrierSelected}`);
     }
-
-    await saveScreenshot(page, `${taskId}_04_input_complete`);
+    await humanDelay(300, 500);
 
     // ═══════════════════════════════════════════════════════════════
-    // [Phase 24.6] 약관 동의 자동 체크 (새 UI)
+    // [Phase 25] 약관 동의 강제 체크
     // ═══════════════════════════════════════════════════════════════
-    log('terms', '약관 동의 자동 체크 시작');
+    log('terms', '약관 동의 강제 체크');
 
-    // 전체동의 체크박스 클릭 (새 UI)
-    const allAgreeSelectors = [
-      'label:has-text("전체동의")',
-      'span:has-text("전체동의")',
-      'input[type="checkbox"] + label:has-text("전체")',
-      '#chkAll',
-      '#checkAll',
-      '#allAgree',
-      '.check_all input[type="checkbox"]',
-      'input[name="allAgree"]',
-      'input[name="agreeAll"]',
-    ];
-
-    for (const selector of allAgreeSelectors) {
-      try {
-        const elem = await page.locator(selector).first();
-        if (await elem.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await elem.click();
-          log('terms', `전체동의 클릭: ${selector}`);
-          break;
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    // JavaScript로 모든 동의 체크박스 체크
     await page.evaluate(() => {
       const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-      checkboxes.forEach((cb) => {
-        const checkbox = cb;
-        const id = (checkbox.id || '').toLowerCase();
-        const name = (checkbox.name || '').toLowerCase();
-        const title = (checkbox.title || '').toLowerCase();
-        const labelText = checkbox.closest('label')?.textContent?.toLowerCase() || '';
-        const parentText = (checkbox.parentElement?.textContent || '').toLowerCase();
-
-        if (
-          id.includes('agree') || id.includes('chk') || id.includes('all') ||
-          name.includes('agree') || name.includes('consent') ||
-          title.includes('동의') ||
-          labelText.includes('동의') || labelText.includes('전체') ||
-          parentText.includes('동의') || parentText.includes('약관')
-        ) {
-          if (!checkbox.checked) {
-            checkbox.checked = true;
-            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-            checkbox.dispatchEvent(new Event('click', { bubbles: true }));
-          }
+      checkboxes.forEach(cb => {
+        if (!cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          cb.dispatchEvent(new Event('click', { bubbles: true }));
         }
       });
     });
-
-    await humanDelay(500, 800);
-
-    log('request', '인증 요청 버튼 클릭');
-    await humanDelay(500, 1000);
+    await humanDelay(300, 500);
 
     // ═══════════════════════════════════════════════════════════════
-    // [Phase 24.6] 인증 요청 버튼 클릭 (새 UI)
+    // [Phase 25] 📸 Final Evidence Screenshot - 버튼 클릭 직전 증거
     // ═══════════════════════════════════════════════════════════════
+    log('evidence', '📸 버튼 클릭 직전 증거 스크린샷 저장');
+    await saveScreenshot(page, `${taskId}_04_EVIDENCE_before_click`);
+
+    // 입력값 최종 확인 (스크린샷에 캡처되도록)
+    const finalInputCheck = await page.evaluate(() => {
+      const inputs = document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])');
+      return Array.from(inputs).map(input => ({
+        name: input.name || input.id || 'unknown',
+        value: input.value,
+        placeholder: input.placeholder,
+      }));
+    });
+    log('evidence', `📸 입력값 확인: ${JSON.stringify(finalInputCheck)}`);
+
+    // ═══════════════════════════════════════════════════════════════
+    // [Phase 25] 인증 요청 버튼 클릭
+    // ═══════════════════════════════════════════════════════════════
+    log('request', '🔥 인증 요청 버튼 클릭');
+
     const requestBtnSelectors = [
-      // 새 UI - 모달 내 파란색 버튼 "인증 요청"
       'button:has-text("인증 요청")',
       'button:has-text("인증요청")',
-      'a:has-text("인증 요청")',
-      // 스크린샷에서 확인된 버튼 스타일
-      'button.btn-primary:has-text("인증")',
-      'button[class*="primary"]:has-text("인증")',
-      'button[style*="background"]:has-text("인증")',
-      // 기존 셀렉터
-      'button:has-text("인증 요청 시작")',
       'button:has-text("요청하기")',
       'button:has-text("본인확인")',
-      // ID/Class 기반
+      'a:has-text("인증 요청")',
       '#btn_request',
       '#btnRequest',
-      '#btn_request_auth',
-      '#btnRequestAuth',
-      '.btn_submit',
-      '.btn-auth-request',
       'button[type="submit"]',
-      'input[type="button"][value*="인증"]',
     ];
 
     let requestClicked = false;
@@ -629,48 +601,38 @@ async function requestGov24Auth(params) {
       try {
         const btn = await page.locator(selector).first();
         if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-          const isEnabled = await btn.isEnabled().catch(() => true);
-          if (isEnabled) {
-            await humanClick(page, cursor, selector);
-            requestClicked = true;
-            log('request', `인증 요청 클릭 성공: ${selector}`);
-            break;
-          } else {
-            log('request', `버튼 비활성화됨: ${selector}`);
-          }
+          await humanClick(page, cursor, selector);
+          requestClicked = true;
+          log('request', `✅ 인증 요청 클릭 성공: ${selector}`);
+          break;
         }
-      } catch {
-        continue;
-      }
+      } catch { continue; }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // [HOTFIX Phase 24] Step 3: JavaScript 강제 클릭 (Last Resort)
-    // ═══════════════════════════════════════════════════════════════
+    // JavaScript 강제 클릭
     if (!requestClicked) {
       log('request', 'Playwright 클릭 실패, JavaScript 강제 클릭 시도');
 
       const jsClickResult = await page.evaluate(() => {
-        const buttonTexts = ['인증 요청 시작', '인증요청', '인증 요청', '요청하기', '본인확인'];
+        const buttonTexts = ['인증 요청', '인증요청', '요청하기', '본인확인', '확인'];
 
-        for (const text of buttonTexts) {
-          const buttons = Array.from(document.querySelectorAll('button, a, input[type="submit"], input[type="button"], span[role="button"]'));
-          for (const btn of buttons) {
-            if (btn.textContent?.includes(text) || btn.value?.includes(text)) {
+        // 버튼 텍스트로 찾기
+        const buttons = document.querySelectorAll('button, a, input[type="submit"], input[type="button"]');
+        for (const btn of buttons) {
+          const text = (btn.textContent || btn.value || '').trim();
+          for (const searchText of buttonTexts) {
+            if (text.includes(searchText)) {
               btn.click();
-              return { success: true, text };
+              return { success: true, method: 'textContent', text };
             }
           }
         }
 
-        // ID로 시도
-        const idSelectors = ['btn_request', 'btnRequest', 'btn_request_auth', 'btnRequestAuth', 'authSubmit'];
-        for (const id of idSelectors) {
-          const btn = document.getElementById(id);
-          if (btn) {
-            btn.click();
-            return { success: true, id };
-          }
+        // submit 버튼 찾기
+        const submitBtn = document.querySelector('button[type="submit"], input[type="submit"]');
+        if (submitBtn) {
+          submitBtn.click();
+          return { success: true, method: 'submit button' };
         }
 
         // 폼 제출
@@ -685,35 +647,26 @@ async function requestGov24Auth(params) {
 
       if (jsClickResult.success) {
         requestClicked = true;
-        log('request', `JavaScript 강제 클릭 성공: ${JSON.stringify(jsClickResult)}`);
+        log('request', `✅ JavaScript 강제 클릭 성공: ${JSON.stringify(jsClickResult)}`);
       }
     }
 
     if (!requestClicked) {
       await saveScreenshot(page, `${taskId}_error_request_btn_not_found`);
-      log('error', '인증 요청 버튼을 찾지 못함 - 스크린샷 저장됨');
-
-      // 디버그 정보 수집
-      const debugInfo = await page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll('button, a[role="button"], input[type="submit"]'));
-        return buttons.slice(0, 10).map(b => ({
-          tag: b.tagName,
-          text: b.textContent?.substring(0, 50),
-          id: b.id,
-          class: b.className,
-        }));
-      });
-      log('debug', `페이지 버튼 목록: ${JSON.stringify(debugInfo)}`);
-
-      throw new Error('인증 요청 버튼을 찾을 수 없습니다. 스크린샷이 저장되었습니다. 서버 로그를 확인하세요.');
+      throw new Error('인증 요청 버튼을 찾을 수 없습니다.');
     }
 
-    await humanDelay(1500, 2500);
+    await humanDelay(2000, 3000);
     await saveScreenshot(page, `${taskId}_05_auth_requested`);
 
-    log('success', '인증 요청 완료 - 사용자 앱 인증 대기');
+    // 알림창이 발생했는지 확인
+    if (dialogMessages.length > 0) {
+      log('🚨 ALERT', `총 ${dialogMessages.length}개의 알림창 발생: ${dialogMessages.join(' | ')}`);
+    }
 
-    // [HOTFIX] 브라우저 세션 저장 (confirmGov24Auth에서 재사용)
+    log('success', '✅ 인증 요청 완료 - 사용자 앱 인증 대기');
+
+    // 브라우저 세션 저장
     saveSession(taskId, {
       browser,
       context,
@@ -727,17 +680,16 @@ async function requestGov24Auth(params) {
       phase: 'waiting',
       message: '인증 요청이 전송되었습니다. 스마트폰 앱에서 인증을 완료해주세요.',
       logs,
+      dialogMessages,
+      inputCheck: finalInputCheck,
       sessionData: {
-        contextId: context._guid,
-        pageUrl: page.url(),
         sessionActive: true,
       },
     };
 
   } catch (error) {
-    log('error', error.message, 'error');
+    log('error', `❌ ${error.message}`, 'error');
 
-    // 에러 발생 시 스크린샷 저장
     if (context) {
       const pages = context.pages();
       if (pages.length > 0) {
@@ -745,7 +697,6 @@ async function requestGov24Auth(params) {
       }
     }
 
-    // 에러 시에만 브라우저 종료
     if (browser) {
       await browser.close().catch(() => {});
     }
@@ -756,17 +707,14 @@ async function requestGov24Auth(params) {
       phase: 'error',
       error: error.message,
       logs,
+      dialogMessages,
     };
   }
-  // [HOTFIX] finally 제거 - 성공 시 브라우저 유지
 }
 
-/**
- * 정부24 간편인증 확인 (Phase 2)
- * @param {Object} params - 확인 파라미터
- * @param {string} params.taskId - 작업 ID
- * @returns {Object} - 인증 완료 결과 및 쿠키
- */
+// =============================================================================
+// 정부24 간편인증 확인 (Phase 2)
+// =============================================================================
 async function confirmGov24Auth(params) {
   const { taskId } = params;
   const logs = [];
@@ -784,7 +732,6 @@ async function confirmGov24Auth(params) {
   };
 
   try {
-    // [HOTFIX] 저장된 세션 조회
     const savedSession = getSession(taskId);
 
     if (savedSession && savedSession.browser && savedSession.page) {
@@ -795,7 +742,6 @@ async function confirmGov24Auth(params) {
       cursor = savedSession.cursor;
       sessionReused = true;
 
-      // 페이지가 아직 열려있는지 확인
       try {
         await page.evaluate(() => true);
       } catch {
@@ -812,7 +758,6 @@ async function confirmGov24Auth(params) {
       page = stealth.page;
       cursor = stealth.cursor;
 
-      // 정부24 메인 페이지로 이동
       await page.goto('https://www.gov.kr', {
         waitUntil: 'networkidle',
         timeout: TIMEOUTS.navigation,
@@ -821,19 +766,16 @@ async function confirmGov24Auth(params) {
 
     log('check', '인증 완료 여부 확인');
 
-    // 인증 완료 버튼 대기 및 클릭
     const startTime = Date.now();
     let isAuthenticated = false;
 
     while (Date.now() - startTime < TIMEOUTS.authWait) {
-      // 로그인 상태 확인 (로그아웃 버튼 존재 여부)
       const logoutButton = await page.locator('text=로그아웃, button:has-text("로그아웃")').first();
       if (await logoutButton.isVisible({ timeout: 1000 }).catch(() => false)) {
         isAuthenticated = true;
         break;
       }
 
-      // 인증 완료 버튼 확인
       const confirmButton = await page.locator('button:has-text("인증 완료"), button:has-text("확인")').first();
       if (await confirmButton.isVisible({ timeout: 1000 }).catch(() => false)) {
         await humanClick(page, cursor, 'button:has-text("인증 완료"), button:has-text("확인")');
@@ -850,16 +792,12 @@ async function confirmGov24Auth(params) {
 
     log('success', '인증 완료');
 
-    // 세션 쿠키 추출
     const cookies = await context.cookies();
     const gov24Cookies = cookies.filter(c =>
-      c.domain.includes('gov.kr') ||
-      c.domain.includes('gov24')
+      c.domain.includes('gov.kr') || c.domain.includes('gov24')
     );
 
     await saveScreenshot(page, `${taskId}_05_auth_complete`);
-
-    // [HOTFIX] 인증 완료 후 세션 정리
     await cleanupSession(taskId);
 
     return {
@@ -881,7 +819,6 @@ async function confirmGov24Auth(params) {
       }
     }
 
-    // [HOTFIX] 에러 시에도 세션 정리
     await cleanupSession(taskId);
 
     return {
@@ -892,17 +829,11 @@ async function confirmGov24Auth(params) {
       logs,
     };
   }
-  // [HOTFIX] finally 제거 - cleanupSession에서 브라우저 종료 처리
 }
 
-/**
- * 정부24 민원 제출
- * @param {Object} params - 제출 파라미터
- * @param {Array} params.cookies - 로그인 세션 쿠키
- * @param {string} params.serviceCode - 민원 서비스 코드
- * @param {Object} params.formData - 신청서 데이터
- * @returns {Object} - 제출 결과
- */
+// =============================================================================
+// 정부24 민원 제출
+// =============================================================================
 async function submitGov24Service(params) {
   const { cookies, serviceCode, formData } = params;
   const taskId = uuidv4();
@@ -920,12 +851,10 @@ async function submitGov24Service(params) {
   try {
     log('init', '민원 제출 시작 (스텔스 모드)');
 
-    // 스텔스 브라우저 시작
     const stealth = await launchStealthBrowser();
     browser = stealth.browser;
     context = stealth.context;
 
-    // 쿠키 설정
     if (cookies && cookies.length > 0) {
       await context.addCookies(cookies);
       log('cookie', '세션 쿠키 설정 완료');
@@ -936,7 +865,6 @@ async function submitGov24Service(params) {
 
     log('navigate', `민원 서비스 페이지 이동: ${serviceCode}`);
 
-    // 민원 서비스 페이지로 이동
     await page.goto(`https://www.gov.kr/portal/service/${serviceCode}`, {
       waitUntil: 'networkidle',
       timeout: TIMEOUTS.navigation,
@@ -947,25 +875,14 @@ async function submitGov24Service(params) {
     log('apply', '신청 버튼 클릭');
     await humanDelay(500, 1200);
 
-    // 신청 버튼 클릭 (ghost-cursor)
     await humanClick(page, cursor, 'button:has-text("신청"), a:has-text("신청하기")');
     await page.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => {});
     await humanDelay(800, 1500);
 
-    log('fill', '신청서 작성 (보호 우회)');
+    log('fill', '신청서 작성 (Force Injection)');
 
-    // 폼 데이터 입력 (secureInput/secureSelect 사용)
     for (const [fieldName, value] of Object.entries(formData)) {
-      const inputSelector = `input[name="${fieldName}"], textarea[name="${fieldName}"]`;
-      const selectSelector = `select[name="${fieldName}"]`;
-
-      // select 먼저 확인
-      const selectEl = await page.locator(selectSelector).first();
-      if (await selectEl.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await secureSelect(page, selectSelector, value);
-      } else {
-        await secureInput(page, inputSelector, value);
-      }
+      await forceInput(page, `input[name="${fieldName}"], textarea[name="${fieldName}"]`, value);
       await humanDelay(200, 500);
     }
 
@@ -974,13 +891,11 @@ async function submitGov24Service(params) {
     log('submit', '제출 버튼 클릭');
     await humanDelay(800, 1500);
 
-    // 제출 버튼 클릭 (ghost-cursor)
     await humanClick(page, cursor, 'button[type="submit"], button:has-text("제출"), button:has-text("신청")');
     await humanDelay(2000, 3500);
 
     await saveScreenshot(page, `${taskId}_submitted`);
 
-    // 접수번호 추출
     const receiptNumber = await page.locator('text=/접수번호.*?\\d+/').first().textContent().catch(() => null);
 
     log('success', `제출 완료: ${receiptNumber || '접수번호 확인 필요'}`);
