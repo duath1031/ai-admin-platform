@@ -220,6 +220,11 @@ export class Gov24Authenticator {
 
       await this.page.waitForTimeout(1000);
 
+      // ═══════════════════════════════════════════════════════════════
+      // [HOTFIX] Step 1: 약관 동의 자동 체크 (폼 입력 전)
+      // ═══════════════════════════════════════════════════════════════
+      await this.autoCheckTerms();
+
       // 이름 입력
       await this.fillInputField(['input[name="userName"]', 'input[name="name"]', '#userName'], input.name);
 
@@ -238,36 +243,115 @@ export class Gov24Authenticator {
       // 통신사 선택
       await this.selectCarrier(input.carrier);
 
-      // 인증 요청 버튼 클릭
+      // ═══════════════════════════════════════════════════════════════
+      // [HOTFIX] Step 2: 약관 동의 재확인 (폼 입력 후)
+      // ═══════════════════════════════════════════════════════════════
+      await this.autoCheckTerms();
+      await this.page.waitForTimeout(500);
+
+      // ═══════════════════════════════════════════════════════════════
+      // [HOTFIX] Step 3: 인증 요청 버튼 클릭 (업데이트된 셀렉터)
+      // ═══════════════════════════════════════════════════════════════
       const submitSelectors = [
+        // 최우선 - 스크린샷에서 확인된 텍스트
+        'button:has-text("인증 요청 시작")',
+        'a:has-text("인증 요청 시작")',
+        'span:has-text("인증 요청 시작")',
+        // 기존 셀렉터
         'button:has-text("인증요청")',
         'button:has-text("인증 요청")',
+        'button:has-text("요청하기")',
+        'button:has-text("본인인증")',
+        // ID/Class 기반
+        '#btn_request_auth',
+        '#btnRequestAuth',
+        '.btn_submit',
+        '.btn-auth-request',
         'button[type="submit"]',
         '#auth-submit-btn',
-        '.btn-auth-request',
       ];
 
       let submitClicked = false;
+      let finalButtonSelector = '';
+
       for (const selector of submitSelectors) {
         try {
           const element = await this.page.$(selector);
           if (element) {
-            await element.click();
-            submitClicked = true;
-            console.log(`[Gov24Auth] Clicked submit button: ${selector}`);
-            break;
+            // 버튼이 보이고 활성화되어 있는지 확인
+            const isVisible = await element.isVisible();
+            const isEnabled = await element.isEnabled();
+
+            if (isVisible && isEnabled) {
+              await element.click();
+              submitClicked = true;
+              finalButtonSelector = selector;
+              console.log(`[Gov24Auth] Clicked submit button: ${selector}`);
+              break;
+            } else {
+              console.log(`[Gov24Auth] Button found but not clickable: ${selector} (visible: ${isVisible}, enabled: ${isEnabled})`);
+            }
           }
-        } catch {
+        } catch (e) {
+          console.log(`[Gov24Auth] Selector failed: ${selector}`, e);
           continue;
         }
       }
 
+      // ═══════════════════════════════════════════════════════════════
+      // [HOTFIX] Step 4: JavaScript 강제 클릭 (Last Resort)
+      // ═══════════════════════════════════════════════════════════════
       if (!submitClicked) {
-        // 폼 제출 시도
-        await this.page.evaluate(() => {
+        console.log(`[Gov24Auth] Standard click failed, attempting JavaScript force click...`);
+
+        const jsClickResult = await this.page.evaluate(() => {
+          // 우선순위 순으로 버튼 찾기
+          const buttonTexts = ['인증 요청 시작', '인증요청', '인증 요청', '요청하기', '본인인증'];
+
+          for (const text of buttonTexts) {
+            // 버튼 요소 검색
+            const buttons = Array.from(document.querySelectorAll('button, a, input[type="submit"], span[role="button"]'));
+            for (const btn of buttons) {
+              if (btn.textContent?.includes(text)) {
+                (btn as HTMLElement).click();
+                return { success: true, text };
+              }
+            }
+          }
+
+          // ID로 시도
+          const idSelectors = ['btn_request_auth', 'btnRequestAuth', 'authSubmit', 'submitBtn'];
+          for (const id of idSelectors) {
+            const btn = document.getElementById(id);
+            if (btn) {
+              btn.click();
+              return { success: true, id };
+            }
+          }
+
+          // 폼 제출 시도
           const form = document.querySelector('form');
-          if (form) form.submit();
+          if (form) {
+            form.submit();
+            return { success: true, method: 'form.submit()' };
+          }
+
+          return { success: false };
         });
+
+        if (jsClickResult.success) {
+          submitClicked = true;
+          console.log(`[Gov24Auth] JavaScript force click succeeded:`, jsClickResult);
+        }
+      }
+
+      if (!submitClicked) {
+        console.warn(`[Gov24Auth] All click attempts failed. Taking screenshot for debugging...`);
+        // 디버그용 스크린샷 (선택적)
+        try {
+          const screenshot = await this.page.screenshot({ fullPage: true });
+          console.log(`[Gov24Auth] Debug screenshot taken, size: ${screenshot.length} bytes`);
+        } catch {}
       }
 
       // 상태 업데이트
@@ -435,6 +519,109 @@ export class Gov24Authenticator {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * [HOTFIX] 약관 동의 자동 체크
+   * 인증 버튼 활성화를 위해 모든 약관 동의 체크박스를 체크
+   */
+  private async autoCheckTerms(): Promise<void> {
+    if (!this.page) return;
+
+    console.log(`[Gov24Auth] Auto-checking terms and conditions...`);
+
+    // 체크박스 셀렉터 (우선순위 순)
+    const termSelectors = [
+      // 전체 동의
+      '#chkAll',
+      '#checkAll',
+      '#allAgree',
+      '.check_all input[type="checkbox"]',
+      'input[name="allAgree"]',
+      'input[name="agreeAll"]',
+      // 라벨 기반
+      'label:has-text("전체 동의") input[type="checkbox"]',
+      'label:has-text("모두 동의") input[type="checkbox"]',
+      'label:has-text("동의합니다") input[type="checkbox"]',
+      'label:has-text("전체동의") input[type="checkbox"]',
+      // 타이틀/속성 기반
+      'input[type="checkbox"][title*="동의"]',
+      'input[type="checkbox"][title*="전체"]',
+      'input[type="checkbox"][name*="agree"]',
+      'input[type="checkbox"][name*="Agree"]',
+      'input[type="checkbox"][id*="agree"]',
+      'input[type="checkbox"][id*="chk"]',
+      // 개별 약관 (전체 동의가 없을 경우)
+      '.terms input[type="checkbox"]',
+      '.agree input[type="checkbox"]',
+      '.consent input[type="checkbox"]',
+    ];
+
+    let checkedCount = 0;
+
+    // Playwright 셀렉터로 시도
+    for (const selector of termSelectors) {
+      try {
+        const checkboxes = await this.page.$$(selector);
+        for (const checkbox of checkboxes) {
+          const isChecked = await checkbox.isChecked();
+          if (!isChecked) {
+            await checkbox.check();
+            checkedCount++;
+            console.log(`[Gov24Auth] Checked: ${selector}`);
+          }
+        }
+      } catch {
+        // 셀렉터가 매칭되지 않으면 무시
+        continue;
+      }
+    }
+
+    // JavaScript로 추가 체크 (Playwright가 놓친 체크박스 처리)
+    const jsCheckResult = await this.page.evaluate(() => {
+      let checked = 0;
+
+      // 모든 체크박스 찾기
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+
+      for (const cb of checkboxes) {
+        const checkbox = cb as HTMLInputElement;
+
+        // 이미 체크됨
+        if (checkbox.checked) continue;
+
+        // 동의 관련 체크박스인지 확인
+        const id = checkbox.id?.toLowerCase() || '';
+        const name = checkbox.name?.toLowerCase() || '';
+        const title = checkbox.title?.toLowerCase() || '';
+        const labelText = checkbox.closest('label')?.textContent?.toLowerCase() || '';
+        const parentText = checkbox.parentElement?.textContent?.toLowerCase() || '';
+
+        const isTermsCheckbox =
+          id.includes('agree') ||
+          id.includes('chk') ||
+          id.includes('all') ||
+          name.includes('agree') ||
+          name.includes('consent') ||
+          title.includes('동의') ||
+          labelText.includes('동의') ||
+          labelText.includes('약관') ||
+          parentText.includes('동의') ||
+          parentText.includes('약관');
+
+        if (isTermsCheckbox) {
+          checkbox.checked = true;
+          checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+          checkbox.dispatchEvent(new Event('click', { bubbles: true }));
+          checked++;
+        }
+      }
+
+      return checked;
+    });
+
+    checkedCount += jsCheckResult;
+    console.log(`[Gov24Auth] Total terms checked: ${checkedCount}`);
   }
 
   /**

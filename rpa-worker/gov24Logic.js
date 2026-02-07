@@ -285,18 +285,89 @@ async function requestGov24Auth(params) {
 
     await saveScreenshot(page, `${taskId}_04_input_complete`);
 
+    // ═══════════════════════════════════════════════════════════════
+    // [HOTFIX Phase 24] Step 1: 약관 동의 자동 체크
+    // ═══════════════════════════════════════════════════════════════
+    log('terms', '약관 동의 자동 체크 시작');
+
+    const termSelectors = [
+      '#chkAll',
+      '#checkAll',
+      '#allAgree',
+      '.check_all input[type="checkbox"]',
+      'input[name="allAgree"]',
+      'input[name="agreeAll"]',
+      'input[type="checkbox"][title*="동의"]',
+      'input[type="checkbox"][name*="agree"]',
+    ];
+
+    for (const selector of termSelectors) {
+      try {
+        const checkbox = await page.locator(selector).first();
+        if (await checkbox.isVisible({ timeout: 1000 }).catch(() => false)) {
+          const isChecked = await checkbox.isChecked().catch(() => false);
+          if (!isChecked) {
+            await checkbox.check();
+            log('terms', `약관 동의 체크: ${selector}`);
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    // JavaScript로 모든 동의 체크박스 체크
+    await page.evaluate(() => {
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+      checkboxes.forEach((cb) => {
+        const checkbox = cb;
+        const id = (checkbox.id || '').toLowerCase();
+        const name = (checkbox.name || '').toLowerCase();
+        const title = (checkbox.title || '').toLowerCase();
+        const parentText = (checkbox.parentElement?.textContent || '').toLowerCase();
+
+        if (
+          id.includes('agree') || id.includes('chk') || id.includes('all') ||
+          name.includes('agree') || name.includes('consent') ||
+          title.includes('동의') ||
+          parentText.includes('동의') || parentText.includes('약관')
+        ) {
+          if (!checkbox.checked) {
+            checkbox.checked = true;
+            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+      });
+    });
+
+    await humanDelay(300, 600);
+
     log('request', '인증 요청 버튼 클릭');
     await humanDelay(500, 1000);
 
-    // 인증 요청 버튼 클릭 (Robust Selectors)
+    // ═══════════════════════════════════════════════════════════════
+    // [HOTFIX Phase 24] Step 2: 인증 요청 버튼 클릭 (업데이트된 셀렉터)
+    // ═══════════════════════════════════════════════════════════════
     const requestBtnSelectors = [
-      '#btn_request',
-      '#btnRequest',
-      'button[type="submit"]',
+      // 최우선 - 스크린샷에서 확인된 텍스트
+      'button:has-text("인증 요청 시작")',
+      'a:has-text("인증 요청 시작")',
+      'span:has-text("인증 요청 시작")',
+      // 기존 셀렉터
       'button:has-text("인증요청")',
       'button:has-text("인증 요청")',
+      'button:has-text("요청하기")',
       'button:has-text("본인확인")',
       'a:has-text("인증요청")',
+      'a:has-text("인증 요청")',
+      // ID/Class 기반
+      '#btn_request',
+      '#btnRequest',
+      '#btn_request_auth',
+      '#btnRequestAuth',
+      '.btn_submit',
+      '.btn-auth-request',
+      'button[type="submit"]',
       'input[type="button"][value*="인증"]',
     ];
 
@@ -305,19 +376,82 @@ async function requestGov24Auth(params) {
       try {
         const btn = await page.locator(selector).first();
         if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await humanClick(page, cursor, selector);
-          requestClicked = true;
-          log('request', `인증 요청 클릭 성공: ${selector}`);
-          break;
+          const isEnabled = await btn.isEnabled().catch(() => true);
+          if (isEnabled) {
+            await humanClick(page, cursor, selector);
+            requestClicked = true;
+            log('request', `인증 요청 클릭 성공: ${selector}`);
+            break;
+          } else {
+            log('request', `버튼 비활성화됨: ${selector}`);
+          }
         }
       } catch {
         continue;
       }
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // [HOTFIX Phase 24] Step 3: JavaScript 강제 클릭 (Last Resort)
+    // ═══════════════════════════════════════════════════════════════
+    if (!requestClicked) {
+      log('request', 'Playwright 클릭 실패, JavaScript 강제 클릭 시도');
+
+      const jsClickResult = await page.evaluate(() => {
+        const buttonTexts = ['인증 요청 시작', '인증요청', '인증 요청', '요청하기', '본인확인'];
+
+        for (const text of buttonTexts) {
+          const buttons = Array.from(document.querySelectorAll('button, a, input[type="submit"], input[type="button"], span[role="button"]'));
+          for (const btn of buttons) {
+            if (btn.textContent?.includes(text) || btn.value?.includes(text)) {
+              btn.click();
+              return { success: true, text };
+            }
+          }
+        }
+
+        // ID로 시도
+        const idSelectors = ['btn_request', 'btnRequest', 'btn_request_auth', 'btnRequestAuth', 'authSubmit'];
+        for (const id of idSelectors) {
+          const btn = document.getElementById(id);
+          if (btn) {
+            btn.click();
+            return { success: true, id };
+          }
+        }
+
+        // 폼 제출
+        const form = document.querySelector('form');
+        if (form) {
+          form.submit();
+          return { success: true, method: 'form.submit()' };
+        }
+
+        return { success: false };
+      });
+
+      if (jsClickResult.success) {
+        requestClicked = true;
+        log('request', `JavaScript 강제 클릭 성공: ${JSON.stringify(jsClickResult)}`);
+      }
+    }
+
     if (!requestClicked) {
       await saveScreenshot(page, `${taskId}_error_request_btn_not_found`);
       log('error', '인증 요청 버튼을 찾지 못함 - 스크린샷 저장됨');
+
+      // 디버그 정보 수집
+      const debugInfo = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button, a[role="button"], input[type="submit"]'));
+        return buttons.slice(0, 10).map(b => ({
+          tag: b.tagName,
+          text: b.textContent?.substring(0, 50),
+          id: b.id,
+          class: b.className,
+        }));
+      });
+      log('debug', `페이지 버튼 목록: ${JSON.stringify(debugInfo)}`);
+
       throw new Error('인증 요청 버튼을 찾을 수 없습니다. 스크린샷이 저장되었습니다. 서버 로그를 확인하세요.');
     }
 
