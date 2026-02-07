@@ -299,39 +299,154 @@ async function requestGov24Auth(params) {
 
     log('input', '개인정보 입력 (비회원 간편인증)');
 
-    // iframe 내부 처리 (정부24 로그인은 iframe 사용)
-    let targetPage = page;
-    try {
-      const frame = page.frameLocator('iframe').first();
-      // iframe 존재 확인
-      const frameElement = await page.locator('iframe').first();
-      if (await frameElement.isVisible({ timeout: 3000 }).catch(() => false)) {
-        targetPage = frame;
-        log('iframe', 'iframe 감지 → 프레임 내부 처리');
-      }
-    } catch {
-      log('iframe', 'iframe 없음 → 메인 페이지 처리');
+    // ═══════════════════════════════════════════════════════════════
+    // [Phase 24.6] 새로운 정부24 모달 폼 지원
+    // 2024년 변경된 UI: 모달 팝업 형태의 간편인증 폼
+    // ═══════════════════════════════════════════════════════════════
+
+    // 모달이 열릴 때까지 대기
+    await humanDelay(1000, 1500);
+
+    // 1. 통신사PASS 또는 인증서 선택 (왼쪽 아이콘)
+    log('auth_provider', '인증 제공자 선택 (PASS)');
+    const passSelectors = [
+      'img[alt*="PASS"]',
+      'img[alt*="통신사"]',
+      'button:has-text("PASS")',
+      'div:has-text("통신사PASS")',
+      '[class*="pass"]',
+      'span:has-text("PASS")',
+    ];
+
+    for (const sel of passSelectors) {
+      try {
+        const elem = await page.locator(sel).first();
+        if (await elem.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await elem.click();
+          log('auth_provider', `PASS 선택 성공: ${sel}`);
+          await humanDelay(500, 800);
+          break;
+        }
+      } catch { continue; }
     }
 
-    // 이름 입력 (다중 셀렉터)
-    const nameSelectors = 'input[name*="name"], input[name*="nm"], input[id*="name"], input[placeholder*="이름"], #userName';
-    await secureInput(page, nameSelectors, name);
-    await humanDelay(300, 700);
+    // 2. 이름 입력 (새 UI: 모달 내 input)
+    log('input', '이름 입력');
+    const nameSelectors = [
+      // 모달 내 입력 필드 (라벨 기반)
+      'input[placeholder*="홍길동"]',
+      'input[placeholder*="이름"]',
+      'div:has-text("이름") + input',
+      'label:has-text("이름") ~ input',
+      'td:has-text("이름") ~ td input',
+      // 기존 셀렉터
+      'input[name*="name"]',
+      'input[name*="nm"]',
+      'input[id*="name"]',
+      '#userName',
+    ].join(', ');
 
-    // 주민등록번호 앞자리 입력 (비회원 로그인용)
-    const rrn1Selectors = 'input[name*="jumin1"], input[name*="rrn1"], input[name*="ssn1"], input[name*="ihidnum1"], input[id*="jumin1"], input[placeholder*="앞자리"], input[placeholder*="주민번호"]';
-    await secureInput(page, rrn1Selectors, rrn1);
-    await humanDelay(300, 700);
+    const nameResult = await secureInput(page, nameSelectors, name);
+    if (!nameResult) {
+      // JavaScript 직접 입력 시도
+      await page.evaluate((val) => {
+        const inputs = document.querySelectorAll('input[type="text"]');
+        for (const input of inputs) {
+          const label = input.closest('tr')?.querySelector('td')?.textContent || '';
+          if (label.includes('이름') || input.placeholder?.includes('홍길동')) {
+            input.value = val;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            break;
+          }
+        }
+      }, name);
+      log('input', '이름 JS 직접 입력');
+    }
+    await humanDelay(300, 500);
 
-    // 주민등록번호 뒷자리 입력 (보안 입력 - password type)
-    const rrn2Selectors = 'input[name*="jumin2"], input[name*="rrn2"], input[name*="ssn2"], input[name*="ihidnum2"], input[id*="jumin2"], input[type="password"][maxlength="7"], input[placeholder*="뒷자리"]';
-    await secureInput(page, rrn2Selectors, rrn2);
-    await humanDelay(300, 700);
+    // 3. 생년월일 입력 (rrn1 = YYMMDD → 변환: 19YYMMDD 또는 20YYMMDD)
+    log('input', '생년월일 입력');
+    // rrn1이 6자리면 앞에 19 또는 20 추가
+    let birthDate = rrn1;
+    if (rrn1.length === 6) {
+      const yearPrefix = parseInt(rrn1.substring(0, 2)) > 30 ? '19' : '20';
+      birthDate = yearPrefix + rrn1;
+    }
 
-    // 전화번호 입력
-    const phoneSelectors = 'input[name*="phone"], input[name*="mobile"], input[name*="mbtlnum"], input[id*="phone"], input[placeholder*="휴대폰"], input[placeholder*="전화"]';
-    await secureInput(page, phoneSelectors, phoneNumber);
-    await humanDelay(300, 700);
+    const birthSelectors = [
+      'input[placeholder*="19900101"]',
+      'input[placeholder*="생년월일"]',
+      'div:has-text("생년월일") + input',
+      'label:has-text("생년월일") ~ input',
+      'td:has-text("생년월일") ~ td input',
+      'input[name*="birth"]',
+      'input[id*="birth"]',
+    ].join(', ');
+
+    const birthResult = await secureInput(page, birthSelectors, birthDate);
+    if (!birthResult) {
+      await page.evaluate((val) => {
+        const inputs = document.querySelectorAll('input[type="text"]');
+        for (const input of inputs) {
+          const label = input.closest('tr')?.querySelector('td')?.textContent || '';
+          if (label.includes('생년월일') || input.placeholder?.includes('19900101')) {
+            input.value = val;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            break;
+          }
+        }
+      }, birthDate);
+      log('input', '생년월일 JS 직접 입력');
+    }
+    await humanDelay(300, 500);
+
+    // 4. 휴대폰 번호 입력 (010-XXXX-XXXX 형식 또는 분리)
+    log('input', '휴대폰 번호 입력');
+
+    // 전화번호 분리 (01012345678 → 010, 1234, 5678 또는 010, 12345678)
+    const phonePart1 = phoneNumber.substring(0, 3); // 010
+    const phonePart2 = phoneNumber.substring(3); // 나머지
+
+    // Select 드롭다운 (010, 011 등)
+    const phoneSelectSelectors = 'select:has(option[value="010"]), select[name*="phone"], select[id*="phone"]';
+    try {
+      const phoneSelect = await page.locator(phoneSelectSelectors).first();
+      if (await phoneSelect.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await phoneSelect.selectOption(phonePart1);
+        log('input', `전화번호 앞자리 선택: ${phonePart1}`);
+      }
+    } catch {}
+
+    // 전화번호 뒷자리 입력
+    const phoneInputSelectors = [
+      'input[placeholder*="12341234"]',
+      'input[placeholder*="전화"]',
+      'input[placeholder*="휴대폰"]',
+      'td:has-text("휴대폰") ~ td input[type="text"]:not([readonly])',
+      'div:has-text("휴대폰") input[type="text"]',
+      'input[name*="phone"]:not([type="hidden"])',
+      'input[id*="phone"]',
+    ].join(', ');
+
+    const phoneResult = await secureInput(page, phoneInputSelectors, phonePart2);
+    if (!phoneResult) {
+      await page.evaluate((val) => {
+        const inputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
+        for (const input of inputs) {
+          const label = input.closest('tr')?.querySelector('td')?.textContent || '';
+          if (label.includes('휴대폰') || label.includes('전화') || input.placeholder?.includes('1234')) {
+            input.value = val;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            break;
+          }
+        }
+      }, phonePart2);
+      log('input', '전화번호 JS 직접 입력');
+    }
+    await humanDelay(300, 500);
 
     // ═══════════════════════════════════════════════════════════════
     // [Phase 24.5] 통신사 선택 강화 (라디오 버튼/탭 클릭)
@@ -420,30 +535,30 @@ async function requestGov24Auth(params) {
     await saveScreenshot(page, `${taskId}_04_input_complete`);
 
     // ═══════════════════════════════════════════════════════════════
-    // [HOTFIX Phase 24] Step 1: 약관 동의 자동 체크
+    // [Phase 24.6] 약관 동의 자동 체크 (새 UI)
     // ═══════════════════════════════════════════════════════════════
     log('terms', '약관 동의 자동 체크 시작');
 
-    const termSelectors = [
+    // 전체동의 체크박스 클릭 (새 UI)
+    const allAgreeSelectors = [
+      'label:has-text("전체동의")',
+      'span:has-text("전체동의")',
+      'input[type="checkbox"] + label:has-text("전체")',
       '#chkAll',
       '#checkAll',
       '#allAgree',
       '.check_all input[type="checkbox"]',
       'input[name="allAgree"]',
       'input[name="agreeAll"]',
-      'input[type="checkbox"][title*="동의"]',
-      'input[type="checkbox"][name*="agree"]',
     ];
 
-    for (const selector of termSelectors) {
+    for (const selector of allAgreeSelectors) {
       try {
-        const checkbox = await page.locator(selector).first();
-        if (await checkbox.isVisible({ timeout: 1000 }).catch(() => false)) {
-          const isChecked = await checkbox.isChecked().catch(() => false);
-          if (!isChecked) {
-            await checkbox.check();
-            log('terms', `약관 동의 체크: ${selector}`);
-          }
+        const elem = await page.locator(selector).first();
+        if (await elem.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await elem.click();
+          log('terms', `전체동의 클릭: ${selector}`);
+          break;
         }
       } catch {
         continue;
@@ -458,42 +573,46 @@ async function requestGov24Auth(params) {
         const id = (checkbox.id || '').toLowerCase();
         const name = (checkbox.name || '').toLowerCase();
         const title = (checkbox.title || '').toLowerCase();
+        const labelText = checkbox.closest('label')?.textContent?.toLowerCase() || '';
         const parentText = (checkbox.parentElement?.textContent || '').toLowerCase();
 
         if (
           id.includes('agree') || id.includes('chk') || id.includes('all') ||
           name.includes('agree') || name.includes('consent') ||
           title.includes('동의') ||
+          labelText.includes('동의') || labelText.includes('전체') ||
           parentText.includes('동의') || parentText.includes('약관')
         ) {
           if (!checkbox.checked) {
             checkbox.checked = true;
             checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+            checkbox.dispatchEvent(new Event('click', { bubbles: true }));
           }
         }
       });
     });
 
-    await humanDelay(300, 600);
+    await humanDelay(500, 800);
 
     log('request', '인증 요청 버튼 클릭');
     await humanDelay(500, 1000);
 
     // ═══════════════════════════════════════════════════════════════
-    // [HOTFIX Phase 24] Step 2: 인증 요청 버튼 클릭 (업데이트된 셀렉터)
+    // [Phase 24.6] 인증 요청 버튼 클릭 (새 UI)
     // ═══════════════════════════════════════════════════════════════
     const requestBtnSelectors = [
-      // 최우선 - 스크린샷에서 확인된 텍스트
-      'button:has-text("인증 요청 시작")',
-      'a:has-text("인증 요청 시작")',
-      'span:has-text("인증 요청 시작")',
-      // 기존 셀렉터
-      'button:has-text("인증요청")',
+      // 새 UI - 모달 내 파란색 버튼 "인증 요청"
       'button:has-text("인증 요청")',
+      'button:has-text("인증요청")',
+      'a:has-text("인증 요청")',
+      // 스크린샷에서 확인된 버튼 스타일
+      'button.btn-primary:has-text("인증")',
+      'button[class*="primary"]:has-text("인증")',
+      'button[style*="background"]:has-text("인증")',
+      // 기존 셀렉터
+      'button:has-text("인증 요청 시작")',
       'button:has-text("요청하기")',
       'button:has-text("본인확인")',
-      'a:has-text("인증요청")',
-      'a:has-text("인증 요청")',
       // ID/Class 기반
       '#btn_request',
       '#btnRequest',
