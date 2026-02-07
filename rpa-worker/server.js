@@ -84,7 +84,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '1.3.0',
+    version: '1.4.0-phase24.6',
     features: ['gov24-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
     queue: 'in-memory',
   });

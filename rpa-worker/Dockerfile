@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
 # 환경변수 설정
 ENV NODE_ENV=production
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-ENV CACHE_BUST=20260131_v4
+ENV CACHE_BUST=20260207_v5_phase246
 
 # package.json 복사 및 의존성 설치
 COPY package*.json ./
