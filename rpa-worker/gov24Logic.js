@@ -28,7 +28,64 @@ const TIMEOUTS = {
   element: 10000,         // 요소 대기
   authWait: 180000,       // 인증 대기 (3분)
   polling: 3000,          // 폴링 간격
+  sessionTTL: 300000,     // 세션 유효시간 (5분)
 };
+
+// =============================================================================
+// [HOTFIX] 브라우저 세션 풀 - 인증 요청 후 세션 유지
+// =============================================================================
+const browserSessions = new Map();
+
+/**
+ * 세션 저장
+ */
+function saveSession(taskId, sessionData) {
+  browserSessions.set(taskId, {
+    ...sessionData,
+    createdAt: Date.now(),
+  });
+  console.log(`[Session] Saved: ${taskId}`);
+}
+
+/**
+ * 세션 조회
+ */
+function getSession(taskId) {
+  const session = browserSessions.get(taskId);
+  if (!session) return null;
+
+  // 만료 확인
+  if (Date.now() - session.createdAt > TIMEOUTS.sessionTTL) {
+    console.log(`[Session] Expired: ${taskId}`);
+    cleanupSession(taskId);
+    return null;
+  }
+  return session;
+}
+
+/**
+ * 세션 정리
+ */
+async function cleanupSession(taskId) {
+  const session = browserSessions.get(taskId);
+  if (session) {
+    try {
+      if (session.browser) await session.browser.close().catch(() => {});
+    } catch {}
+    browserSessions.delete(taskId);
+    console.log(`[Session] Cleaned: ${taskId}`);
+  }
+}
+
+// 주기적 세션 정리 (1분마다)
+setInterval(() => {
+  const now = Date.now();
+  for (const [taskId, session] of browserSessions.entries()) {
+    if (now - session.createdAt > TIMEOUTS.sessionTTL) {
+      cleanupSession(taskId);
+    }
+  }
+}, 60000);
 
 /**
  * 스크린샷 저장 (stealthBrowser 위임)
@@ -460,16 +517,24 @@ async function requestGov24Auth(params) {
 
     log('success', '인증 요청 완료 - 사용자 앱 인증 대기');
 
+    // [HOTFIX] 브라우저 세션 저장 (confirmGov24Auth에서 재사용)
+    saveSession(taskId, {
+      browser,
+      context,
+      page,
+      cursor,
+    });
+
     return {
       success: true,
       taskId,
       phase: 'waiting',
       message: '인증 요청이 전송되었습니다. 스마트폰 앱에서 인증을 완료해주세요.',
       logs,
-      // 브라우저 세션 정보 (확인 단계에서 사용)
       sessionData: {
         contextId: context._guid,
         pageUrl: page.url(),
+        sessionActive: true,
       },
     };
 
@@ -484,6 +549,11 @@ async function requestGov24Auth(params) {
       }
     }
 
+    // 에러 시에만 브라우저 종료
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
+
     return {
       success: false,
       taskId,
@@ -491,18 +561,8 @@ async function requestGov24Auth(params) {
       error: error.message,
       logs,
     };
-
-  } finally {
-    // 브라우저는 확인 단계에서 종료하므로 여기서는 닫지 않음
-    // 단, 에러 발생 시에만 정리
-    // 참고: 실제 구현에서는 세션 풀링 필요
-    // 주의: finally에서 return하면 try/catch의 반환값을 덮어씀
-    if (browser) {
-      // 인증 요청 단계에서는 브라우저를 열어두어야 하지만
-      // 현재 구조상 세션 유지가 안되므로 일단 닫음
-      await browser.close().catch(() => {});
-    }
   }
+  // [HOTFIX] finally 제거 - 성공 시 브라우저 유지
 }
 
 /**
@@ -517,6 +577,9 @@ async function confirmGov24Auth(params) {
 
   let browser = null;
   let context = null;
+  let page = null;
+  let cursor = null;
+  let sessionReused = false;
 
   const log = (step, message, status = 'info') => {
     const entry = { step, message, status, timestamp: new Date().toISOString() };
@@ -525,20 +588,40 @@ async function confirmGov24Auth(params) {
   };
 
   try {
-    log('init', '인증 확인 시작 (스텔스 모드)');
+    // [HOTFIX] 저장된 세션 조회
+    const savedSession = getSession(taskId);
 
-    // 스텔스 브라우저 시작
-    const stealth = await launchStealthBrowser();
-    browser = stealth.browser;
-    context = stealth.context;
-    const page = stealth.page;
-    const cursor = stealth.cursor;
+    if (savedSession && savedSession.browser && savedSession.page) {
+      log('init', '저장된 브라우저 세션 재사용');
+      browser = savedSession.browser;
+      context = savedSession.context;
+      page = savedSession.page;
+      cursor = savedSession.cursor;
+      sessionReused = true;
 
-    // 정부24 메인 페이지로 이동하여 로그인 상태 확인
-    await page.goto('https://www.gov.kr', {
-      waitUntil: 'networkidle',
-      timeout: TIMEOUTS.navigation,
-    });
+      // 페이지가 아직 열려있는지 확인
+      try {
+        await page.evaluate(() => true);
+      } catch {
+        log('init', '세션 만료됨, 새 브라우저 시작');
+        sessionReused = false;
+      }
+    }
+
+    if (!sessionReused) {
+      log('init', '인증 확인 시작 (새 스텔스 브라우저)');
+      const stealth = await launchStealthBrowser();
+      browser = stealth.browser;
+      context = stealth.context;
+      page = stealth.page;
+      cursor = stealth.cursor;
+
+      // 정부24 메인 페이지로 이동
+      await page.goto('https://www.gov.kr', {
+        waitUntil: 'networkidle',
+        timeout: TIMEOUTS.navigation,
+      });
+    }
 
     log('check', '인증 완료 여부 확인');
 
@@ -580,6 +663,9 @@ async function confirmGov24Auth(params) {
 
     await saveScreenshot(page, `${taskId}_05_auth_complete`);
 
+    // [HOTFIX] 인증 완료 후 세션 정리
+    await cleanupSession(taskId);
+
     return {
       success: true,
       taskId,
@@ -599,6 +685,9 @@ async function confirmGov24Auth(params) {
       }
     }
 
+    // [HOTFIX] 에러 시에도 세션 정리
+    await cleanupSession(taskId);
+
     return {
       success: false,
       taskId,
@@ -606,12 +695,8 @@ async function confirmGov24Auth(params) {
       error: error.message,
       logs,
     };
-
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
   }
+  // [HOTFIX] finally 제거 - cleanupSession에서 브라우저 종료 처리
 }
 
 /**
