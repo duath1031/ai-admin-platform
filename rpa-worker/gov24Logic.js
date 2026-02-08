@@ -244,23 +244,36 @@ async function requestGov24Auth(params) {
           const results = [];
           const selects = document.querySelectorAll('select');
           for (const sel of selects) {
-            const opts = Array.from(sel.options).map(o => o.text || o.value);
-            // 통신사 select (SKT가 있는 것)
-            if (opts.some(o => o.includes('SKT'))) {
-              for (const opt of sel.options) {
-                if (opt.text.includes(cv) || opt.value.includes(cv)) {
-                  sel.value = opt.value;
+            const allOpts = Array.from(sel.options).map(o => ({ text: o.text.trim(), value: o.value }));
+
+            // 통신사 select (SKT 텍스트가 있는 것)
+            const hasSKT = allOpts.some(o => o.text === 'SKT' || o.text === 'KT' || o.text === 'LGU+');
+            const has010 = allOpts.some(o => o.text === '010' || o.value === '010');
+
+            if (hasSKT) {
+              // 통신사: text로 정확히 매칭해서 selectedIndex로 설정
+              for (let i = 0; i < sel.options.length; i++) {
+                const optText = sel.options[i].text.trim();
+                if (optText === cv || optText.includes(cv)) {
+                  sel.selectedIndex = i;
                   sel.dispatchEvent(new Event('change', { bubbles: true }));
-                  results.push({ type: 'carrier', value: opt.value, success: true });
+                  results.push({ type: 'carrier', selectedIndex: i, text: optText, value: sel.value, allOpts });
                   break;
                 }
               }
             }
-            // 전화번호 앞자리 select (010이 있고 SKT가 없는 것)
-            if (opts.some(o => o === '010') && !opts.some(o => o.includes('SKT'))) {
-              sel.value = pp;
-              sel.dispatchEvent(new Event('change', { bubbles: true }));
-              results.push({ type: 'phone_prefix', value: pp, success: true });
+
+            if (has010 && !hasSKT) {
+              // 전화번호 앞자리: value 또는 text로 매칭
+              for (let i = 0; i < sel.options.length; i++) {
+                const opt = sel.options[i];
+                if (opt.value === pp || opt.text.trim() === pp) {
+                  sel.selectedIndex = i;
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  results.push({ type: 'phone_prefix', selectedIndex: i, value: sel.value });
+                  break;
+                }
+              }
             }
           }
           return results;
