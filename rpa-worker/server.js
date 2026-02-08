@@ -430,7 +430,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log('='.repeat(60));
-  console.log('RPA Worker Server v1.3.0 (In-Memory Queue)');
+  console.log('RPA Worker Server v1.5.0-phase25-force-injection (In-Memory Queue)');
   console.log('='.repeat(60));
   console.log(`Port: ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
