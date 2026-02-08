@@ -229,12 +229,9 @@ async function requestGov24Auth(params) {
                 result.method += '+label';
               }
 
-              // 4. a 태그도 클릭
-              const aTag = item.querySelector('a') || (item.tagName === 'A' ? item : null);
-              if (aTag) {
-                aTag.click();
-                result.method += '+a-tag';
-              }
+              // 4. a 태그는 클릭하지 않음 (navigation 방지)
+              // const aTag = item.querySelector('a');
+              // a 태그 클릭은 폼 리셋을 유발할 수 있음
 
               return result;
             }
@@ -300,95 +297,147 @@ async function requestGov24Auth(params) {
     await humanDelay(1000, 2000);
 
     // ═══════════════════════════════════════════════════════════════
-    // Step 5: 개인정보 입력 (iframe 내부)
+    // Step 5: 개인정보 입력 (evaluate로 직접 DOM 조작 - 한글/인코딩 안전)
     // ═══════════════════════════════════════════════════════════════
 
-    // 5-1. 이름 입력
-    log('input', `이름 입력: ${name}`);
-    const nameInput = iframeLocator.locator('#oacx_name');
-    await nameInput.click();
-    await nameInput.fill(name);
-    await humanDelay(200, 400);
-
-    // 5-2. 생년월일 입력 (YYYYMMDD)
     let birthDate = rrn1;
     if (rrn1.length === 6) {
       const yearPrefix = parseInt(rrn1.substring(0, 2)) > 30 ? '19' : '20';
       birthDate = yearPrefix + rrn1;
     }
-    log('input', `생년월일 입력: ${birthDate}`);
-    const birthInput = iframeLocator.locator('#oacx_birth');
-    await birthInput.click();
-    await birthInput.fill(birthDate);
-    await humanDelay(200, 400);
 
-    // 5-3. 통신사 선택 + 전화번호 앞자리 (evaluate로 처리 - hidden select 우회)
     const phonePart1 = phoneNumber.substring(0, 3);
     const phonePart2 = phoneNumber.substring(3);
 
-    if (carrier) {
-      log('input', `통신사 선택: ${carrier}`);
-      const carrierValueMap = {
-        'SKT': 'SKT', 'KT': 'KT', 'LGU': 'LGU+',
-        'SKT_MVNO': 'SKT', 'KT_MVNO': 'KT', 'LGU_MVNO': 'LGU+',
-      };
-      const carrierValue = carrierValueMap[carrier.toUpperCase()] || carrier;
+    const carrierValueMap = {
+      'SKT': 'SKT', 'KT': 'KT', 'LGU': 'LGU+',
+      'SKT_MVNO': 'SKT', 'KT_MVNO': 'KT', 'LGU_MVNO': 'LGU+',
+    };
+    const carrierValue = carrier ? (carrierValueMap[carrier.toUpperCase()] || carrier) : '';
 
-      // iframe 내부에서 직접 evaluate로 select 조작 (hidden/visible 모두)
-      const frame = page.frames().find(f => f.url().includes('simpleCert'));
-      if (frame) {
-        const selectResult = await frame.evaluate(({ cv, pp }) => {
-          const results = [];
-          const selects = document.querySelectorAll('select');
-          for (const sel of selects) {
-            const allOpts = Array.from(sel.options).map(o => ({ text: o.text.trim(), value: o.value }));
+    log('input', `입력 시작 - 이름: ${name}, 생년월일: ${birthDate}, 통신사: ${carrierValue}, 전화번호: ${phonePart1}-${phonePart2}`);
 
-            // 통신사 select (SKT 텍스트가 있는 것)
-            const hasSKT = allOpts.some(o => o.text === 'SKT' || o.text === 'KT' || o.text === 'LGU+');
-            const has010 = allOpts.some(o => o.text === '010' || o.value === '010');
+    // certFrame은 이미 위에서 찾아둠
+    const inputFrame = certFrame || page.frames().find(f => f.url().includes('simpleCert'));
+    if (inputFrame) {
+      const inputResult = await inputFrame.evaluate(({ nameVal, birthVal, carrierVal, phonePrefixVal, phoneVal }) => {
+        const results = {};
 
-            if (hasSKT) {
-              // 통신사: text로 정확히 매칭해서 selectedIndex로 설정
-              for (let i = 0; i < sel.options.length; i++) {
-                const optText = sel.options[i].text.trim();
-                if (optText === cv || optText.includes(cv)) {
-                  sel.selectedIndex = i;
-                  sel.dispatchEvent(new Event('change', { bubbles: true }));
-                  results.push({ type: 'carrier', selectedIndex: i, text: optText, value: sel.value, allOpts });
-                  break;
-                }
-              }
-            }
+        // Helper: input에 값 설정 + 이벤트 발생
+        function setInputValue(selector, value) {
+          const el = document.querySelector(selector);
+          if (!el) return { found: false, selector };
 
-            if (has010 && !hasSKT) {
-              // 전화번호 앞자리: value 또는 text로 매칭
-              for (let i = 0; i < sel.options.length; i++) {
-                const opt = sel.options[i];
-                if (opt.value === pp || opt.text.trim() === pp) {
-                  sel.selectedIndex = i;
-                  sel.dispatchEvent(new Event('change', { bubbles: true }));
-                  results.push({ type: 'phone_prefix', selectedIndex: i, value: sel.value });
-                  break;
-                }
+          // 기존 값 지우기
+          el.value = '';
+
+          // React/Vue 등 프레임워크 호환을 위한 native setter 사용
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype, 'value'
+          )?.set;
+          if (nativeInputValueSetter) {
+            nativeInputValueSetter.call(el, value);
+          } else {
+            el.value = value;
+          }
+
+          // 모든 관련 이벤트 발생
+          el.dispatchEvent(new Event('focus', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('blur', { bubbles: true }));
+
+          // KeyboardEvent도 시뮬레이션 (일부 사이트에서 필요)
+          for (const char of value) {
+            el.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
+            el.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
+            el.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
+          }
+
+          return { found: true, selector, value: el.value, expectedValue: value, match: el.value === value };
+        }
+
+        // 5-1. 이름 입력
+        results.name = setInputValue('#oacx_name', nameVal);
+
+        // 5-2. 생년월일 입력
+        results.birth = setInputValue('#oacx_birth', birthVal);
+
+        // 5-3. 통신사 + 전화번호 앞자리 select
+        const selects = document.querySelectorAll('select');
+        for (const sel of selects) {
+          const allOpts = Array.from(sel.options).map(o => ({ text: o.text.trim(), value: o.value }));
+          const hasSKT = allOpts.some(o => o.text === 'SKT' || o.text === 'KT' || o.text === 'LGU+');
+          const has010 = allOpts.some(o => o.text === '010' || o.value === '010');
+
+          if (hasSKT && carrierVal) {
+            for (let i = 0; i < sel.options.length; i++) {
+              const optText = sel.options[i].text.trim();
+              if (optText === carrierVal || optText.includes(carrierVal)) {
+                sel.selectedIndex = i;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                results.carrier = { selectedIndex: i, text: optText, value: sel.value };
+                break;
               }
             }
           }
-          return results;
-        }, { cv: carrierValue, pp: phonePart1 });
-        log('input', `Select 결과: ${JSON.stringify(selectResult)}`);
-      }
+
+          if (has010 && !hasSKT) {
+            for (let i = 0; i < sel.options.length; i++) {
+              const opt = sel.options[i];
+              if (opt.value === phonePrefixVal || opt.text.trim() === phonePrefixVal) {
+                sel.selectedIndex = i;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                results.phonePrefix = { selectedIndex: i, value: sel.value };
+                break;
+              }
+            }
+          }
+        }
+
+        // 5-4. 전화번호 뒷자리 입력
+        results.phone = setInputValue('#oacx_phone2', phoneVal);
+
+        // 최종 확인
+        const nameEl = document.querySelector('#oacx_name');
+        const birthEl = document.querySelector('#oacx_birth');
+        const phoneEl = document.querySelector('#oacx_phone2');
+        results.verify = {
+          name: nameEl?.value || '',
+          birth: birthEl?.value || '',
+          phone: phoneEl?.value || '',
+        };
+
+        return results;
+      }, {
+        nameVal: name,
+        birthVal: birthDate,
+        carrierVal: carrierValue,
+        phonePrefixVal: phonePart1,
+        phoneVal: phonePart2,
+      });
+
+      log('input', `입력 결과: ${JSON.stringify(inputResult)}`);
+    } else {
+      // fallback: Playwright 직접 입력
+      log('input', 'certFrame 못 찾음, Playwright fill 사용');
+
+      const nameInput = iframeLocator.locator('#oacx_name');
+      await nameInput.click();
+      await nameInput.fill(name);
+      await humanDelay(200, 400);
+
+      const birthInput = iframeLocator.locator('#oacx_birth');
+      await birthInput.click();
+      await birthInput.fill(birthDate);
+      await humanDelay(200, 400);
+
+      const phoneInput = iframeLocator.locator('#oacx_phone2');
+      await phoneInput.click();
+      await phoneInput.fill(phonePart2);
+      log('input', 'Playwright fill 완료');
     }
-    await humanDelay(200, 400);
-
-    log('input', `전화번호 입력: ${phonePart1}-${phonePart2}`);
-    await humanDelay(200, 400);
-
-    // 5-5. 전화번호 뒷자리 입력
-    const phoneInput = iframeLocator.locator('#oacx_phone2');
-    await phoneInput.click();
-    await phoneInput.fill(phonePart2);
-    log('input', `전화번호 뒷자리 입력: ${phonePart2}`);
-    await humanDelay(200, 400);
+    await humanDelay(500, 800);
 
     // ═══════════════════════════════════════════════════════════════
     // Step 6: 약관 전체 동의 (evaluate로 모든 체크박스 처리)
@@ -455,11 +504,53 @@ async function requestGov24Auth(params) {
     // ═══════════════════════════════════════════════════════════════
     await saveScreenshot(page, `${taskId}_03_EVIDENCE_before_click`);
 
-    // 입력값 확인
-    const nameVal = await iframeLocator.locator('#oacx_name').inputValue().catch(() => '');
-    const birthVal = await iframeLocator.locator('#oacx_birth').inputValue().catch(() => '');
-    const phoneVal = await iframeLocator.locator('#oacx_phone2').inputValue().catch(() => '');
-    log('evidence', `입력 확인 - 이름: ${nameVal}, 생년월일: ${birthVal}, 전화번호: ${phoneVal}`);
+    // 입력값 확인 (evaluate로 확인)
+    const verifyFrame = page.frames().find(f => f.url().includes('simpleCert'));
+    let nameVal = '', birthVal2 = '', phoneVal = '';
+    if (verifyFrame) {
+      const verify = await verifyFrame.evaluate(() => {
+        return {
+          name: document.querySelector('#oacx_name')?.value || '',
+          birth: document.querySelector('#oacx_birth')?.value || '',
+          phone: document.querySelector('#oacx_phone2')?.value || '',
+        };
+      }).catch(() => ({}));
+      nameVal = verify.name || '';
+      birthVal2 = verify.birth || '';
+      phoneVal = verify.phone || '';
+    } else {
+      nameVal = await iframeLocator.locator('#oacx_name').inputValue().catch(() => '');
+      birthVal2 = await iframeLocator.locator('#oacx_birth').inputValue().catch(() => '');
+      phoneVal = await iframeLocator.locator('#oacx_phone2').inputValue().catch(() => '');
+    }
+    log('evidence', `입력 확인 - 이름: ${nameVal}, 생년월일: ${birthVal2}, 전화번호: ${phoneVal}`);
+
+    // 이름이 비어있으면 재입력 시도
+    if (!nameVal || nameVal.trim() === '') {
+      log('evidence', '이름이 비어있음! 재입력 시도');
+      if (verifyFrame) {
+        await verifyFrame.evaluate((nameValue) => {
+          const el = document.querySelector('#oacx_name');
+          if (el) {
+            el.focus();
+            el.value = nameValue;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, name);
+      } else {
+        const nameInput = iframeLocator.locator('#oacx_name');
+        await nameInput.click();
+        await nameInput.fill(name);
+      }
+      await humanDelay(300, 500);
+      // 다시 확인
+      const recheckName = verifyFrame
+        ? await verifyFrame.evaluate(() => document.querySelector('#oacx_name')?.value).catch(() => '')
+        : await iframeLocator.locator('#oacx_name').inputValue().catch(() => '');
+      log('evidence', `이름 재입력 후: ${recheckName}`);
+      nameVal = recheckName || '';
+    }
 
     // ═══════════════════════════════════════════════════════════════
     // Step 8: 인증 요청 버튼 클릭
@@ -535,9 +626,9 @@ async function requestGov24Auth(params) {
 
       log('postClick', `인증 요청 후 상태: ${JSON.stringify(postClickState)}`);
 
-      // "인증서비스를 선택" 에러가 있으면 팝업 닫고 provider 재선택 후 재시도
-      if (postClickState.hasServiceError) {
-        log('retry', '인증서비스 미선택 에러 감지 - 재시도');
+      // 에러가 있으면 팝업 닫고 재시도
+      if (postClickState.hasServiceError || postClickState.hasNameError) {
+        log('retry', `에러 감지 (service: ${postClickState.hasServiceError}, name: ${postClickState.hasNameError}) - 재시도`);
 
         // 팝업 닫기 (확인 버튼 클릭)
         await postClickFrame2.evaluate(() => {
@@ -551,6 +642,22 @@ async function requestGov24Auth(params) {
           }
         }).catch(() => {});
         await humanDelay(1000, 1500);
+
+        // 이름 에러인 경우 Playwright type()으로 이름 재입력
+        if (postClickState.hasNameError) {
+          log('retry', 'Playwright type()으로 이름 재입력');
+          const nameInput = iframeLocator.locator('#oacx_name');
+          await nameInput.click({ clickCount: 3 }); // 기존 텍스트 전체 선택
+          await humanDelay(200, 300);
+          await nameInput.type(name, { delay: 50 }); // 한 글자씩 타이핑
+          await humanDelay(300, 500);
+
+          // 확인
+          const retypedName = await postClickFrame2.evaluate(() =>
+            document.querySelector('#oacx_name')?.value
+          ).catch(() => '');
+          log('retry', `이름 재입력 결과: "${retypedName}"`);
+        }
 
         // provider 재선택 - 더 강력한 방식으로
         const retryResult = await postClickFrame2.evaluate((searchTexts) => {
