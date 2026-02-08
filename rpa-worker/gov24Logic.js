@@ -162,44 +162,139 @@ async function requestGov24Auth(params) {
     log('iframe', 'iframe 내부 접근 성공');
 
     // ═══════════════════════════════════════════════════════════════
-    // Step 4: 인증 제공자 선택 (PASS/카카오/네이버 등)
+    // Step 4: 인증 제공자 선택 (PASS/카카오/네이버 등) - evaluate로 확실하게
     // ═══════════════════════════════════════════════════════════════
     log('provider', `인증 제공자 선택: ${authMethod}`);
     const providerTexts = AUTH_PROVIDER_MAP[authMethod] || AUTH_PROVIDER_MAP.pass;
 
-    // provider-list 안의 label/li/img 클릭
-    let providerSelected = false;
-    for (const text of providerTexts) {
-      try {
-        // label이나 li 내 텍스트로 찾기
-        const providerEl = iframeLocator.locator('.provider-list li, .provider-list label, .provider-list div')
-          .filter({ hasText: text }).first();
-        if (await providerEl.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await providerEl.click();
-          providerSelected = true;
-          log('provider', `인증 제공자 선택 성공: ${text}`);
-          break;
-        }
-      } catch { continue; }
-    }
+    // iframe frame을 미리 찾아둠
+    const certFrame = page.frames().find(f => f.url().includes('simpleCert'));
 
-    if (!providerSelected) {
-      // 이미지 alt 텍스트로 시도
+    if (certFrame) {
+      // evaluate로 provider 내부 구조를 분석하고 올바르게 클릭
+      const providerResult = await certFrame.evaluate((searchTexts) => {
+        const result = { searched: searchTexts, found: false, method: '', debug: {} };
+
+        // provider-list 내부 구조 분석
+        const providerList = document.querySelector('.provider-list');
+        if (!providerList) {
+          result.debug.noProviderList = true;
+          return result;
+        }
+
+        // 모든 provider 아이템 수집
+        const items = providerList.querySelectorAll('li, label, a, div[class*="item"], button');
+        const itemTexts = [];
+        for (const item of items) {
+          itemTexts.push({
+            tag: item.tagName,
+            text: item.textContent?.trim(),
+            className: item.className,
+            hasInput: !!item.querySelector('input'),
+            inputType: item.querySelector('input')?.type,
+            inputName: item.querySelector('input')?.name,
+            inputChecked: item.querySelector('input')?.checked,
+          });
+        }
+        result.debug.allItems = itemTexts;
+
+        // 검색 텍스트와 매칭되는 아이템 찾기
+        for (const searchText of searchTexts) {
+          for (const item of items) {
+            const text = item.textContent?.trim() || '';
+            if (text.includes(searchText)) {
+              // 1. 내부에 input(radio/checkbox)이 있으면 직접 체크
+              const input = item.querySelector('input');
+              if (input) {
+                input.checked = true;
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                input.dispatchEvent(new Event('click', { bubbles: true }));
+                result.found = true;
+                result.method = 'input-check';
+                result.inputId = input.id;
+                result.inputName = input.name;
+                result.inputValue = input.value;
+              }
+
+              // 2. 아이템 자체도 클릭 (JS 이벤트 핸들러 트리거)
+              item.click();
+              result.found = true;
+              result.method = result.method ? result.method + '+click' : 'click';
+              result.matchedText = text;
+
+              // 3. label 내부라면 label도 클릭
+              const parentLabel = item.closest('label') || item.querySelector('label');
+              if (parentLabel && parentLabel !== item) {
+                parentLabel.click();
+                result.method += '+label';
+              }
+
+              // 4. a 태그도 클릭
+              const aTag = item.querySelector('a') || (item.tagName === 'A' ? item : null);
+              if (aTag) {
+                aTag.click();
+                result.method += '+a-tag';
+              }
+
+              return result;
+            }
+          }
+        }
+
+        // img alt 텍스트로도 시도
+        const imgs = providerList.querySelectorAll('img');
+        for (const searchText of searchTexts) {
+          for (const img of imgs) {
+            const alt = img.alt || '';
+            if (alt.includes(searchText)) {
+              const parentLi = img.closest('li') || img.parentElement;
+              if (parentLi) {
+                const input = parentLi.querySelector('input');
+                if (input) {
+                  input.checked = true;
+                  input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                parentLi.click();
+                result.found = true;
+                result.method = 'img-alt-click';
+                result.matchedText = alt;
+                return result;
+              }
+            }
+          }
+        }
+
+        return result;
+      }, providerTexts);
+
+      log('provider', `제공자 선택 결과: ${JSON.stringify(providerResult)}`);
+
+      if (!providerResult.found) {
+        log('provider', '제공자 선택 실패 - Playwright click 재시도');
+        // fallback: Playwright locator 클릭
+        for (const text of providerTexts) {
+          try {
+            const el = iframeLocator.locator(`.provider-list li`).filter({ hasText: text }).first();
+            if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await el.click();
+              log('provider', `Playwright 클릭 성공: ${text}`);
+              break;
+            }
+          } catch { continue; }
+        }
+      }
+    } else {
+      log('provider', 'simpleCert frame 못 찾음, locator로 시도');
       for (const text of providerTexts) {
         try {
-          const img = iframeLocator.locator(`.provider-list img[alt*="${text}"]`).first();
-          if (await img.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await img.click();
-            providerSelected = true;
-            log('provider', `이미지로 선택 성공: ${text}`);
+          const el = iframeLocator.locator(`.provider-list li`).filter({ hasText: text }).first();
+          if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await el.click();
+            log('provider', `제공자 선택 성공: ${text}`);
             break;
           }
         } catch { continue; }
       }
-    }
-
-    if (!providerSelected) {
-      log('provider', '특정 제공자 선택 실패, 기본값 사용');
     }
 
     await humanDelay(1000, 2000);
@@ -384,57 +479,193 @@ async function requestGov24Auth(params) {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // Step 9: 인증 요청 후 상태 진단
+    // Step 9: 인증 요청 후 상태 진단 + 에러 시 재시도
     // ═══════════════════════════════════════════════════════════════
-    const postClickFrame = page.frames().find(f => f.url().includes('simpleCert'));
-    if (postClickFrame) {
-      const postClickState = await postClickFrame.evaluate(() => {
+    const postClickFrame2 = page.frames().find(f => f.url().includes('simpleCert'));
+    let authRequestSuccess = false;
+
+    if (postClickFrame2) {
+      const postClickState = await postClickFrame2.evaluate(() => {
         const state = {};
 
-        // 에러 메시지 요소 찾기
-        const errorEls = document.querySelectorAll('.error, .err, .err_msg, .alert, [class*="error"], [class*="alert"], [class*="warn"], [style*="color: red"], [style*="color:red"], .txt_error');
-        state.errorMessages = [];
-        for (const el of errorEls) {
+        // 에러/안내 팝업 찾기
+        const alertLayers = document.querySelectorAll('.layer_pop, .pop_wrap, .popup, [class*="alert"], [class*="layer"], [role="alertdialog"]');
+        state.popupMessages = [];
+        for (const el of alertLayers) {
           const text = el.textContent?.trim();
-          if (text && el.offsetHeight > 0) {
-            state.errorMessages.push(text);
+          if (text && el.offsetHeight > 0 && text.length < 200) {
+            state.popupMessages.push(text);
           }
         }
 
-        // 화면에 보이는 모든 텍스트 중 에러 관련 텍스트 찾기
+        // "인증서비스를 선택" 에러 확인
         const allText = document.body?.innerText || '';
-        const errorKeywords = ['오류', '실패', '잘못', '확인해', '다시', '입력해', '불일치', '에러'];
-        state.errorTexts = errorKeywords.filter(kw => allText.includes(kw));
+        state.hasServiceError = allText.includes('인증서비스를 선택');
+        state.hasNameError = allText.includes('이름') && (allText.includes('입력') || allText.includes('확인'));
 
-        // 현재 보이는 주요 요소들 상태
+        // 인증 요청 버튼 상태
         const reqBtn = document.getElementById('oacx-request-btn-pc');
-        state.requestBtnVisible = reqBtn ? (reqBtn.offsetHeight > 0) : false;
-        state.requestBtnText = reqBtn?.textContent?.trim() || '';
         state.requestBtnDisabled = reqBtn?.disabled || false;
 
-        // 인증 대기 화면이 보이는지
-        const waitingEls = document.querySelectorAll('[class*="wait"], [class*="loading"], [class*="progress"], .layer_waiting');
-        state.waitingVisible = Array.from(waitingEls).some(el => el.offsetHeight > 0);
+        // 대기 화면
+        const waitEls = document.querySelectorAll('[class*="wait"], [class*="loading"], .layer_waiting');
+        state.waitingVisible = Array.from(waitEls).some(el => el.offsetHeight > 0);
 
-        // 타이머/카운트다운이 보이는지
+        // 타이머
         const timerEls = document.querySelectorAll('[class*="timer"], [class*="count"], [class*="time"]');
         state.timerVisible = Array.from(timerEls).some(el => el.offsetHeight > 0);
         state.timerText = Array.from(timerEls).map(el => el.textContent?.trim()).filter(Boolean);
 
-        // 체크박스 최종 상태
-        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-        state.checkboxes = Array.from(checkboxes).map(cb => ({ id: cb.id, checked: cb.checked }));
+        // provider 선택 상태 (radio/input)
+        const providerInputs = document.querySelectorAll('.provider-list input');
+        state.providerInputs = Array.from(providerInputs).map(inp => ({
+          type: inp.type, name: inp.name, value: inp.value,
+          checked: inp.checked, id: inp.id
+        }));
 
-        // 현재 페이지의 보이는 텍스트 (처음 500자)
+        // selected/active 클래스가 있는 provider
+        const activeProviders = document.querySelectorAll('.provider-list .active, .provider-list .selected, .provider-list .on, .provider-list [class*="active"], .provider-list [class*="select"]');
+        state.activeProviders = Array.from(activeProviders).map(el => el.textContent?.trim());
+
+        // 보이는 텍스트 (처음 500자)
         state.visibleText = allText.substring(0, 500);
 
         return state;
       }).catch(err => ({ evalError: err.message }));
 
       log('postClick', `인증 요청 후 상태: ${JSON.stringify(postClickState)}`);
+
+      // "인증서비스를 선택" 에러가 있으면 팝업 닫고 provider 재선택 후 재시도
+      if (postClickState.hasServiceError) {
+        log('retry', '인증서비스 미선택 에러 감지 - 재시도');
+
+        // 팝업 닫기 (확인 버튼 클릭)
+        await postClickFrame2.evaluate(() => {
+          const confirmBtns = document.querySelectorAll('button, a, input[type="button"]');
+          for (const btn of confirmBtns) {
+            const text = btn.textContent?.trim() || btn.value || '';
+            if (text === '확인' || text === 'OK') {
+              btn.click();
+              break;
+            }
+          }
+        }).catch(() => {});
+        await humanDelay(1000, 1500);
+
+        // provider 재선택 - 더 강력한 방식으로
+        const retryResult = await postClickFrame2.evaluate((searchTexts) => {
+          const result = { found: false };
+
+          // 1. provider-list의 모든 li 안에서 텍스트 매칭 후 다양한 방식 시도
+          const providerList = document.querySelector('.provider-list');
+          if (!providerList) return result;
+
+          // 전체 DOM 구조 확인
+          const allLis = providerList.querySelectorAll('li');
+          result.totalProviders = allLis.length;
+          result.providerDetails = [];
+
+          for (let i = 0; i < allLis.length; i++) {
+            const li = allLis[i];
+            const detail = {
+              index: i,
+              text: li.textContent?.trim(),
+              className: li.className,
+              innerHTML: li.innerHTML.substring(0, 200),
+              hasRadio: !!li.querySelector('input[type="radio"]'),
+              hasCheckbox: !!li.querySelector('input[type="checkbox"]'),
+              hasAnchor: !!li.querySelector('a'),
+              hasLabel: !!li.querySelector('label'),
+              dataAttrs: {},
+            };
+            // data-* 속성 수집
+            for (const attr of li.attributes) {
+              if (attr.name.startsWith('data-')) {
+                detail.dataAttrs[attr.name] = attr.value;
+              }
+            }
+            result.providerDetails.push(detail);
+
+            // 매칭 확인
+            for (const searchText of searchTexts) {
+              if (li.textContent?.trim().includes(searchText)) {
+                result.matchIndex = i;
+                result.matchText = li.textContent?.trim();
+
+                // 모든 가능한 클릭 대상을 시도
+                // a. radio input
+                const radio = li.querySelector('input[type="radio"]');
+                if (radio) {
+                  radio.checked = true;
+                  radio.dispatchEvent(new Event('change', { bubbles: true }));
+                  radio.dispatchEvent(new Event('input', { bubbles: true }));
+                  result.radioClicked = true;
+                }
+
+                // b. label 클릭
+                const label = li.querySelector('label');
+                if (label) {
+                  label.click();
+                  result.labelClicked = true;
+                }
+
+                // c. a 태그 클릭
+                const anchor = li.querySelector('a');
+                if (anchor) {
+                  anchor.click();
+                  result.anchorClicked = true;
+                }
+
+                // d. li 자체 클릭
+                li.click();
+                result.liClicked = true;
+
+                // e. active/selected 클래스 추가
+                li.classList.add('active', 'selected', 'on');
+
+                // f. mousedown + mouseup + click 이벤트 시뮬레이션
+                li.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                li.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                li.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+                result.found = true;
+                break;
+              }
+            }
+            if (result.found) break;
+          }
+
+          return result;
+        }, providerTexts).catch(err => ({ evalError: err.message }));
+
+        log('retry', `Provider 재선택 결과: ${JSON.stringify(retryResult)}`);
+        await humanDelay(1000, 2000);
+
+        // 인증 요청 버튼 재클릭
+        log('retry', '인증 요청 버튼 재클릭');
+        await requestBtn.click();
+        log('retry', '재클릭 완료');
+        await humanDelay(3000, 5000);
+        await saveScreenshot(page, `${taskId}_05_retry_auth`);
+
+        // 재시도 후 상태 다시 확인
+        const retryState = await postClickFrame2.evaluate(() => {
+          const allText = document.body?.innerText || '';
+          return {
+            hasServiceError: allText.includes('인증서비스를 선택'),
+            waitingVisible: Array.from(document.querySelectorAll('[class*="wait"], [class*="loading"]')).some(el => el.offsetHeight > 0),
+            timerVisible: Array.from(document.querySelectorAll('[class*="timer"], [class*="count"]')).some(el => el.offsetHeight > 0),
+          };
+        }).catch(() => ({}));
+
+        log('retry', `재시도 후 상태: ${JSON.stringify(retryState)}`);
+        authRequestSuccess = !retryState.hasServiceError;
+      } else {
+        authRequestSuccess = true;
+      }
     }
 
-    log('success', '인증 요청 완료 - 앱에서 인증 대기');
+    log('success', `인증 요청 ${authRequestSuccess ? '성공' : '실패 가능성 있음'} - 앱에서 인증 대기`);
 
     // 세션 저장
     saveSession(taskId, { browser, context, page });
