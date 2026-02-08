@@ -84,7 +84,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '1.5.0-phase25-force-injection',
+    version: '1.6.0-phase26-checkbox-fix',
     features: ['gov24-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
     queue: 'in-memory',
   });
@@ -519,7 +519,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log('='.repeat(60));
-  console.log('RPA Worker Server v1.5.0-phase25-force-injection (In-Memory Queue)');
+  console.log('RPA Worker Server v1.6.0-phase26-checkbox-fix (In-Memory Queue)');
   console.log('='.repeat(60));
   console.log(`Port: ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);

@@ -296,14 +296,62 @@ async function requestGov24Auth(params) {
     await humanDelay(200, 400);
 
     // ═══════════════════════════════════════════════════════════════
-    // Step 6: 약관 전체 동의
+    // Step 6: 약관 전체 동의 (evaluate로 모든 체크박스 처리)
     // ═══════════════════════════════════════════════════════════════
     log('terms', '약관 전체 동의');
-    const totalAgree = iframeLocator.locator('#totalAgree');
-    const isChecked = await totalAgree.isChecked().catch(() => false);
-    if (!isChecked) {
-      await totalAgree.click({ force: true });
-      log('terms', '전체 동의 체크 완료');
+
+    // frame.evaluate로 모든 체크박스를 직접 체크하고 이벤트 발생
+    const frame = page.frames().find(f => f.url().includes('simpleCert'));
+    if (frame) {
+      const checkResult = await frame.evaluate(() => {
+        const results = [];
+        // 모든 체크박스를 찾아서 체크
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+        for (const cb of checkboxes) {
+          const wasChecked = cb.checked;
+          if (!cb.checked) {
+            cb.checked = true;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+            cb.dispatchEvent(new Event('click', { bubbles: true }));
+          }
+          results.push({ id: cb.id, name: cb.name, checked: cb.checked, wasChecked });
+        }
+
+        // totalAgree 라벨도 클릭 시도 (JavaScript 핸들러 트리거)
+        const totalAgreeLabel = document.querySelector('label[for="totalAgree"]');
+        if (totalAgreeLabel) {
+          totalAgreeLabel.click();
+          // 이미 체크되어 있으면 다시 클릭해서 되돌리기 방지
+          const totalAgree = document.getElementById('totalAgree');
+          if (totalAgree && !totalAgree.checked) {
+            totalAgree.checked = true;
+            totalAgree.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+
+        // 최종 상태 확인
+        const finalState = [];
+        const allCbs = document.querySelectorAll('input[type="checkbox"]');
+        for (const cb of allCbs) {
+          finalState.push({ id: cb.id, name: cb.name, checked: cb.checked });
+        }
+        return { initial: results, final: finalState };
+      });
+      log('terms', `체크박스 상태: ${JSON.stringify(checkResult.final)}`);
+    } else {
+      // fallback: iframeLocator 사용
+      const totalAgree = iframeLocator.locator('#totalAgree');
+      const isChecked = await totalAgree.isChecked().catch(() => false);
+      if (!isChecked) {
+        // label 클릭 시도 (JS 핸들러 트리거를 위해)
+        const label = iframeLocator.locator('label[for="totalAgree"]');
+        if (await label.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await label.click();
+        } else {
+          await totalAgree.click({ force: true });
+        }
+      }
+      log('terms', '전체 동의 체크 완료 (fallback)');
     }
     await humanDelay(500, 800);
 
@@ -333,6 +381,57 @@ async function requestGov24Auth(params) {
     // 알림창 확인
     if (dialogMessages.length > 0) {
       log('ALERT', `알림창 ${dialogMessages.length}개: ${dialogMessages.join(' | ')}`);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Step 9: 인증 요청 후 상태 진단
+    // ═══════════════════════════════════════════════════════════════
+    const postClickFrame = page.frames().find(f => f.url().includes('simpleCert'));
+    if (postClickFrame) {
+      const postClickState = await postClickFrame.evaluate(() => {
+        const state = {};
+
+        // 에러 메시지 요소 찾기
+        const errorEls = document.querySelectorAll('.error, .err, .err_msg, .alert, [class*="error"], [class*="alert"], [class*="warn"], [style*="color: red"], [style*="color:red"], .txt_error');
+        state.errorMessages = [];
+        for (const el of errorEls) {
+          const text = el.textContent?.trim();
+          if (text && el.offsetHeight > 0) {
+            state.errorMessages.push(text);
+          }
+        }
+
+        // 화면에 보이는 모든 텍스트 중 에러 관련 텍스트 찾기
+        const allText = document.body?.innerText || '';
+        const errorKeywords = ['오류', '실패', '잘못', '확인해', '다시', '입력해', '불일치', '에러'];
+        state.errorTexts = errorKeywords.filter(kw => allText.includes(kw));
+
+        // 현재 보이는 주요 요소들 상태
+        const reqBtn = document.getElementById('oacx-request-btn-pc');
+        state.requestBtnVisible = reqBtn ? (reqBtn.offsetHeight > 0) : false;
+        state.requestBtnText = reqBtn?.textContent?.trim() || '';
+        state.requestBtnDisabled = reqBtn?.disabled || false;
+
+        // 인증 대기 화면이 보이는지
+        const waitingEls = document.querySelectorAll('[class*="wait"], [class*="loading"], [class*="progress"], .layer_waiting');
+        state.waitingVisible = Array.from(waitingEls).some(el => el.offsetHeight > 0);
+
+        // 타이머/카운트다운이 보이는지
+        const timerEls = document.querySelectorAll('[class*="timer"], [class*="count"], [class*="time"]');
+        state.timerVisible = Array.from(timerEls).some(el => el.offsetHeight > 0);
+        state.timerText = Array.from(timerEls).map(el => el.textContent?.trim()).filter(Boolean);
+
+        // 체크박스 최종 상태
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+        state.checkboxes = Array.from(checkboxes).map(cb => ({ id: cb.id, checked: cb.checked }));
+
+        // 현재 페이지의 보이는 텍스트 (처음 500자)
+        state.visibleText = allText.substring(0, 500);
+
+        return state;
+      }).catch(err => ({ evalError: err.message }));
+
+      log('postClick', `인증 요청 후 상태: ${JSON.stringify(postClickState)}`);
     }
 
     log('success', '인증 요청 완료 - 앱에서 인증 대기');
