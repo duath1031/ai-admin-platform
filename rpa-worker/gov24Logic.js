@@ -225,7 +225,10 @@ async function requestGov24Auth(params) {
     await birthInput.fill(birthDate);
     await humanDelay(200, 400);
 
-    // 5-3. 통신사 선택
+    // 5-3. 통신사 선택 + 전화번호 앞자리 (evaluate로 처리 - hidden select 우회)
+    const phonePart1 = phoneNumber.substring(0, 3);
+    const phonePart2 = phoneNumber.substring(3);
+
     if (carrier) {
       log('input', `통신사 선택: ${carrier}`);
       const carrierValueMap = {
@@ -234,39 +237,40 @@ async function requestGov24Auth(params) {
       };
       const carrierValue = carrierValueMap[carrier.toUpperCase()] || carrier;
 
-      // visible select 중 통신사 옵션이 있는 것 찾기
-      const selects = iframeLocator.locator('select');
-      const selectCount = await selects.count();
-      for (let i = 0; i < selectCount; i++) {
-        const sel = selects.nth(i);
-        const html = await sel.innerHTML().catch(() => '');
-        if (html.includes('SKT') || html.includes('KT') || html.includes('LGU')) {
-          await sel.selectOption({ label: carrierValue });
-          log('input', `통신사 선택 완료: ${carrierValue}`);
-          break;
-        }
+      // iframe 내부에서 직접 evaluate로 select 조작 (hidden/visible 모두)
+      const frame = page.frames().find(f => f.url().includes('simpleCert'));
+      if (frame) {
+        const selectResult = await frame.evaluate(({ cv, pp }) => {
+          const results = [];
+          const selects = document.querySelectorAll('select');
+          for (const sel of selects) {
+            const opts = Array.from(sel.options).map(o => o.text || o.value);
+            // 통신사 select (SKT가 있는 것)
+            if (opts.some(o => o.includes('SKT'))) {
+              for (const opt of sel.options) {
+                if (opt.text.includes(cv) || opt.value.includes(cv)) {
+                  sel.value = opt.value;
+                  sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  results.push({ type: 'carrier', value: opt.value, success: true });
+                  break;
+                }
+              }
+            }
+            // 전화번호 앞자리 select (010이 있고 SKT가 없는 것)
+            if (opts.some(o => o === '010') && !opts.some(o => o.includes('SKT'))) {
+              sel.value = pp;
+              sel.dispatchEvent(new Event('change', { bubbles: true }));
+              results.push({ type: 'phone_prefix', value: pp, success: true });
+            }
+          }
+          return results;
+        }, { cv: carrierValue, pp: phonePart1 });
+        log('input', `Select 결과: ${JSON.stringify(selectResult)}`);
       }
     }
     await humanDelay(200, 400);
 
-    // 5-4. 전화번호 앞자리 선택 (010)
-    const phonePart1 = phoneNumber.substring(0, 3);
-    const phonePart2 = phoneNumber.substring(3);
-
     log('input', `전화번호 입력: ${phonePart1}-${phonePart2}`);
-
-    // 010 선택 - select 중 010 옵션이 있는 것
-    const selects2 = iframeLocator.locator('select');
-    const selCount2 = await selects2.count();
-    for (let i = 0; i < selCount2; i++) {
-      const sel = selects2.nth(i);
-      const html = await sel.innerHTML().catch(() => '');
-      if (html.includes('010') && html.includes('011') && !html.includes('SKT')) {
-        await sel.selectOption(phonePart1);
-        log('input', `전화번호 앞자리 선택: ${phonePart1}`);
-        break;
-      }
-    }
     await humanDelay(200, 400);
 
     // 5-5. 전화번호 뒷자리 입력
