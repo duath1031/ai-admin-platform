@@ -83,12 +83,14 @@ async function saveScreenshot(page, prefix = 'screenshot') {
 // 인증 제공자 이름 매핑
 // =============================================================================
 const AUTH_PROVIDER_MAP = {
-  pass:   ['PASS', 'pass', 'SAMSUNG PASS'],
-  kakao:  ['카카오', 'kakao', '카카오톡'],
+  pass:   ['통신사PASS', '통신사패스', 'PASS 휴대전화'],
+  kakao:  ['카카오톡', '카카오'],
   naver:  ['네이버', 'naver'],
   toss:   ['토스', 'toss'],
-  kb:     ['KB국민'],
-  nhbank: ['NH농협'],
+  samsung: ['삼성패스', 'SAMSUNG PASS'],
+  kb:     ['국민인증서', 'KB국민'],
+  nhbank: ['NH인증서', 'NH농협'],
+  kakaobank: ['카카오뱅크'],
 };
 
 // =============================================================================
