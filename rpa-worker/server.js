@@ -155,6 +155,105 @@ app.get('/test-browser', validateApiKey, async (req, res) => {
 });
 
 /**
+ * 정부24 페이지 DOM 디버그 (임시)
+ * GET /debug/gov24-dom
+ */
+app.get('/debug/gov24-dom', validateApiKey, async (req, res) => {
+  const { launchStealthBrowser, humanDelay } = require('./src/stealthBrowser');
+  let browser = null;
+
+  try {
+    const stealth = await launchStealthBrowser();
+    browser = stealth.browser;
+    const page = stealth.page;
+
+    // Step 1: 로그인 페이지 이동
+    await page.goto('https://www.gov.kr/nlogin', { waitUntil: 'networkidle', timeout: 30000 });
+    await humanDelay(2000, 3000);
+    const url1 = page.url();
+
+    // 비회원 탭 찾기
+    const nonMemberInfo = await page.evaluate(() => {
+      const all = document.querySelectorAll('a, button, li, div, span, label');
+      return Array.from(all).filter(e => (e.textContent || '').includes('비회원'))
+        .map(e => ({ tag: e.tagName, id: e.id, cls: e.className.substring(0, 100), text: e.textContent.trim().substring(0, 80), href: e.href || '' }));
+    });
+
+    // 비회원 탭 클릭
+    const nonMemberClicked = await page.evaluate(() => {
+      const els = document.querySelectorAll('a, button, li');
+      for (const el of els) {
+        if ((el.textContent || '').includes('비회원')) { el.click(); return true; }
+      }
+      return false;
+    });
+    await humanDelay(2000, 3000);
+    const url2 = page.url();
+
+    // 간편인증 찾기
+    const simpleAuthInfo = await page.evaluate(() => {
+      const all = document.querySelectorAll('a, button, li, div, span, label, img');
+      return Array.from(all).filter(e => (e.textContent || e.alt || e.title || '').includes('간편인증'))
+        .map(e => ({ tag: e.tagName, id: e.id, cls: e.className.substring(0, 100), text: (e.textContent || '').trim().substring(0, 80), href: e.href || '' }));
+    });
+
+    // 간편인증 클릭
+    const simpleAuthClicked = await page.evaluate(() => {
+      const els = document.querySelectorAll('a, button, li, div');
+      for (const el of els) {
+        if ((el.textContent || '').includes('간편인증') && (el.tagName === 'A' || el.tagName === 'BUTTON' || el.tagName === 'LI')) {
+          el.click(); return true;
+        }
+      }
+      return false;
+    });
+    await humanDelay(2000, 3000);
+    const url3 = page.url();
+
+    // iframe 확인
+    const iframes = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('iframe')).map(f => ({ id: f.id, name: f.name, src: f.src, cls: f.className }));
+    });
+
+    // PASS/카카오/네이버 관련 요소
+    const authMethods = await page.evaluate(() => {
+      const all = document.querySelectorAll('a, button, li, div, span, label, img, input');
+      const keywords = ['PASS', 'pass', '카카오', 'kakao', '네이버', 'naver', '토스', 'toss', '통신사'];
+      return Array.from(all).filter(e => {
+        const text = (e.textContent || e.alt || e.title || e.value || '').toLowerCase();
+        return keywords.some(k => text.includes(k.toLowerCase()));
+      }).map(e => ({ tag: e.tagName, id: e.id, cls: e.className.substring(0, 100), text: (e.textContent || e.alt || '').trim().substring(0, 80), type: e.type || '', href: e.href || '' }));
+    });
+
+    // 모든 input 필드
+    const inputs = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('input, select, textarea')).map(e => ({
+        tag: e.tagName, id: e.id, name: e.name, type: e.type, placeholder: e.placeholder,
+        cls: e.className.substring(0, 100), visible: e.offsetParent !== null,
+        parent: e.parentElement?.className?.substring(0, 60) || ''
+      }));
+    });
+
+    // body 일부
+    const bodySnippet = await page.evaluate(() => document.body.innerHTML.substring(0, 8000));
+
+    await browser.close();
+    browser = null;
+
+    res.json({
+      step1_url: url1, nonMemberInfo, nonMemberClicked,
+      step2_url: url2, simpleAuthInfo, simpleAuthClicked,
+      step3_url: url3, iframes, authMethods, inputs,
+      bodySnippet: bodySnippet.substring(0, 5000)
+    });
+
+  } catch (error) {
+    if (browser) await browser.close().catch(() => {});
+    res.status(500).json({ success: false, error: error.message, stack: error.stack });
+  }
+});
+
+/**
  * 작업 실행 (메인 엔드포인트)
  * POST /execute-task
  */
