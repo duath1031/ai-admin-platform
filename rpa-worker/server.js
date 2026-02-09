@@ -393,24 +393,36 @@ app.post('/gov24/auth/confirm', validateApiKey, async (req, res) => {
 });
 
 /**
- * 정부24 민원 제출
+ * 정부24 민원 제출 (Phase 25.5)
  * POST /gov24/submit
+ * Body: { cookies, serviceCode?, serviceUrl?, formData?, files?: [{fileName, fileBase64, mimeType}] }
  */
 app.post('/gov24/submit', validateApiKey, async (req, res) => {
-  const { cookies, serviceCode, formData } = req.body;
+  const { cookies, serviceCode, serviceUrl, formData, files } = req.body;
 
-  if (!serviceCode || !formData) {
+  if (!serviceCode && !serviceUrl) {
     return res.status(400).json({
       success: false,
-      error: 'serviceCode and formData are required',
+      error: 'serviceCode 또는 serviceUrl 중 하나는 필수입니다.',
     });
   }
+
+  if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: '인증 쿠키(cookies)가 필요합니다.',
+    });
+  }
+
+  console.log(`[Gov24 Submit] 요청: serviceCode=${serviceCode}, serviceUrl=${serviceUrl}, files=${(files || []).length}개`);
 
   try {
     const result = await submitGov24Service({
       cookies,
       serviceCode,
-      formData,
+      serviceUrl,
+      formData: formData || {},
+      files: files || [],
     });
 
     res.json(result);

@@ -987,12 +987,16 @@ async function confirmGov24Auth(params) {
 }
 
 // =============================================================================
-// 정부24 민원 제출
+// 정부24 민원 제출 (Phase 25.5: Real Submission)
 // =============================================================================
+const fs = require('fs');
+const path = require('path');
+
 async function submitGov24Service(params) {
-  const { cookies, serviceCode, formData } = params;
+  const { cookies, serviceCode, serviceUrl, formData = {}, files = [] } = params;
   const taskId = uuidv4();
   const logs = [];
+  const tmpFiles = []; // 정리할 임시 파일 목록
 
   let browser = null;
   let context = null;
@@ -1000,67 +1004,347 @@ async function submitGov24Service(params) {
   const log = (step, message, status = 'info') => {
     const entry = { step, message, status, timestamp: new Date().toISOString() };
     logs.push(entry);
-    console.log(`[${taskId}] [${step}] ${message}`);
+    console.log(`[Submit][${taskId}] [${step}] ${message}`);
   };
 
   try {
-    log('init', '민원 제출 시작');
+    log('init', `민원 제출 시작 (파일 ${files.length}개)`);
 
+    // =========================================================================
+    // Step 1: base64 파일 → /tmp 저장
+    // =========================================================================
+    const localFilePaths = [];
+    for (const file of files) {
+      const { fileName, fileBase64, mimeType } = file;
+      if (!fileBase64 || !fileName) continue;
+
+      const tmpDir = '/tmp/gov24-submit';
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+      const safeName = fileName.replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
+      const tmpPath = path.join(tmpDir, `${taskId}_${safeName}`);
+      fs.writeFileSync(tmpPath, Buffer.from(fileBase64, 'base64'));
+      localFilePaths.push(tmpPath);
+      tmpFiles.push(tmpPath);
+      log('file', `파일 저장: ${safeName} (${Math.round(fileBase64.length * 0.75 / 1024)}KB)`);
+    }
+
+    // =========================================================================
+    // Step 2: 브라우저 + 쿠키 설정
+    // =========================================================================
     const stealth = await launchStealthBrowser();
     browser = stealth.browser;
     context = stealth.context;
 
     if (cookies && cookies.length > 0) {
       await context.addCookies(cookies);
-      log('cookie', '세션 쿠키 설정 완료');
+      log('cookie', `세션 쿠키 ${cookies.length}개 설정`);
     }
 
     const page = stealth.page;
 
-    log('navigate', `민원 서비스 페이지 이동: ${serviceCode}`);
-    await page.goto(`https://www.gov.kr/portal/service/${serviceCode}`, {
-      waitUntil: 'networkidle',
-      timeout: TIMEOUTS.navigation,
+    // 다이얼로그(alert/confirm) 자동 처리
+    page.on('dialog', async (dialog) => {
+      log('dialog', `${dialog.type()}: ${dialog.message()}`);
+      await dialog.accept();
     });
 
-    await saveScreenshot(page, `${taskId}_service_page`);
+    // =========================================================================
+    // Step 3: 서비스 페이지 이동
+    // =========================================================================
+    const targetUrl = serviceUrl || `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${serviceCode}`;
+    log('navigate', `서비스 페이지 이동: ${targetUrl}`);
 
-    log('apply', '신청 버튼 클릭');
-    await humanDelay(500, 1200);
-
-    const applyBtn = page.locator('button:has-text("신청"), a:has-text("신청하기")').first();
-    await applyBtn.click();
+    await page.goto(targetUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: TIMEOUTS.navigation,
+    });
     await page.waitForLoadState('networkidle').catch(() => {});
-    await humanDelay(800, 1500);
+    await humanDelay(1000, 2000);
+    await saveScreenshot(page, `${taskId}_01_service_page`);
 
-    log('fill', '신청서 작성');
-    for (const [fieldName, value] of Object.entries(formData)) {
-      const field = page.locator(`input[name="${fieldName}"], textarea[name="${fieldName}"]`).first();
-      await field.fill(value).catch(() => {});
-      await humanDelay(200, 500);
+    // 현재 URL과 페이지 제목 기록
+    const currentUrl = page.url();
+    const pageTitle = await page.title();
+    log('navigate', `현재 페이지: ${pageTitle} (${currentUrl})`);
+
+    // =========================================================================
+    // Step 4: "신청" 버튼 찾기 및 클릭
+    // =========================================================================
+    log('apply', '신청 버튼 탐색');
+    const applySelectors = [
+      'a:has-text("신청하기")',
+      'button:has-text("신청하기")',
+      'a:has-text("인터넷신청")',
+      'button:has-text("인터넷신청")',
+      'a:has-text("온라인신청")',
+      'a:has-text("민원신청")',
+      'button:has-text("민원신청")',
+      'a.btn_apply',
+      'a.btn_blue:has-text("신청")',
+      'input[type="button"][value*="신청"]',
+    ];
+
+    let applyClicked = false;
+    for (const sel of applySelectors) {
+      const btn = page.locator(sel).first();
+      if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        log('apply', `신청 버튼 발견: ${sel}`);
+        await humanDelay(300, 800);
+        await btn.click();
+        applyClicked = true;
+        break;
+      }
     }
 
-    await saveScreenshot(page, `${taskId}_form_filled`);
+    if (!applyClicked) {
+      // 신청 버튼을 못 찾으면 현재 페이지가 이미 신청 페이지일 수 있음
+      log('apply', '신청 버튼 미발견 - 현재 페이지에서 직접 진행');
+    }
 
-    log('submit', '제출 버튼 클릭');
-    await humanDelay(800, 1500);
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await humanDelay(1000, 2000);
+    await saveScreenshot(page, `${taskId}_02_apply_page`);
 
-    const submitBtn = page.locator('button[type="submit"], button:has-text("제출"), button:has-text("신청")').first();
-    await submitBtn.click();
-    await humanDelay(2000, 3500);
+    // =========================================================================
+    // Step 5: 파일 업로드
+    // =========================================================================
+    if (localFilePaths.length > 0) {
+      log('upload', `파일 업로드 시도 (${localFilePaths.length}개)`);
 
-    await saveScreenshot(page, `${taskId}_submitted`);
+      // 방법 1: input[type="file"] 직접 찾기
+      const fileInputSelectors = [
+        'input[type="file"]',
+        'input[type="file"][name*="file"]',
+        'input[type="file"][name*="attach"]',
+        'input[type="file"][id*="file"]',
+        'input[type="file"][id*="attach"]',
+      ];
 
-    const receiptNumber = await page.locator('text=/접수번호.*?\\d+/').first().textContent().catch(() => null);
+      let fileUploaded = false;
+      for (const sel of fileInputSelectors) {
+        const fileInputs = page.locator(sel);
+        const count = await fileInputs.count();
 
-    log('success', `제출 완료: ${receiptNumber || '접수번호 확인 필요'}`);
+        if (count > 0) {
+          // hidden input이면 visible 제거 후 사용
+          const fileInput = fileInputs.first();
+          await fileInput.setInputFiles(localFilePaths);
+          log('upload', `파일 업로드 완료 (${sel})`);
+          fileUploaded = true;
+          break;
+        }
+      }
 
+      // 방법 2: "첨부" 버튼 클릭 → 파일 다이얼로그
+      if (!fileUploaded) {
+        const attachSelectors = [
+          'button:has-text("파일첨부")',
+          'button:has-text("파일 첨부")',
+          'a:has-text("파일첨부")',
+          'button:has-text("첨부파일")',
+          'button:has-text("첨부")',
+          'a:has-text("첨부")',
+          'input[type="button"][value*="첨부"]',
+          'label[for*="file"]',
+        ];
+
+        for (const sel of attachSelectors) {
+          const attachBtn = page.locator(sel).first();
+          if (await attachBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+            log('upload', `첨부 버튼 발견: ${sel}`);
+
+            // 파일 선택 다이얼로그 가로채기
+            const [fileChooser] = await Promise.all([
+              page.waitForEvent('filechooser', { timeout: 5000 }),
+              attachBtn.click(),
+            ]).catch(() => [null]);
+
+            if (fileChooser) {
+              await fileChooser.setFiles(localFilePaths);
+              log('upload', '파일 선택 완료 (filechooser)');
+              fileUploaded = true;
+            }
+            break;
+          }
+        }
+      }
+
+      if (!fileUploaded) {
+        log('upload', '파일 업로드 요소를 찾지 못함 - 수동 업로드 필요', 'warning');
+      }
+
+      await humanDelay(1000, 2000);
+      await saveScreenshot(page, `${taskId}_03_file_uploaded`);
+    }
+
+    // =========================================================================
+    // Step 6: 폼 필드 채우기
+    // =========================================================================
+    if (formData && Object.keys(formData).length > 0) {
+      log('fill', `폼 필드 ${Object.keys(formData).length}개 입력`);
+
+      for (const [fieldName, value] of Object.entries(formData)) {
+        // name, id, placeholder 등으로 필드 탐색
+        const fieldSelectors = [
+          `input[name="${fieldName}"]`,
+          `textarea[name="${fieldName}"]`,
+          `select[name="${fieldName}"]`,
+          `input[id="${fieldName}"]`,
+          `textarea[id="${fieldName}"]`,
+          `input[placeholder*="${fieldName}"]`,
+        ];
+
+        for (const sel of fieldSelectors) {
+          const field = page.locator(sel).first();
+          if (await field.isVisible({ timeout: 1000 }).catch(() => false)) {
+            const tagName = await field.evaluate(el => el.tagName).catch(() => '');
+            if (tagName === 'SELECT') {
+              await field.selectOption(value).catch(() => {});
+            } else {
+              await field.fill(value).catch(() => {});
+            }
+            log('fill', `필드 입력: ${fieldName} = ${value.substring(0, 20)}...`);
+            break;
+          }
+        }
+        await humanDelay(200, 500);
+      }
+
+      await saveScreenshot(page, `${taskId}_04_form_filled`);
+    }
+
+    // =========================================================================
+    // Step 7: 제출 버튼 클릭
+    // =========================================================================
+    log('submit', '제출 버튼 탐색');
+    const submitSelectors = [
+      'button:has-text("민원신청")',
+      'button:has-text("신청하기")',
+      'button:has-text("제출하기")',
+      'button:has-text("제출")',
+      'button[type="submit"]',
+      'a:has-text("민원신청")',
+      'input[type="submit"]',
+      'input[type="button"][value*="신청"]',
+      'input[type="button"][value*="제출"]',
+      'button:has-text("확인")',
+    ];
+
+    let submitClicked = false;
+    for (const sel of submitSelectors) {
+      const submitBtn = page.locator(sel).first();
+      if (await submitBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+        log('submit', `제출 버튼 발견: ${sel}`);
+        await humanDelay(500, 1000);
+        await submitBtn.click();
+        submitClicked = true;
+        break;
+      }
+    }
+
+    if (!submitClicked) {
+      await saveScreenshot(page, `${taskId}_05_no_submit_btn`);
+      log('submit', '제출 버튼을 찾지 못함', 'warning');
+      return {
+        success: false,
+        taskId,
+        phase: 'error',
+        error: '제출 버튼을 찾지 못했습니다. 페이지 구조를 확인해주세요.',
+        logs,
+        screenshots: [`${taskId}_05_no_submit_btn`],
+      };
+    }
+
+    // 페이지 로드 대기
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await humanDelay(2000, 4000);
+    await saveScreenshot(page, `${taskId}_06_after_submit`);
+
+    // =========================================================================
+    // Step 8: 접수번호 추출
+    // =========================================================================
+    log('receipt', '접수번호 추출 시도');
+
+    const pageText = await page.textContent('body').catch(() => '');
+    const finalUrl = page.url();
+    log('receipt', `제출 후 URL: ${finalUrl}`);
+
+    // 접수번호 패턴 여러 개 시도
+    const receiptPatterns = [
+      /접수번호\s*[:\s]*([A-Za-z0-9\-]+)/,
+      /신청번호\s*[:\s]*([A-Za-z0-9\-]+)/,
+      /처리번호\s*[:\s]*([A-Za-z0-9\-]+)/,
+      /접수\s*번호\s*[:\s]*(\d[\d\-]+\d)/,
+      /(\d{4,5}-\d{4}-\d{4,})/,             // 12345-2024-123456 형태
+      /(\d{10,})/,                            // 긴 숫자
+    ];
+
+    let receiptNumber = null;
+    for (const pattern of receiptPatterns) {
+      const match = pageText.match(pattern);
+      if (match) {
+        receiptNumber = match[1];
+        log('receipt', `접수번호 추출 성공: ${receiptNumber}`);
+        break;
+      }
+    }
+
+    // DOM 요소에서도 시도
+    if (!receiptNumber) {
+      const receiptSelectors = [
+        '.receipt-number',
+        '#receiptNo',
+        '[class*="receipt"]',
+        'td:has-text("접수번호") + td',
+        'th:has-text("접수번호") + td',
+        'span:has-text("접수번호")',
+      ];
+
+      for (const sel of receiptSelectors) {
+        const el = page.locator(sel).first();
+        const text = await el.textContent().catch(() => '');
+        if (text && /\d/.test(text)) {
+          receiptNumber = text.trim().replace(/접수번호\s*:?\s*/, '');
+          log('receipt', `DOM에서 접수번호 추출: ${receiptNumber}`);
+          break;
+        }
+      }
+    }
+
+    // 접수 완료 여부 확인
+    const isCompleted = pageText.includes('접수가 완료') ||
+      pageText.includes('신청이 완료') ||
+      pageText.includes('접수되었습니다') ||
+      pageText.includes('신청되었습니다') ||
+      pageText.includes('처리 완료');
+
+    await saveScreenshot(page, `${taskId}_07_final`);
+
+    if (receiptNumber || isCompleted) {
+      log('success', `민원 제출 완료 (접수번호: ${receiptNumber || '확인필요'})`);
+      return {
+        success: true,
+        taskId,
+        phase: 'submitted',
+        message: receiptNumber
+          ? `민원이 접수되었습니다. 접수번호: ${receiptNumber}`
+          : '민원이 접수되었습니다.',
+        receiptNumber,
+        finalUrl,
+        logs,
+      };
+    }
+
+    // 제출은 했지만 접수번호를 못 찾은 경우
+    log('warning', '제출 후 접수 확인 페이지를 찾지 못함', 'warning');
     return {
       success: true,
       taskId,
       phase: 'submitted',
-      message: '민원이 제출되었습니다.',
-      receiptNumber,
+      message: '제출 버튼을 클릭했습니다. 접수 결과를 정부24에서 확인해주세요.',
+      receiptNumber: null,
+      finalUrl,
       logs,
     };
 
@@ -1070,7 +1354,7 @@ async function submitGov24Service(params) {
     if (context) {
       const pages = context.pages();
       if (pages.length > 0) {
-        await saveScreenshot(pages[0], `${taskId}_submit_error`);
+        await saveScreenshot(pages[0], `${taskId}_error`);
       }
     }
 
@@ -1083,6 +1367,10 @@ async function submitGov24Service(params) {
     };
 
   } finally {
+    // 임시 파일 정리
+    for (const f of tmpFiles) {
+      try { fs.unlinkSync(f); } catch {}
+    }
     if (browser) await browser.close();
   }
 }
