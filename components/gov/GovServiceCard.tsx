@@ -272,56 +272,6 @@ export default function GovServiceCard({
   }, [stopPolling]);
 
   // =============================================================================
-  // Civil Service Submit
-  // =============================================================================
-
-  const handleCivilServiceSubmit = useCallback(async (sid: string) => {
-    try {
-      const response = await fetch("/api/rpa/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          site: "gov24",
-          taskType: "submit",
-          companyData: {
-            companyName: "테스트",
-            businessNumber: "000-00-00000",
-            ceoName: formData.name,
-          },
-          options: {
-            authSessionId: sid,
-          },
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        onSubmitSuccess?.(result.data?.applicationId || "SUCCESS");
-        setShowAuthModal(false);
-        resetAuthState();
-      } else {
-        onSubmitError?.(result.message || "민원 접수에 실패했습니다");
-        handleFallbackToManual();
-      }
-    } catch (error) {
-      console.error("[GovServiceCard] Submit error:", error);
-      onSubmitError?.("민원 접수 중 오류가 발생했습니다");
-      handleFallbackToManual();
-    }
-  }, [formData.name, onSubmitSuccess, onSubmitError]);
-
-  // =============================================================================
-  // Fallback Handler
-  // =============================================================================
-
-  const handleFallbackToManual = useCallback(() => {
-    setSubmitMode("manual");
-    setShowAuthModal(false);
-    stopPolling();
-  }, [stopPolling]);
-
-  // =============================================================================
   // Reset State
   // =============================================================================
 
@@ -338,6 +288,30 @@ export default function GovServiceCard({
       authMethod: "pass",
     });
     setFormErrors({});
+    stopPolling();
+  }, [stopPolling]);
+
+  // =============================================================================
+  // Civil Service Submit
+  // =============================================================================
+
+  const handleCivilServiceSubmit = useCallback(async (sid: string) => {
+    // 인증 완료 - 성공 콜백 호출
+    // 실제 민원 제출은 별도 페이지(/civil-service/new)에서 처리
+    onSubmitSuccess?.(sid);
+    setTimeout(() => {
+      setShowAuthModal(false);
+      resetAuthState();
+    }, 2000);
+  }, [onSubmitSuccess, resetAuthState]);
+
+  // =============================================================================
+  // Fallback Handler
+  // =============================================================================
+
+  const handleFallbackToManual = useCallback(() => {
+    setSubmitMode("manual");
+    setShowAuthModal(false);
     stopPolling();
   }, [stopPolling]);
 
