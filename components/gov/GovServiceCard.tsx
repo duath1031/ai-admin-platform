@@ -201,43 +201,9 @@ export default function GovServiceCard({
   // Auth Polling
   // =============================================================================
 
-  const startAuthPolling = useCallback((sid: string) => {
-    // Clear existing polling
-    if (pollingRef.current) clearInterval(pollingRef.current);
-
-    // Poll every 3 seconds
-    pollingRef.current = setInterval(async () => {
-      try {
-        const response = await fetch("/api/rpa/auth/confirm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: sid }),
-        });
-
-        const result = await response.json();
-
-        if (result.authenticated) {
-          // Auth success
-          setAuthStatus("authenticated");
-          stopPolling();
-
-          // Proceed with civil service submission
-          await handleCivilServiceSubmit(sid);
-        } else if (result.status === "expired") {
-          setAuthStatus("expired");
-          setErrorMessage("인증 시간이 만료되었습니다");
-          stopPolling();
-        } else if (result.status === "failed") {
-          setAuthStatus("failed");
-          setErrorMessage(result.message || "인증에 실패했습니다");
-          stopPolling();
-          handleFallbackToManual();
-        }
-        // If still waiting_auth, continue polling
-      } catch (error) {
-        console.error("[GovServiceCard] Polling error:", error);
-      }
-    }, 3000);
+  const startAuthPolling = useCallback((_sid: string) => {
+    // 자동 폴링 제거 - "앱에서 인증 완료했어요" 버튼으로 수동 확인
+    // Worker 호출 없이 카운트다운 타이머만 동작
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -299,11 +265,7 @@ export default function GovServiceCard({
     // 인증 완료 - 성공 콜백 호출
     // 실제 민원 제출은 별도 페이지(/civil-service/new)에서 처리
     onSubmitSuccess?.(sid);
-    setTimeout(() => {
-      setShowAuthModal(false);
-      resetAuthState();
-    }, 2000);
-  }, [onSubmitSuccess, resetAuthState]);
+  }, [onSubmitSuccess]);
 
   // =============================================================================
   // Fallback Handler
@@ -668,11 +630,18 @@ export default function GovServiceCard({
                     </p>
                   </div>
 
+                  {errorMessage && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+                      {errorMessage}
+                    </div>
+                  )}
+
                   <Button
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white"
                     onClick={async () => {
                       if (!sessionId) return;
                       setAuthStatus("requesting");
+                      setErrorMessage(null);
                       try {
                         const response = await fetch("/api/rpa/auth/confirm", {
                           method: "POST",
@@ -708,8 +677,8 @@ export default function GovServiceCard({
                 </div>
               ) : authStatus === "authenticated" ? (
                 /* Authenticated State */
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="text-center py-8 space-y-4">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
                     <svg
                       className="w-8 h-8 text-green-600"
                       fill="none"
@@ -724,10 +693,21 @@ export default function GovServiceCard({
                       />
                     </svg>
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    인증 완료
-                  </h3>
-                  <p className="text-gray-600 mt-1">민원 접수를 진행합니다...</p>
+                  <div>
+                    <h3 className="text-lg font-semibold text-green-700">
+                      인증이 완료되었습니다!
+                    </h3>
+                    <p className="text-gray-600 mt-1">정부24 로그인에 성공했습니다.</p>
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      setShowAuthModal(false);
+                      resetAuthState();
+                    }}
+                  >
+                    확인
+                  </Button>
                 </div>
               ) : null}
 
