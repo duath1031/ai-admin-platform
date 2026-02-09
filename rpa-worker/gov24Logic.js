@@ -797,7 +797,8 @@ async function requestGov24Auth(params) {
 // 정부24 간편인증 확인
 // =============================================================================
 async function confirmGov24Auth(params) {
-  const { taskId } = params;
+  const { taskId, timeout } = params;
+  const confirmTimeout = timeout || TIMEOUTS.authWait;
   const logs = [];
 
   let browser = null;
@@ -842,32 +843,79 @@ async function confirmGov24Auth(params) {
 
     log('check', '인증 완료 여부 확인');
 
-    // iframe 내부의 "인증 완료" 버튼 확인
-    const iframeLocator = page.frameLocator('iframe.modal-iframe');
-
     const startTime = Date.now();
     let isAuthenticated = false;
 
-    while (Date.now() - startTime < TIMEOUTS.authWait) {
-      // 메인 페이지에서 로그인 완료 확인
-      const logoutBtn = page.locator('text=로그아웃').first();
-      if (await logoutBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-        isAuthenticated = true;
-        break;
-      }
-
-      // iframe 내부 "인증 완료" 버튼 클릭 시도
+    while (Date.now() - startTime < confirmTimeout) {
+      // 1. 메인 페이지에서 로그인 완료 확인 (로그아웃 버튼 존재)
       try {
-        const confirmBtn = iframeLocator.locator('button:has-text("인증 완료")').first();
-        if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await confirmBtn.click();
+        const logoutBtn = page.locator('text=로그아웃').first();
+        if (await logoutBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+          log('success', '로그아웃 버튼 발견 - 인증 완료');
+          isAuthenticated = true;
+          break;
+        }
+      } catch {}
+
+      // 2. iframe에서 "인증 완료" 버튼 찾기 (button, a, 모든 요소)
+      try {
+        const frames = page.frames();
+        let confirmClicked = false;
+
+        for (const frame of frames) {
+          if (frame === page.mainFrame()) continue;
+
+          try {
+            // 모든 요소에서 "인증 완료" 텍스트 검색
+            const clicked = await frame.evaluate(() => {
+              const elements = document.querySelectorAll('button, a, input[type="button"], input[type="submit"], span, div');
+              for (const el of elements) {
+                const text = el.textContent?.trim();
+                if (text === '인증 완료' || text === '인증완료') {
+                  (el as HTMLElement).click();
+                  return { clicked: true, tag: el.tagName, text };
+                }
+              }
+              return { clicked: false };
+            });
+
+            if (clicked.clicked) {
+              log('click', `인증 완료 버튼 클릭 (${clicked.tag}: "${clicked.text}")`);
+              confirmClicked = true;
+              break;
+            }
+          } catch {}
+        }
+
+        if (confirmClicked) {
           await humanDelay(2000, 3000);
-          // 클릭 후 메인 페이지 로그인 확인
-          const loggedIn = await page.locator('text=로그아웃').isVisible({ timeout: 3000 }).catch(() => false);
+          // 클릭 후 로그인 완료 확인
+          const loggedIn = await page.locator('text=로그아웃').isVisible({ timeout: 5000 }).catch(() => false);
           if (loggedIn) {
+            log('success', '인증 완료 후 로그인 확인');
             isAuthenticated = true;
             break;
           }
+          // URL 변경 확인
+          const currentUrl = page.url();
+          log('check', `현재 URL: ${currentUrl}`);
+          if (currentUrl.includes('main') || currentUrl.includes('mypage') || !currentUrl.includes('login')) {
+            log('success', 'URL 변경으로 인증 완료 확인');
+            isAuthenticated = true;
+            break;
+          }
+        }
+      } catch (e) {
+        log('debug', `iframe 확인 중 오류: ${e.message}`);
+      }
+
+      // 3. 페이지 URL로 인증 완료 확인 (메인 페이지로 리다이렉트)
+      try {
+        const currentUrl = page.url();
+        if (currentUrl.includes('gov.kr') && !currentUrl.includes('login') && !currentUrl.includes('simpleCert')) {
+          log('success', `URL로 인증 완료 감지: ${currentUrl}`);
+          isAuthenticated = true;
+          break;
         }
       } catch {}
 
@@ -876,6 +924,17 @@ async function confirmGov24Auth(params) {
     }
 
     if (!isAuthenticated) {
+      // 짧은 타임아웃(프론트엔드 폴링)이면 세션 유지하고 waiting 반환
+      if (timeout && timeout < TIMEOUTS.authWait) {
+        log('waiting', '아직 인증 대기 중 - 세션 유지');
+        return {
+          success: false,
+          taskId,
+          phase: 'waiting',
+          message: '앱에서 인증을 완료해주세요.',
+          logs,
+        };
+      }
       throw new Error('인증 시간 초과 (3분)');
     }
 

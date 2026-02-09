@@ -84,7 +84,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '1.6.0-phase26-checkbox-fix',
+    version: '1.7.0-confirm-fix',
     features: ['gov24-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
     queue: 'in-memory',
   });
@@ -370,7 +370,7 @@ app.post('/gov24/auth/request', validateApiKey, async (req, res) => {
  * POST /gov24/auth/confirm
  */
 app.post('/gov24/auth/confirm', validateApiKey, async (req, res) => {
-  const { taskId } = req.body;
+  const { taskId, timeout } = req.body;
 
   if (!taskId) {
     return res.status(400).json({
@@ -380,7 +380,7 @@ app.post('/gov24/auth/confirm', validateApiKey, async (req, res) => {
   }
 
   try {
-    const result = await confirmGov24Auth({ taskId });
+    const result = await confirmGov24Auth({ taskId, timeout });
     res.json(result);
 
   } catch (error) {
