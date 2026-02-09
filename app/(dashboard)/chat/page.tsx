@@ -34,6 +34,8 @@ export default function ChatPage() {
     phoneNumber: '',
     carrier: '',
     authMethod: 'kakao' as 'kakao' | 'naver' | 'pass' | 'toss',
+    serviceUrl: '', // 정부24 민원 서비스 URL
+    serviceName: '', // 민원명
   });
 
   useEffect(() => {
@@ -264,6 +266,8 @@ export default function ChatPage() {
           mode: 'upload',
           fileBase64,
           fileName: uploadedFile.originalName,
+          serviceUrl: authData.serviceUrl || undefined,
+          serviceName: authData.serviceName || undefined,
           authData: {
             name: authData.name,
             rrn1: authData.rrn1,      // 주민번호 앞자리
@@ -652,6 +656,26 @@ export default function ChatPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
+              </div>
+
+              {/* 정부24 민원 서비스 URL */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">정부24 민원 서비스 URL *</label>
+                <input
+                  type="url"
+                  value={authData.serviceUrl}
+                  onChange={(e) => setAuthData({ ...authData, serviceUrl: e.target.value })}
+                  placeholder="https://www.gov.kr/mw/AA020InfoCappView.do?..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                />
+                <p className="mt-1 text-xs text-gray-500">정부24에서 해당 민원 페이지 URL을 복사해서 붙여넣으세요.</p>
+                <input
+                  type="text"
+                  value={authData.serviceName}
+                  onChange={(e) => setAuthData({ ...authData, serviceName: e.target.value })}
+                  placeholder="민원명 (예: 납세관리인 지정신고)"
+                  className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                />
               </div>
 
               {/* 인증 수단 선택 */}

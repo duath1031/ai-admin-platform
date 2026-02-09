@@ -76,7 +76,8 @@ async function handleRealRpaAuthRequest(
     fileName: string;
     fileBase64?: string;
   },
-  serviceName: string
+  serviceName: string,
+  serviceUrl: string = ''
 ) {
   console.log(`[Submit-V2] Real RPA: 비회원 간편인증 요청 시작 (${authData.authMethod})`);
 
@@ -100,7 +101,7 @@ async function handleRealRpaAuthRequest(
       serviceName: serviceName || '정부24 자동 접수',
       serviceCode: `rpa_${fileInfo.fileType}`,
       targetSite: 'gov24',
-      targetUrl: '',
+      targetUrl: serviceUrl || '',
       applicationData: JSON.stringify({ ...fileInfo, authMethod: authData.authMethod }),
       applicantName: authData.name,
       status: 'auth_required',
@@ -214,6 +215,28 @@ async function handleRealRpaConfirm(submissionId: string, userId: string) {
     },
   });
 
+  // serviceUrl 검증 - 없으면 제출 불가
+  const serviceUrl = submission.targetUrl || '';
+  if (!serviceUrl || !serviceUrl.includes('gov.kr')) {
+    console.log(`[Submit-V2] Real RPA: serviceUrl 없음 - 제출 불가`);
+    await prisma.civilServiceSubmission.update({
+      where: { id: submissionId },
+      data: {
+        status: 'failed',
+        resultData: JSON.stringify({
+          ...resultData,
+          error: '정부24 민원 서비스 URL이 지정되지 않았습니다.',
+          authCompleted: true,
+          cookies: confirmResult.cookies?.length || 0,
+        }),
+      },
+    });
+    return {
+      success: false,
+      error: '정부24 민원 서비스 URL이 지정되지 않았습니다. 로봇 자동접수 시 민원 URL을 입력해주세요.',
+    };
+  }
+
   // 파일 정보 준비
   const files = [];
   if (resultData.fileBase64 && resultData.fileName) {
@@ -225,11 +248,11 @@ async function handleRealRpaConfirm(submissionId: string, userId: string) {
   }
 
   // Worker /gov24/submit 호출 (실제 민원 제출)
-  console.log(`[Submit-V2] Real RPA: Worker /gov24/submit 호출 (파일 ${files.length}개)`);
+  console.log(`[Submit-V2] Real RPA: Worker /gov24/submit 호출 (파일 ${files.length}개, serviceUrl: ${serviceUrl})`);
   const submitResult = await callWorker('/gov24/submit', {
     cookies: confirmResult.cookies,
     serviceCode: submission.serviceCode || '',
-    serviceUrl: submission.targetUrl || '',
+    serviceUrl,
     formData: {},
     files,
   });
@@ -518,7 +541,8 @@ export async function POST(request: NextRequest) {
             session.user.id,
             input.authData,
             { filePath, fileType, fileName: input.fileName || '', fileBase64: input.fileBase64 || undefined },
-            input.serviceName || '정부24 자동 접수'
+            input.serviceName || '정부24 자동 접수',
+            input.serviceUrl || ''
           );
           return NextResponse.json(rpaResult);
         }
