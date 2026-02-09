@@ -22,6 +22,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { registerSession } from '@/lib/rpa/authSessionStore';
 
 // Railway RPA Worker URL
 const RPA_WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
@@ -68,6 +69,8 @@ const AuthRequestSchema = z.object({
       message: '올바른 통신사를 선택해주세요 (SKT, KT, LGU, SKT_MVNO, KT_MVNO, LGU_MVNO)',
     }),
   }),
+
+  authMethod: z.enum(['pass', 'kakao', 'naver', 'toss']).default('pass'),
 });
 
 type AuthRequestInput = z.infer<typeof AuthRequestSchema>;
@@ -186,26 +189,41 @@ export async function POST(request: NextRequest) {
     // birthDate (YYYYMMDD) → rrn1 (6자리) 변환
     const rrn1 = input.birthDate.substring(2); // YYMMDD
 
+    const AUTH_METHOD_LABELS: Record<string, string> = {
+      pass: '통신사 PASS',
+      kakao: '카카오톡',
+      naver: '네이버',
+      toss: '토스',
+    };
+
     const result = await callRpaWorker('/gov24/auth/request', {
       name: input.name,
       rrn1: rrn1,
-      rrn2: '1000000', // 비회원 인증에는 뒷자리 전체가 필요하지 않을 수 있음
+      rrn2: '1000000',
       phoneNumber: input.phoneNumber,
       carrier: input.carrier,
-      authMethod: 'pass', // 기본값: PASS 인증
+      authMethod: input.authMethod,
     });
+
+    console.log(`[Auth Request API] Auth method: ${AUTH_METHOD_LABELS[input.authMethod] || input.authMethod}`);
 
     const responseTime = Date.now() - startTime;
 
     if (result.success) {
+      // confirm API에서 사용할 세션 등록
+      if (result.taskId) {
+        registerSession(result.taskId);
+      }
+
       return NextResponse.json({
         success: true,
         sessionId: result.taskId,
+        authMethod: input.authMethod,
         status: result.phase === 'waiting' ? 'waiting_auth' : result.phase,
         message: result.message || '인증 요청이 전송되었습니다. 스마트폰 앱에서 인증을 완료해주세요.',
-        expiresIn: 300, // 5분
+        expiresIn: 300,
         nextStep: {
-          description: 'PASS/카카오톡에서 인증을 완료한 후 아래 API를 호출하세요',
+          description: `${AUTH_METHOD_LABELS[input.authMethod]}에서 인증을 완료한 후 아래 API를 호출하세요`,
           endpoint: '/api/rpa/auth/confirm',
           method: 'POST',
           body: {
@@ -290,6 +308,13 @@ export async function GET() {
         description: '통신사',
         enum: ['SKT', 'KT', 'LGU', 'SKT_MVNO', 'KT_MVNO', 'LGU_MVNO'],
         example: 'SKT',
+      },
+      authMethod: {
+        type: 'string',
+        required: false,
+        description: '인증 방식 (기본값: pass)',
+        enum: ['pass', 'kakao', 'naver', 'toss'],
+        example: 'pass',
       },
     },
     responseSchema: {

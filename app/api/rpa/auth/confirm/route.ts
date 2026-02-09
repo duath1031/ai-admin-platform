@@ -1,31 +1,60 @@
 /**
  * =============================================================================
- * [Patent Technology] Government24 Simple Authentication Confirm API
+ * Government24 Simple Authentication Confirm API
  * =============================================================================
  *
  * POST /api/rpa/auth/confirm
  *
- * 사용자가 카카오톡에서 인증을 완료한 후 세션 상태를 확인합니다.
- * 인증 완료 시 세션 쿠키를 반환합니다.
+ * 사용자가 앱에서 인증을 완료한 후 Railway RPA Worker를 통해 상태를 확인합니다.
  *
  * [보안 고려사항]
  * - 세션 쿠키는 민원 자동 접수에만 사용
  * - 세션은 5분 후 자동 만료
  *
- * @author AI Admin Platform
- * @version 1.0.0
- * =============================================================================
+ * @version 2.0.0 - Railway Worker 호출 방식으로 변경
  */
 
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import {
-  confirmGov24Auth,
-  getSession,
-  deleteSession,
-} from '@/lib/rpa/gov24Login';
+import { getSession, updateSessionStatus, deleteSession } from '@/lib/rpa/authSessionStore';
+
+// Railway RPA Worker URL
+const RPA_WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
+const RPA_WORKER_API_KEY = process.env.RPA_WORKER_API_KEY || '';
+
+// =============================================================================
+// Railway Worker 호출
+// =============================================================================
+
+interface RpaWorkerConfirmResponse {
+  success: boolean;
+  taskId?: string;
+  phase?: string;
+  message?: string;
+  error?: string;
+  cookies?: Array<{ domain: string; name: string; value: string }>;
+  logs?: Array<{ step: string; message: string; status: string }>;
+}
+
+async function callRpaWorkerConfirm(taskId: string): Promise<RpaWorkerConfirmResponse> {
+  const response = await fetch(`${RPA_WORKER_URL}/gov24/auth/confirm`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': RPA_WORKER_API_KEY,
+    },
+    body: JSON.stringify({ taskId }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`RPA Worker error: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
 
 // =============================================================================
 // Request Validation Schema
@@ -37,8 +66,6 @@ const AuthConfirmSchema = z.object({
     .uuid('올바른 세션 ID 형식이 아닙니다'),
 });
 
-type AuthConfirmInput = z.infer<typeof AuthConfirmSchema>;
-
 // =============================================================================
 // POST Handler
 // =============================================================================
@@ -47,12 +74,9 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // Request Body 파싱
     const body = await request.json();
 
-    // 입력 검증
     const validationResult = AuthConfirmSchema.safeParse(body);
-
     if (!validationResult.success) {
       return NextResponse.json(
         {
@@ -69,31 +93,18 @@ export async function POST(request: NextRequest) {
 
     const { sessionId } = validationResult.data;
 
-    console.log(`[Auth Confirm API] Checking auth status for session: ${sessionId}`);
+    console.log(`[Auth Confirm API] Checking session: ${sessionId}`);
 
-    // 세션 존재 여부 먼저 확인
+    // 세션 존재 확인
     const session = getSession(sessionId);
-
     if (!session) {
-      return NextResponse.json(
-        {
-          success: false,
-          sessionId,
-          authenticated: false,
-          status: 'not_found',
-          message: '세션을 찾을 수 없습니다. 인증 요청을 다시 시작해주세요.',
-          action: {
-            description: '인증 요청 API를 다시 호출해주세요',
-            endpoint: '/api/rpa/auth/request',
-            method: 'POST',
-          },
-        },
-        { status: 404 }
-      );
+      // 세션이 없어도 Railway Worker에 직접 확인 시도
+      // (서버 재시작 등으로 세션이 날아갔을 수 있음)
+      console.log(`[Auth Confirm API] Session not in local store, trying worker directly`);
     }
 
     // 세션 만료 체크
-    if (session.expiresAt < new Date()) {
+    if (session && session.expiresAt < new Date()) {
       deleteSession(sessionId);
       return NextResponse.json(
         {
@@ -102,98 +113,99 @@ export async function POST(request: NextRequest) {
           authenticated: false,
           status: 'expired',
           message: '세션이 만료되었습니다. 인증 요청을 다시 시작해주세요.',
-          action: {
-            description: '인증 요청 API를 다시 호출해주세요',
-            endpoint: '/api/rpa/auth/request',
-            method: 'POST',
-          },
         },
-        { status: 410 } // Gone
+        { status: 410 }
       );
     }
 
-    // 인증 확인 시도
-    const result = await confirmGov24Auth(sessionId);
-
+    // Railway Worker에 인증 확인 요청
+    const result = await callRpaWorkerConfirm(sessionId);
     const responseTime = Date.now() - startTime;
 
-    if (result.success && result.status === 'authenticated') {
+    if (result.success && result.phase === 'completed') {
       // 인증 성공
+      if (session) {
+        updateSessionStatus(sessionId, 'authenticated');
+      }
+
       return NextResponse.json({
         success: true,
-        sessionId: result.sessionId,
+        sessionId,
         authenticated: true,
-        status: result.status,
-        message: result.message,
+        status: 'authenticated',
+        message: result.message || '인증이 완료되었습니다.',
         cookies: result.cookies
           ? {
-              // 쿠키 정보 (민감 정보 마스킹)
               count: result.cookies.length,
               domains: [...new Set(result.cookies.map((c) => c.domain))],
-              // 실제 쿠키 값은 서버에서만 사용
             }
           : null,
         nextStep: {
           description: '이제 민원 자동 접수를 진행할 수 있습니다',
           endpoint: '/api/rpa/submit',
           method: 'POST',
-          additionalParams: {
-            authSessionId: result.sessionId,
-          },
+          additionalParams: { authSessionId: sessionId },
         },
         metadata: {
           confirmedAt: new Date().toISOString(),
           responseTime: `${responseTime}ms`,
         },
       });
-    } else if (result.status === 'waiting_auth') {
-      // 아직 인증 대기 중
+    } else if (result.phase === 'error' && result.error?.includes('시간 초과')) {
+      // 인증 시간 초과
+      if (session) {
+        updateSessionStatus(sessionId, 'expired');
+      }
+
       return NextResponse.json(
         {
           success: false,
-          sessionId: result.sessionId,
+          sessionId,
           authenticated: false,
-          status: result.status,
-          message: result.message,
-          remainingTime: Math.max(
-            0,
-            Math.floor((session.expiresAt.getTime() - Date.now()) / 1000)
-          ),
-          action: {
-            description: '카카오톡에서 인증을 완료한 후 다시 호출해주세요',
-            retryAfter: 3, // 3초 후 재시도 권장
-          },
-          metadata: {
-            checkedAt: new Date().toISOString(),
-            responseTime: `${responseTime}ms`,
-          },
+          status: 'expired',
+          message: '인증 시간이 만료되었습니다.',
         },
-        { status: 202 } // Accepted (아직 처리 중)
+        { status: 410 }
       );
-    } else {
+    } else if (result.phase === 'error') {
       // 인증 실패
       return NextResponse.json(
         {
           success: false,
-          sessionId: result.sessionId,
+          sessionId,
           authenticated: false,
-          status: result.status,
-          message: result.message,
+          status: 'failed',
+          message: result.error || '인증에 실패했습니다.',
           fallback: {
-            description: 'RPA 인증에 실패했습니다. 수동으로 정부24에서 인증해주세요.',
+            description: '수동으로 정부24에서 인증해주세요.',
             gov24Url: 'https://www.gov.kr/nlogin',
           },
+        },
+        { status: 400 }
+      );
+    } else {
+      // 아직 대기 중
+      const remainingTime = session
+        ? Math.max(0, Math.floor((session.expiresAt.getTime() - Date.now()) / 1000))
+        : 300;
+
+      return NextResponse.json(
+        {
+          success: false,
+          sessionId,
+          authenticated: false,
+          status: 'waiting_auth',
+          message: '앱에서 인증을 완료해주세요.',
+          remainingTime,
           action: {
-            description: '인증 요청을 다시 시작하거나 수동으로 진행해주세요',
-            endpoint: '/api/rpa/auth/request',
-            method: 'POST',
+            retryAfter: 3,
           },
           metadata: {
             checkedAt: new Date().toISOString(),
             responseTime: `${responseTime}ms`,
           },
         },
-        { status: 400 }
+        { status: 202 }
       );
     }
   } catch (error) {
@@ -205,10 +217,6 @@ export async function POST(request: NextRequest) {
         authenticated: false,
         error: error instanceof Error ? error.message : 'Internal server error',
         message: '인증 확인 처리 중 오류가 발생했습니다.',
-        fallback: {
-          description: '수동으로 정부24에서 인증해주세요.',
-          gov24Url: 'https://www.gov.kr/nlogin',
-        },
       },
       { status: 500 }
     );
@@ -226,45 +234,29 @@ export async function GET(request: NextRequest) {
 
     if (!sessionId) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing sessionId parameter',
-          message: 'sessionId 파라미터가 필요합니다.',
-        },
+        { success: false, message: 'sessionId 파라미터가 필요합니다.' },
         { status: 400 }
       );
     }
 
-    // UUID 형식 검증
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(sessionId)) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid sessionId format',
-          message: '올바른 세션 ID 형식이 아닙니다.',
-        },
+        { success: false, message: '올바른 세션 ID 형식이 아닙니다.' },
         { status: 400 }
       );
     }
 
     const session = getSession(sessionId);
-
     if (!session) {
       return NextResponse.json(
-        {
-          success: false,
-          sessionId,
-          status: 'not_found',
-          message: '세션을 찾을 수 없습니다.',
-        },
+        { success: false, sessionId, status: 'not_found', message: '세션을 찾을 수 없습니다.' },
         { status: 404 }
       );
     }
 
     const now = new Date();
     const isExpired = session.expiresAt < now;
-
     if (isExpired) {
       deleteSession(sessionId);
     }
@@ -279,16 +271,12 @@ export async function GET(request: NextRequest) {
       remainingTime: isExpired
         ? 0
         : Math.floor((session.expiresAt.getTime() - now.getTime()) / 1000),
-      hasCookies: !!(session.cookies && session.cookies.length > 0),
     });
   } catch (error) {
     console.error('[Auth Confirm API GET] Error:', error);
 
     return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Internal server error',
-      },
+      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
   }

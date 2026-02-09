@@ -40,12 +40,14 @@ export interface CivilServiceInfo {
 }
 
 export type AuthCarrier = "SKT" | "KT" | "LGU" | "SKT_MVNO" | "KT_MVNO" | "LGU_MVNO";
+export type AuthMethod = "pass" | "kakao" | "naver" | "toss";
 
 export interface AuthFormData {
   name: string;
   birthDate: string;
   phoneNumber: string;
   carrier: AuthCarrier;
+  authMethod: AuthMethod;
 }
 
 export type SubmitMode = "auto" | "manual";
@@ -69,6 +71,13 @@ const CARRIER_OPTIONS: { value: AuthCarrier; label: string }[] = [
   { value: "SKT_MVNO", label: "SKT 알뜰폰" },
   { value: "KT_MVNO", label: "KT 알뜰폰" },
   { value: "LGU_MVNO", label: "LG U+ 알뜰폰" },
+];
+
+const AUTH_METHOD_OPTIONS: { value: AuthMethod; label: string; appName: string; color: string }[] = [
+  { value: "pass", label: "통신사 PASS", appName: "PASS 앱", color: "bg-red-500" },
+  { value: "kakao", label: "카카오톡", appName: "카카오톡", color: "bg-yellow-400" },
+  { value: "naver", label: "네이버", appName: "네이버 앱", color: "bg-green-500" },
+  { value: "toss", label: "토스", appName: "토스 앱", color: "bg-blue-500" },
 ];
 
 // =============================================================================
@@ -97,8 +106,9 @@ export default function GovServiceCard({
     birthDate: "",
     phoneNumber: "",
     carrier: "SKT",
+    authMethod: "pass",
   });
-  const [formErrors, setFormErrors] = useState<Partial<AuthFormData>>({});
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof AuthFormData, string>>>({});
 
   // Polling refs
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -325,6 +335,7 @@ export default function GovServiceCard({
       birthDate: "",
       phoneNumber: "",
       carrier: "SKT",
+      authMethod: "pass",
     });
     setFormErrors({});
     stopPolling();
@@ -355,14 +366,19 @@ export default function GovServiceCard({
     }
   };
 
+  const getAuthMethodInfo = () => {
+    return AUTH_METHOD_OPTIONS.find((o) => o.value === formData.authMethod) || AUTH_METHOD_OPTIONS[0];
+  };
+
   const getStatusText = (status: AuthStatus): string => {
+    const method = getAuthMethodInfo();
     switch (status) {
       case "idle":
         return "대기 중";
       case "requesting":
         return "인증 요청 중...";
       case "waiting_auth":
-        return "카카오톡 인증 대기 중";
+        return `${method.appName} 인증 대기 중`;
       case "authenticated":
         return "인증 완료";
       case "failed":
@@ -534,6 +550,32 @@ export default function GovServiceCard({
                     </div>
                   )}
 
+                  {/* 인증 방식 선택 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      인증 방식
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {AUTH_METHOD_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() =>
+                            setFormData((prev) => ({ ...prev, authMethod: option.value }))
+                          }
+                          className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 text-sm font-medium transition-all ${
+                            formData.authMethod === option.value
+                              ? "border-blue-500 bg-blue-50 text-blue-700"
+                              : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                          }`}
+                        >
+                          <span className={`w-3 h-3 rounded-full ${option.color} flex-shrink-0`} />
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <Input
                     label="이름"
                     placeholder="홍길동"
@@ -638,10 +680,10 @@ export default function GovServiceCard({
 
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">
-                      카카오톡 인증 대기 중
+                      {getAuthMethodInfo().appName} 인증 대기 중
                     </h3>
                     <p className="text-gray-600 mt-1">
-                      카카오톡에서 인증을 완료해주세요
+                      {getAuthMethodInfo().appName}에서 인증을 완료해주세요
                     </p>
                   </div>
 
