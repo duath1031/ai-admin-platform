@@ -1037,8 +1037,19 @@ async function submitGov24Service(params) {
     context = stealth.context;
 
     if (cookies && cookies.length > 0) {
-      await context.addCookies(cookies);
-      log('cookie', `세션 쿠키 ${cookies.length}개 설정`);
+      // Playwright requires domain+path or url for each cookie
+      const safeCookies = cookies.map(c => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain || '.gov.kr',
+        path: c.path || '/',
+        ...(c.httpOnly !== undefined && { httpOnly: c.httpOnly }),
+        ...(c.secure !== undefined && { secure: c.secure }),
+        ...(c.sameSite && { sameSite: c.sameSite }),
+        ...(c.expires && { expires: c.expires }),
+      }));
+      await context.addCookies(safeCookies);
+      log('cookie', `세션 쿠키 ${safeCookies.length}개 설정`);
     }
 
     const page = stealth.page;
