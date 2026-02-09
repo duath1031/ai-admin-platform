@@ -40,6 +40,16 @@ const SITE_CONFIG: Record<string, { label: string; color: string; icon: string }
   minwon: { label: '민원24', color: 'bg-orange-100 text-orange-700', icon: '📋' },
 };
 
+interface Gov24Service {
+  code: string;
+  name: string;
+  category: string;
+  hasTemplate: boolean;
+  processingDays: string;
+  fee: string;
+  gov24Url: string | null;
+}
+
 export default function CivilServiceListPage() {
   const router = useRouter();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -55,10 +65,33 @@ export default function CivilServiceListPage() {
     processing: 0,
     failed: 0,
   });
+  // 정부24 서비스 카탈로그
+  const [gov24Services, setGov24Services] = useState<Gov24Service[]>([]);
+  const [gov24Categories, setGov24Categories] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [showCatalog, setShowCatalog] = useState(true);
 
   useEffect(() => {
     fetchSubmissions();
   }, [statusFilter, page]);
+
+  useEffect(() => {
+    // 서비스 카탈로그 로드
+    const loadCatalog = async () => {
+      try {
+        const [servicesRes, catRes] = await Promise.all([
+          fetch('/api/services'),
+          fetch('/api/services?categories=true'),
+        ]);
+        const servicesData = await servicesRes.json();
+        const catData = await catRes.json();
+        if (servicesData.success) setGov24Services(servicesData.services);
+        if (catData.success) setGov24Categories(catData.categories);
+      } catch {}
+    };
+    loadCatalog();
+  }, []);
 
   const fetchSubmissions = async () => {
     try {
@@ -203,6 +236,101 @@ export default function CivilServiceListPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 정부24 서비스 카탈로그 */}
+      <div className="card mb-6">
+        <button
+          onClick={() => setShowCatalog(!showCatalog)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🏛️</span>
+            <h2 className="text-lg font-bold text-gray-900">정부24 민원 서비스</h2>
+            <span className="text-sm text-gray-500">({gov24Services.length}개)</span>
+          </div>
+          <svg className={`w-5 h-5 text-gray-400 transition-transform ${showCatalog ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {showCatalog && (
+          <div className="mt-4">
+            {/* 카탈로그 필터 */}
+            <div className="flex flex-col md:flex-row gap-3 mb-4">
+              <input
+                type="text"
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                placeholder="민원명 검색..."
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="">전체 카테고리</option>
+                {gov24Categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 서비스 목록 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {gov24Services
+                .filter(svc => {
+                  const matchSearch = !catalogSearch || svc.name.includes(catalogSearch) || svc.category.includes(catalogSearch);
+                  const matchCategory = !selectedCategory || svc.category === selectedCategory;
+                  return matchSearch && matchCategory;
+                })
+                .map(svc => (
+                  <div key={svc.code} className="border border-gray-200 rounded-lg p-3 hover:border-blue-300 hover:shadow-sm transition-all">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-bold text-gray-900 truncate">{svc.name}</h3>
+                        <p className="text-xs text-gray-500 mt-0.5">{svc.category}</p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <span className="text-xs text-gray-400">{svc.processingDays}</span>
+                          <span className="text-xs text-gray-300">|</span>
+                          <span className="text-xs text-gray-400">{svc.fee}</span>
+                          {svc.hasTemplate && (
+                            <>
+                              <span className="text-xs text-gray-300">|</span>
+                              <span className="text-xs text-blue-600 font-medium">서식있음</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {svc.gov24Url && (
+                          <a
+                            href={svc.gov24Url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100 whitespace-nowrap"
+                          >
+                            정부24
+                          </a>
+                        )}
+                        <button
+                          onClick={() => router.push(`/chat?service=${encodeURIComponent(svc.name)}`)}
+                          className="px-2 py-1 text-xs bg-teal-50 text-teal-700 rounded hover:bg-teal-100 whitespace-nowrap"
+                        >
+                          자동접수
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            {gov24Services.length === 0 && (
+              <p className="text-center text-gray-400 py-8 text-sm">서비스 목록을 불러오는 중...</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filters & Search */}

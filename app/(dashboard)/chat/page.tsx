@@ -37,6 +37,9 @@ export default function ChatPage() {
     serviceUrl: '', // 정부24 민원 서비스 URL
     serviceName: '', // 민원명
   });
+  const [serviceSearch, setServiceSearch] = useState('');
+  const [serviceResults, setServiceResults] = useState<Array<{code: string; name: string; category: string; gov24Url: string | null; hasTemplate: boolean; fee: string}>>([]);
+  const [showServiceDropdown, setShowServiceDropdown] = useState(false);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -658,24 +661,77 @@ export default function ChatPage() {
                 </button>
               </div>
 
-              {/* 정부24 민원 서비스 URL */}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">정부24 민원 서비스 URL *</label>
-                <input
-                  type="url"
-                  value={authData.serviceUrl}
-                  onChange={(e) => setAuthData({ ...authData, serviceUrl: e.target.value })}
-                  placeholder="https://www.gov.kr/mw/AA020InfoCappView.do?..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
-                <p className="mt-1 text-xs text-gray-500">정부24에서 해당 민원 페이지 URL을 복사해서 붙여넣으세요.</p>
-                <input
-                  type="text"
-                  value={authData.serviceName}
-                  onChange={(e) => setAuthData({ ...authData, serviceName: e.target.value })}
-                  placeholder="민원명 (예: 납세관리인 지정신고)"
-                  className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
+              {/* 정부24 민원 서비스 선택 */}
+              <div className="mb-4 relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">신청할 민원 서비스 *</label>
+                {authData.serviceName ? (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-300 rounded-lg">
+                    <span className="text-sm font-medium text-teal-800 flex-1">{authData.serviceName}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setAuthData({ ...authData, serviceUrl: '', serviceName: '' }); setServiceSearch(''); }}
+                      className="text-teal-600 hover:text-teal-800 text-xs"
+                    >변경</button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={serviceSearch}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        setServiceSearch(val);
+                        if (val.length >= 1) {
+                          try {
+                            const res = await fetch(`/api/services?keyword=${encodeURIComponent(val)}`);
+                            const data = await res.json();
+                            if (data.success) {
+                              setServiceResults(data.services);
+                              setShowServiceDropdown(true);
+                            }
+                          } catch {}
+                        } else {
+                          setShowServiceDropdown(false);
+                        }
+                      }}
+                      onFocus={async () => {
+                        if (!serviceSearch) {
+                          try {
+                            const res = await fetch('/api/services');
+                            const data = await res.json();
+                            if (data.success) { setServiceResults(data.services); setShowServiceDropdown(true); }
+                          } catch {}
+                        }
+                      }}
+                      placeholder="민원명 검색 (예: 통신판매업, 음식점, 사업자등록)"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                    {showServiceDropdown && serviceResults.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {serviceResults.map((svc) => (
+                          <button
+                            key={svc.code}
+                            type="button"
+                            onClick={() => {
+                              setAuthData({
+                                ...authData,
+                                serviceUrl: svc.gov24Url || '',
+                                serviceName: svc.name,
+                              });
+                              setShowServiceDropdown(false);
+                              setServiceSearch('');
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-teal-50 border-b border-gray-100 last:border-0"
+                          >
+                            <div className="text-sm font-medium text-gray-900">{svc.name}</div>
+                            <div className="text-xs text-gray-500">{svc.category} | {svc.fee} | {svc.gov24Url ? '온라인 신청' : '방문 신청'}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+                <p className="mt-1 text-xs text-gray-500">정부24에서 신청할 민원을 검색하여 선택하세요.</p>
               </div>
 
               {/* 인증 수단 선택 */}

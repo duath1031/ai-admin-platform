@@ -63,9 +63,11 @@ export async function GET(request: NextRequest) {
       hasTemplate: service.document.hasTemplate,
       processingDays: service.info.processingDays,
       fee: service.info.fee,
-      gov24Url: service.gov24.directUrl || service.gov24.cappBizCD
-        ? `https://www.gov.kr/main?a=AA020InfoCappViewApp&CappBizCD=${service.gov24.cappBizCD}`
-        : null,
+      gov24Url: service.gov24.directUrl
+        ? service.gov24.directUrl
+        : service.gov24.cappBizCD
+          ? `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${service.gov24.cappBizCD}`
+          : null,
     }));
 
     return NextResponse.json({
