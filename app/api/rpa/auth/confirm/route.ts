@@ -39,21 +39,42 @@ interface RpaWorkerConfirmResponse {
 }
 
 async function callRpaWorkerConfirm(taskId: string): Promise<RpaWorkerConfirmResponse> {
-  const response = await fetch(`${RPA_WORKER_URL}/gov24/auth/confirm`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': RPA_WORKER_API_KEY,
-    },
-    body: JSON.stringify({ taskId }),
-  });
+  // Vercel 서버리스 함수 타임아웃(10초)에 맞춰 8초 제한
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`RPA Worker error: ${response.status} - ${errorText}`);
+  try {
+    const response = await fetch(`${RPA_WORKER_URL}/gov24/auth/confirm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': RPA_WORKER_API_KEY,
+      },
+      body: JSON.stringify({ taskId, timeout: 7000 }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`RPA Worker error: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      // 타임아웃 - 아직 인증 대기 중으로 처리
+      return {
+        success: false,
+        taskId,
+        phase: 'waiting',
+        message: '인증 확인 중입니다. 앱에서 인증을 완료해주세요.',
+      };
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 // =============================================================================
