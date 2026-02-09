@@ -857,7 +857,7 @@ async function confirmGov24Auth(params) {
         }
       } catch {}
 
-      // 2. iframe에서 "인증 완료" 버튼 찾기 (button, a, 모든 요소)
+      // 2. iframe에서 "인증 완료" 버튼 찾기 + Playwright 네이티브 클릭
       try {
         const frames = page.frames();
         let confirmClicked = false;
@@ -866,29 +866,40 @@ async function confirmGov24Auth(params) {
           if (frame === page.mainFrame()) continue;
 
           try {
-            // 모든 요소에서 "인증 완료" 텍스트 검색
-            const clicked = await frame.evaluate(() => {
-              const elements = document.querySelectorAll('button, a, input[type="button"], input[type="submit"], span, div');
-              for (const el of elements) {
-                const text = el.textContent?.trim();
-                if (text === '인증 완료' || text === '인증완료') {
-                  el.click();
-                  return { clicked: true, tag: el.tagName, text };
-                }
-              }
-              return { clicked: false };
-            });
-
-            if (clicked.clicked) {
-              log('click', `인증 완료 버튼 클릭 (${clicked.tag}: "${clicked.text}")`);
+            // Playwright 네이티브 locator로 클릭 (실제 마우스 이벤트 발생)
+            const confirmBtn = frame.locator('button:has-text("인증 완료"), a:has-text("인증 완료"), :text("인증 완료")').first();
+            if (await confirmBtn.isVisible({ timeout: 500 }).catch(() => false)) {
+              await confirmBtn.click({ timeout: 3000 });
+              log('click', '인증 완료 버튼 Playwright 클릭 성공');
               confirmClicked = true;
               break;
             }
-          } catch {}
+          } catch (e) {
+            // Playwright 클릭 실패 시 evaluate 폴백
+            try {
+              const clicked = await frame.evaluate(() => {
+                const elements = document.querySelectorAll('button, a, input[type="button"], input[type="submit"]');
+                for (const el of elements) {
+                  const text = el.textContent?.trim();
+                  if (text === '인증 완료' || text === '인증완료') {
+                    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                    return { clicked: true, tag: el.tagName, text };
+                  }
+                }
+                return { clicked: false };
+              });
+              if (clicked.clicked) {
+                log('click', `인증 완료 evaluate 클릭 (${clicked.tag}: "${clicked.text}")`);
+                confirmClicked = true;
+                break;
+              }
+            } catch {}
+          }
         }
 
         if (confirmClicked) {
-          await humanDelay(2000, 3000);
+          // 클릭 후 페이지 변화 대기
+          await page.waitForTimeout(3000);
           // 클릭 후 로그인 완료 확인
           const loggedIn = await page.locator('text=로그아웃').isVisible({ timeout: 5000 }).catch(() => false);
           if (loggedIn) {
