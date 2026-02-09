@@ -797,7 +797,7 @@ async function requestGov24Auth(params) {
 // 정부24 간편인증 확인
 // =============================================================================
 async function confirmGov24Auth(params) {
-  const { taskId, timeout } = params;
+  const { taskId, timeout, clickConfirm = false } = params;
   const confirmTimeout = timeout || TIMEOUTS.authWait;
   const logs = [];
 
@@ -879,37 +879,16 @@ async function confirmGov24Auth(params) {
         }
       } catch {}
 
-      // 3. iframe에서 "인증 완료" 버튼 클릭 시도
-      //    단, 너무 빨리 클릭하면 안 됨 - 최소 5초 간격으로 시도
-      const elapsed = Date.now() - startTime;
-      if (elapsed > 3000 || clickAttempts === 0) {
+      // 3. iframe에서 "인증 완료" 버튼 클릭 (clickConfirm=true일 때만)
+      //    유저가 앱에서 인증 완료 후 프론트엔드에서 "인증 완료" 클릭 시에만 실행
+      if (clickConfirm) {
         try {
           const frames = page.frames();
           for (const frame of frames) {
             if (frame === page.mainFrame()) continue;
             try {
-              // iframe 내용 확인 - "인증 완료" 버튼이 있는지
-              const btnInfo = await frame.evaluate(() => {
-                const btn = document.querySelector('button');
-                const allBtns = document.querySelectorAll('button, a');
-                const texts = [];
-                allBtns.forEach(el => {
-                  const t = el.textContent?.trim();
-                  if (t) texts.push(`${el.tagName}:${t.substring(0, 20)}`);
-                });
-                // "인증 완료" 버튼 찾기
-                for (const el of allBtns) {
-                  const text = el.textContent?.trim();
-                  if (text === '인증 완료' || text === '인증완료') {
-                    return { found: true, tag: el.tagName, allBtns: texts };
-                  }
-                }
-                return { found: false, allBtns: texts };
-              }).catch(() => ({ found: false, allBtns: [] }));
-
-              if (btnInfo.found) {
-                // Playwright 네이티브 클릭으로 시도
-                const confirmBtn = frame.locator('button:has-text("인증 완료")').first();
+              const confirmBtn = frame.locator('button:has-text("인증 완료")').first();
+              if (await confirmBtn.isVisible({ timeout: 500 }).catch(() => false)) {
                 await confirmBtn.click({ timeout: 3000 });
                 clickAttempts++;
                 log('click', `인증 완료 버튼 클릭 (시도 #${clickAttempts})`);
@@ -918,7 +897,7 @@ async function confirmGov24Auth(params) {
                 await page.waitForTimeout(3000);
 
                 // 로그인 완료 확인
-                const loggedIn = await page.locator('text=로그아웃').isVisible({ timeout: 3000 }).catch(() => false);
+                const loggedIn = await page.locator('text=로그아웃').isVisible({ timeout: 5000 }).catch(() => false);
                 if (loggedIn) {
                   log('success', '인증 완료 후 로그인 확인');
                   isAuthenticated = true;
@@ -932,11 +911,13 @@ async function confirmGov24Auth(params) {
                   break;
                 }
 
-                log('check', `클릭 후 URL: ${afterUrl} (아직 로그인 안됨)`);
-              } else if (btnInfo.allBtns.length > 0) {
-                log('diag', `iframe 버튼: ${btnInfo.allBtns.join(', ')}`);
+                log('check', `클릭 후 URL: ${afterUrl} (아직 로그인 안됨 - 다시 시도)`);
+              } else {
+                log('diag', 'iframe에 인증 완료 버튼 없음');
               }
-            } catch {}
+            } catch (e) {
+              log('debug', `iframe 클릭 오류: ${e.message}`);
+            }
           }
 
           if (isAuthenticated) break;

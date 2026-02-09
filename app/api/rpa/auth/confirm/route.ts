@@ -38,7 +38,7 @@ interface RpaWorkerConfirmResponse {
   logs?: Array<{ step: string; message: string; status: string }>;
 }
 
-async function callRpaWorkerConfirm(taskId: string): Promise<RpaWorkerConfirmResponse> {
+async function callRpaWorkerConfirm(taskId: string, clickConfirm: boolean = false): Promise<RpaWorkerConfirmResponse> {
   // Worker에 15초 타임아웃 전달 (인증 완료 클릭 + 결과 대기 시간)
   // Vercel 무료 플랜: 10초, Pro 플랜: 60초
   const controller = new AbortController();
@@ -51,7 +51,7 @@ async function callRpaWorkerConfirm(taskId: string): Promise<RpaWorkerConfirmRes
         'Content-Type': 'application/json',
         'x-api-key': RPA_WORKER_API_KEY,
       },
-      body: JSON.stringify({ taskId, timeout: 50000 }),
+      body: JSON.stringify({ taskId, timeout: 50000, clickConfirm }),
       signal: controller.signal,
     });
 
@@ -86,6 +86,7 @@ const AuthConfirmSchema = z.object({
   sessionId: z
     .string()
     .uuid('올바른 세션 ID 형식이 아닙니다'),
+  clickConfirm: z.boolean().optional().default(false),
 });
 
 // =============================================================================
@@ -113,9 +114,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { sessionId } = validationResult.data;
+    const { sessionId, clickConfirm } = validationResult.data;
 
-    console.log(`[Auth Confirm API] Checking session: ${sessionId}`);
+    console.log(`[Auth Confirm API] Checking session: ${sessionId}, clickConfirm: ${clickConfirm}`);
 
     // 세션 존재 확인
     const session = getSession(sessionId);
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Railway Worker에 인증 확인 요청
-    const result = await callRpaWorkerConfirm(sessionId);
+    const result = await callRpaWorkerConfirm(sessionId, clickConfirm);
     const responseTime = Date.now() - startTime;
 
     if (result.success && result.phase === 'completed') {

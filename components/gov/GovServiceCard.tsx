@@ -669,6 +669,35 @@ export default function GovServiceCard({
                   </div>
 
                   <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={async () => {
+                      if (!sessionId) return;
+                      setAuthStatus("requesting");
+                      try {
+                        const response = await fetch("/api/rpa/auth/confirm", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ sessionId, clickConfirm: true }),
+                        });
+                        const result = await response.json();
+                        if (result.authenticated) {
+                          setAuthStatus("authenticated");
+                          stopPolling();
+                          await handleCivilServiceSubmit(sessionId);
+                        } else {
+                          setAuthStatus("waiting_auth");
+                          setErrorMessage(result.message || "인증 확인에 실패했습니다. 다시 시도해주세요.");
+                        }
+                      } catch {
+                        setAuthStatus("waiting_auth");
+                        setErrorMessage("인증 확인 중 오류가 발생했습니다.");
+                      }
+                    }}
+                  >
+                    앱에서 인증 완료했어요
+                  </Button>
+
+                  <Button
                     variant="outline"
                     onClick={() => {
                       handleFallbackToManual();

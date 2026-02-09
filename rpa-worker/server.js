@@ -370,7 +370,7 @@ app.post('/gov24/auth/request', validateApiKey, async (req, res) => {
  * POST /gov24/auth/confirm
  */
 app.post('/gov24/auth/confirm', validateApiKey, async (req, res) => {
-  const { taskId, timeout } = req.body;
+  const { taskId, timeout, clickConfirm } = req.body;
 
   if (!taskId) {
     return res.status(400).json({
@@ -380,7 +380,7 @@ app.post('/gov24/auth/confirm', validateApiKey, async (req, res) => {
   }
 
   try {
-    const result = await confirmGov24Auth({ taskId, timeout });
+    const result = await confirmGov24Auth({ taskId, timeout, clickConfirm });
     res.json(result);
 
   } catch (error) {
