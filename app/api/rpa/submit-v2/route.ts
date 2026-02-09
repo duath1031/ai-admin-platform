@@ -169,10 +169,13 @@ async function handleRealRpaConfirm(submissionId: string, userId: string) {
   const resultData = JSON.parse(submission.resultData || '{}');
   const workerTaskId = resultData.workerTaskId;
 
-  // Worker에 인증 확인 요청
+  // Worker에 인증 확인 요청 (clickConfirm: true로 "인증 완료" 버튼 클릭)
+  // Vercel maxDuration 60초 → Worker 타임아웃 50초
   console.log(`[Submit-V2] Real RPA: Worker 인증 확인 호출 (taskId: ${workerTaskId})`);
   const confirmResult = await callWorker('/gov24/auth/confirm', {
     taskId: workerTaskId,
+    clickConfirm: true,
+    timeout: 50000,
   });
 
   if (!confirmResult.success) {
