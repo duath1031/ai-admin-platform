@@ -843,8 +843,20 @@ async function confirmGov24Auth(params) {
 
     log('check', '인증 완료 여부 확인');
 
+    // 다이얼로그 자동 처리 (alert/confirm 팝업)
+    page.on('dialog', async (dialog) => {
+      log('dialog', `팝업 감지: ${dialog.message()}`);
+      await dialog.accept();
+    });
+
     const startTime = Date.now();
     let isAuthenticated = false;
+    let clickAttempts = 0;
+
+    // 현재 페이지 상태 진단
+    const currentUrl = page.url();
+    const frameCount = page.frames().length;
+    log('diag', `현재 URL: ${currentUrl}, 프레임 수: ${frameCount}`);
 
     while (Date.now() - startTime < confirmTimeout) {
       // 1. 메인 페이지에서 로그인 완료 확인 (로그아웃 버튼 존재)
@@ -857,78 +869,81 @@ async function confirmGov24Auth(params) {
         }
       } catch {}
 
-      // 2. iframe에서 "인증 완료" 버튼 찾기 + Playwright 네이티브 클릭
+      // 2. URL 변경 확인 (로그인 페이지에서 벗어났는지)
       try {
-        const frames = page.frames();
-        let confirmClicked = false;
-
-        for (const frame of frames) {
-          if (frame === page.mainFrame()) continue;
-
-          try {
-            // Playwright 네이티브 locator로 클릭 (실제 마우스 이벤트 발생)
-            const confirmBtn = frame.locator('button:has-text("인증 완료"), a:has-text("인증 완료"), :text("인증 완료")').first();
-            if (await confirmBtn.isVisible({ timeout: 500 }).catch(() => false)) {
-              await confirmBtn.click({ timeout: 3000 });
-              log('click', '인증 완료 버튼 Playwright 클릭 성공');
-              confirmClicked = true;
-              break;
-            }
-          } catch (e) {
-            // Playwright 클릭 실패 시 evaluate 폴백
-            try {
-              const clicked = await frame.evaluate(() => {
-                const elements = document.querySelectorAll('button, a, input[type="button"], input[type="submit"]');
-                for (const el of elements) {
-                  const text = el.textContent?.trim();
-                  if (text === '인증 완료' || text === '인증완료') {
-                    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                    return { clicked: true, tag: el.tagName, text };
-                  }
-                }
-                return { clicked: false };
-              });
-              if (clicked.clicked) {
-                log('click', `인증 완료 evaluate 클릭 (${clicked.tag}: "${clicked.text}")`);
-                confirmClicked = true;
-                break;
-              }
-            } catch {}
-          }
-        }
-
-        if (confirmClicked) {
-          // 클릭 후 페이지 변화 대기
-          await page.waitForTimeout(3000);
-          // 클릭 후 로그인 완료 확인
-          const loggedIn = await page.locator('text=로그아웃').isVisible({ timeout: 5000 }).catch(() => false);
-          if (loggedIn) {
-            log('success', '인증 완료 후 로그인 확인');
-            isAuthenticated = true;
-            break;
-          }
-          // URL 변경 확인
-          const currentUrl = page.url();
-          log('check', `현재 URL: ${currentUrl}`);
-          if (currentUrl.includes('main') || currentUrl.includes('mypage') || !currentUrl.includes('login')) {
-            log('success', 'URL 변경으로 인증 완료 확인');
-            isAuthenticated = true;
-            break;
-          }
-        }
-      } catch (e) {
-        log('debug', `iframe 확인 중 오류: ${e.message}`);
-      }
-
-      // 3. 페이지 URL로 인증 완료 확인 (메인 페이지로 리다이렉트)
-      try {
-        const currentUrl = page.url();
-        if (currentUrl.includes('gov.kr') && !currentUrl.includes('login') && !currentUrl.includes('simpleCert')) {
-          log('success', `URL로 인증 완료 감지: ${currentUrl}`);
+        const nowUrl = page.url();
+        if (nowUrl.includes('gov.kr') && !nowUrl.includes('login') && !nowUrl.includes('simpleCert')) {
+          log('success', `URL 변경으로 인증 완료 감지: ${nowUrl}`);
           isAuthenticated = true;
           break;
         }
       } catch {}
+
+      // 3. iframe에서 "인증 완료" 버튼 클릭 시도
+      //    단, 너무 빨리 클릭하면 안 됨 - 최소 5초 간격으로 시도
+      const elapsed = Date.now() - startTime;
+      if (elapsed > 3000 || clickAttempts === 0) {
+        try {
+          const frames = page.frames();
+          for (const frame of frames) {
+            if (frame === page.mainFrame()) continue;
+            try {
+              // iframe 내용 확인 - "인증 완료" 버튼이 있는지
+              const btnInfo = await frame.evaluate(() => {
+                const btn = document.querySelector('button');
+                const allBtns = document.querySelectorAll('button, a');
+                const texts = [];
+                allBtns.forEach(el => {
+                  const t = el.textContent?.trim();
+                  if (t) texts.push(`${el.tagName}:${t.substring(0, 20)}`);
+                });
+                // "인증 완료" 버튼 찾기
+                for (const el of allBtns) {
+                  const text = el.textContent?.trim();
+                  if (text === '인증 완료' || text === '인증완료') {
+                    return { found: true, tag: el.tagName, allBtns: texts };
+                  }
+                }
+                return { found: false, allBtns: texts };
+              }).catch(() => ({ found: false, allBtns: [] }));
+
+              if (btnInfo.found) {
+                // Playwright 네이티브 클릭으로 시도
+                const confirmBtn = frame.locator('button:has-text("인증 완료")').first();
+                await confirmBtn.click({ timeout: 3000 });
+                clickAttempts++;
+                log('click', `인증 완료 버튼 클릭 (시도 #${clickAttempts})`);
+
+                // 클릭 후 페이지 변화 대기
+                await page.waitForTimeout(3000);
+
+                // 로그인 완료 확인
+                const loggedIn = await page.locator('text=로그아웃').isVisible({ timeout: 3000 }).catch(() => false);
+                if (loggedIn) {
+                  log('success', '인증 완료 후 로그인 확인');
+                  isAuthenticated = true;
+                  break;
+                }
+
+                const afterUrl = page.url();
+                if (!afterUrl.includes('login')) {
+                  log('success', `URL 변경 확인: ${afterUrl}`);
+                  isAuthenticated = true;
+                  break;
+                }
+
+                log('check', `클릭 후 URL: ${afterUrl} (아직 로그인 안됨)`);
+              } else if (btnInfo.allBtns.length > 0) {
+                log('diag', `iframe 버튼: ${btnInfo.allBtns.join(', ')}`);
+              }
+            } catch {}
+          }
+
+          if (isAuthenticated) break;
+        } catch (e) {
+          log('debug', `iframe 확인 오류: ${e.message}`);
+        }
+      }
 
       log('polling', '인증 대기 중...');
       await page.waitForTimeout(TIMEOUTS.polling);
