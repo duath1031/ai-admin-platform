@@ -872,7 +872,7 @@ async function confirmGov24Auth(params) {
               for (const el of elements) {
                 const text = el.textContent?.trim();
                 if (text === '인증 완료' || text === '인증완료') {
-                  (el as HTMLElement).click();
+                  el.click();
                   return { clicked: true, tag: el.tagName, text };
                 }
               }
