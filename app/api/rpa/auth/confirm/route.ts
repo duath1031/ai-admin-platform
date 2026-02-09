@@ -39,10 +39,11 @@ interface RpaWorkerConfirmResponse {
 }
 
 async function callRpaWorkerConfirm(taskId: string, clickConfirm: boolean = false): Promise<RpaWorkerConfirmResponse> {
-  // Vercel 무료 플랜: 10초 제한 → Worker 타임아웃 8초, AbortController 9초
-  const workerTimeout = 8000;
+  // Vercel maxDuration: 60초 (vercel.json 설정)
+  // Worker 타임아웃 50초, AbortController 55초
+  const workerTimeout = 50000;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 9000);
+  const timeoutId = setTimeout(() => controller.abort(), 55000);
 
   try {
     const response = await fetch(`${RPA_WORKER_URL}/gov24/auth/confirm`, {
