@@ -344,7 +344,8 @@ export default function ChatPage() {
       };
 
       let pollCount = 0;
-      const maxPolls = 60; // 최대 3분 (3초 간격)
+      let unknownCount = 0;
+      const maxPolls = 100; // 최대 5분 (3초 간격)
       const pollInterval = setInterval(async () => {
         pollCount++;
         if (pollCount > maxPolls) {
@@ -379,7 +380,14 @@ export default function ChatPage() {
           } else if (poll.state === 'failed') {
             clearInterval(pollInterval);
             setDoc24State({ status: 'error', message: poll.error || '작업이 실패했습니다.' });
+          } else if (poll.state === 'unknown') {
+            unknownCount++;
+            if (unknownCount >= 3) {
+              clearInterval(pollInterval);
+              setDoc24State({ status: 'error', message: '작업이 유실되었습니다. Worker가 재시작되었을 수 있습니다. 다시 시도해주세요.' });
+            }
           } else {
+            unknownCount = 0;
             // 진행 중 - 프로그레스 메시지 업데이트
             const progress = poll.progress || 0;
             const closest = Object.keys(progressMessages)
