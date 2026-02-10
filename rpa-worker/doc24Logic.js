@@ -617,87 +617,97 @@ async function fillContent(page, title, content, log) {
     else log('content', '제목 필드를 찾지 못함', 'warning');
   }
 
-  // 내용 입력 (textarea 또는 에디터)
+  // 내용 입력 (에디터)
   if (content) {
     log('content', `본문 입력: ${content.substring(0, 50)}...`);
-
-    // 방법 1: textarea 직접 입력
-    const textareaSelectors = [
-      '#content',
-      'textarea[name="content"]',
-      '#docContent',
-      'textarea[name="docContent"]',
-      '#body',
-      'textarea[name="body"]',
-      'textarea[name="docCn"]',
-      '.content_area textarea',
-    ];
-
     let contentFilled = false;
-    for (const sel of textareaSelectors) {
-      const textarea = page.locator(sel).first();
-      if (await textarea.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await textarea.click();
-        await humanDelay(200, 400);
-        await textarea.fill(content);
-        log('content', `본문 입력 완료 (textarea): ${sel}`);
+
+    // 방법 1: iframe 에디터 (문서24는 iframe WYSIWYG 에디터 사용)
+    const allIframes = page.locator('iframe');
+    const iframeCount = await allIframes.count();
+    log('content', `iframe ${iframeCount}개 발견`);
+
+    for (let i = 0; i < iframeCount; i++) {
+      const iframe = allIframes.nth(i);
+      const iframeId = await iframe.getAttribute('id').catch(() => '');
+      const iframeName = await iframe.getAttribute('name').catch(() => '');
+      const iframeSrc = await iframe.getAttribute('src').catch(() => '');
+      const iframeClass = await iframe.getAttribute('class').catch(() => '');
+      log('content', `iframe[${i}]: id="${iframeId}" name="${iframeName}" class="${iframeClass}" src="${(iframeSrc || '').substring(0, 80)}"`);
+
+      // iframe 내부에 contenteditable body가 있는지 확인
+      const filled = await page.evaluate((idx) => {
+        const iframes = document.querySelectorAll('iframe');
+        const iframe = iframes[idx];
+        if (!iframe || !iframe.contentDocument) return false;
+        const body = iframe.contentDocument.body;
+        if (!body) return false;
+        // contenteditable이거나 designMode가 on인 경우
+        if (body.contentEditable === 'true' || body.isContentEditable ||
+            iframe.contentDocument.designMode === 'on') {
+          return true;
+        }
+        return false;
+      }, i).catch(() => false);
+
+      if (filled) {
+        // 이 iframe이 에디터임 - innerHTML로 내용 삽입
+        await page.evaluate((args) => {
+          const iframes = document.querySelectorAll('iframe');
+          const iframe = iframes[args.idx];
+          if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+            iframe.contentDocument.body.innerHTML = `<p>${args.content}</p>`;
+          }
+        }, { idx: i, content }).catch(() => {});
+        log('content', `본문 입력 완료 (iframe[${i}] innerHTML)`);
         contentFilled = true;
         break;
       }
     }
 
-    // 방법 2: contenteditable div
+    // 방법 2: textarea (iframe이 아닌 경우)
     if (!contentFilled) {
-      const editableDivs = page.locator('[contenteditable="true"]');
-      const editableCount = await editableDivs.count();
-      if (editableCount > 0) {
-        const editable = editableDivs.first();
-        await editable.click();
-        await humanDelay(200, 400);
-        await editable.fill(content);
-        log('content', '본문 입력 완료 (contenteditable)');
-        contentFilled = true;
-      }
-    }
-
-    // 방법 3: iframe 에디터
-    if (!contentFilled) {
-      const iframeSelectors = [
-        'iframe.editor',
-        'iframe#editorFrame',
-        'iframe[name="editor"]',
-        'iframe[id*="editor"]',
-        'iframe[class*="editor"]',
-        'iframe[src*="editor"]',
+      const textareaSelectors = [
+        'textarea[name="docCn"]',
+        'textarea[name="content"]',
+        'textarea[name="docContent"]',
+        'textarea#docContent',
+        'textarea#docCn',
+        '.content_area textarea',
       ];
-
-      for (const sel of iframeSelectors) {
-        const iframe = page.locator(sel).first();
-        if (await iframe.isVisible({ timeout: 1500 }).catch(() => false)) {
-          const frame = page.frameLocator(sel);
-          await frame.locator('body').click().catch(() => {});
-          await humanDelay(200, 400);
-
-          // iframe 내 body에 HTML 삽입
-          await page.evaluate((args) => {
-            const iframeEl = document.querySelector(args.sel);
-            if (iframeEl && iframeEl.contentDocument) {
-              iframeEl.contentDocument.body.innerHTML = `<p>${args.content}</p>`;
-            }
-          }, { sel, content }).catch(() => {});
-
-          // fallback: type으로 시도
-          await frame.locator('body').fill(content).catch(() => {});
-
-          log('content', `본문 입력 완료 (iframe): ${sel}`);
+      for (const sel of textareaSelectors) {
+        const textarea = page.locator(sel).first();
+        if (await textarea.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await textarea.click({ force: true });
+          await humanDelay(200, 300);
+          await textarea.fill(content).catch(() => {});
+          log('content', `본문 입력 완료 (textarea): ${sel}`);
           contentFilled = true;
           break;
         }
       }
     }
 
+    // 방법 3: contenteditable div (메인 페이지 내)
     if (!contentFilled) {
-      log('content', '본문 입력 필드를 찾지 못함', 'warning');
+      const editableDivs = page.locator('[contenteditable="true"]');
+      const editableCount = await editableDivs.count();
+      if (editableCount > 0) {
+        const editable = editableDivs.first();
+        await editable.click({ force: true }).catch(() => {});
+        await humanDelay(200, 300);
+        // fill 대신 innerHTML로 삽입
+        await page.evaluate((c) => {
+          const el = document.querySelector('[contenteditable="true"]');
+          if (el) el.innerHTML = `<p>${c}</p>`;
+        }, content).catch(() => {});
+        log('content', '본문 입력 완료 (contenteditable)');
+        contentFilled = true;
+      }
+    }
+
+    if (!contentFilled) {
+      log('content', '본문 입력 필드를 찾지 못함 - 본문 없이 진행', 'warning');
     }
   }
 
