@@ -437,6 +437,75 @@ app.post('/gov24/submit', validateApiKey, async (req, res) => {
 });
 
 /**
+ * URL 직접 테스트 (디버그용)
+ * POST /gov24/test-url
+ * Body: { url, cookies }
+ * 쿠키 세팅 후 URL 접속 → 페이지 제목, URL, 주요 요소 반환
+ */
+app.post('/gov24/test-url', validateApiKey, async (req, res) => {
+  const { url, cookies } = req.body;
+  if (!url) return res.status(400).json({ success: false, error: 'url 필수' });
+
+  const { launchStealthBrowser, saveScreenshot: stealthScreenshot } = require('./src/stealthBrowser');
+  let browser = null;
+  try {
+    const stealth = await launchStealthBrowser();
+    browser = stealth.browser;
+    const context = stealth.context;
+    const page = stealth.page;
+
+    if (cookies && cookies.length > 0) {
+      const safeCookies = cookies.map(c => ({
+        name: c.name, value: c.value,
+        domain: c.domain || '.gov.kr', path: c.path || '/',
+        ...(c.httpOnly !== undefined && { httpOnly: c.httpOnly }),
+        ...(c.secure !== undefined && { secure: c.secure }),
+      }));
+      await context.addCookies(safeCookies);
+    }
+
+    page.on('dialog', async (dialog) => { await dialog.accept(); });
+
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await new Promise(r => setTimeout(r, 2000));
+
+    const title = await page.title();
+    const finalUrl = page.url();
+    const bodyText = await page.textContent('body').catch(() => '');
+    const screenshot = `test_${Date.now()}`;
+    await stealthScreenshot(page, screenshot);
+
+    // 주요 요소 수집
+    const elements = await page.evaluate(() => {
+      const els = [];
+      document.querySelectorAll('input, select, textarea, button, a, [onclick]').forEach(el => {
+        const text = (el.textContent || el.value || '').trim().substring(0, 50);
+        const tag = el.tagName;
+        const type = el.type || '';
+        const name = el.name || '';
+        const id = el.id || '';
+        const visible = el.offsetParent !== null;
+        if (text || name || id) {
+          els.push({ tag, type, name, id, text: text.substring(0, 30), visible });
+        }
+      });
+      return els.filter(e => e.visible).slice(0, 40);
+    }).catch(() => []);
+
+    res.json({
+      success: true, title, finalUrl, screenshot,
+      bodySnippet: bodyText.substring(0, 500),
+      visibleElements: elements,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    if (browser) await browser.close();
+  }
+});
+
+/**
  * 스크린샷 조회
  * GET /screenshots/:filename
  */
