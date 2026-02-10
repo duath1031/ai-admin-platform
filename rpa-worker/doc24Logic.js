@@ -268,7 +268,7 @@ async function navigateToCompose(page, log) {
     timeout: TIMEOUTS.navigation,
   });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await humanDelay(1500, 2000);
+  await humanDelay(800, 1200);
 
   const currentUrl = page.url();
   log('compose', `현재 URL: ${currentUrl}`);
@@ -281,18 +281,36 @@ async function navigateToCompose(page, log) {
 
   await saveScreenshot(page, 'doc24_04_compose_page');
 
-  // 발송 안내사항(doc_check_list) 체크박스 처리 - JS로 강제 체크
+  // jconfirm 팝업 닫기 (먼저 처리)
+  await dismissJconfirmAlerts(page, log);
+
+  // 발송 안내사항 체크박스 처리 (#wteChk1~4, hidden이므로 JS로 강제 체크)
   const checkResult = await page.evaluate(() => {
-    const checkboxes = document.querySelectorAll('.doc_check_list input[type="checkbox"], input[type="checkbox"]');
+    const ids = ['wteChk1', 'wteChk2', 'wteChk3', 'wteChk4'];
     let checked = 0;
-    checkboxes.forEach(cb => {
+    let total = 0;
+    for (const id of ids) {
+      const cb = document.getElementById(id);
+      if (cb) {
+        total++;
+        if (!cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          cb.dispatchEvent(new Event('click', { bubbles: true }));
+          checked++;
+        }
+      }
+    }
+    // 추가: doc_check_list 내부 체크박스도 모두 처리
+    document.querySelectorAll('.doc_check_list input[type="checkbox"]').forEach(cb => {
       if (!cb.checked) {
         cb.checked = true;
         cb.dispatchEvent(new Event('change', { bubbles: true }));
         checked++;
       }
+      total++;
     });
-    return { total: checkboxes.length, checked };
+    return { total, checked };
   }).catch(() => ({ total: 0, checked: 0 }));
   log('compose', `체크박스 JS 처리: ${checkResult.total}개 중 ${checkResult.checked}개 체크`);
   await humanDelay(300, 500);
@@ -310,7 +328,7 @@ async function navigateToCompose(page, log) {
     if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
       await btn.click({ force: true });
       log('compose', `확인 버튼 클릭: ${sel}`);
-      await humanDelay(1000, 1500);
+      await humanDelay(500, 800);
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
       break;
     }
@@ -318,7 +336,6 @@ async function navigateToCompose(page, log) {
 
   // JS로도 확인 버튼 클릭 시도 (오버레이가 아직 남아있을 경우)
   await page.evaluate(() => {
-    // doc_check_list 내부 확인/다음 버튼 찾기
     const btns = document.querySelectorAll('.doc_check_list button, .doc_check_list a.btn');
     for (const btn of btns) {
       if (btn.textContent.includes('확인') || btn.textContent.includes('다음')) {
@@ -326,7 +343,6 @@ async function navigateToCompose(page, log) {
         return true;
       }
     }
-    // 일반 확인 버튼
     const allBtns = document.querySelectorAll('button');
     for (const btn of allBtns) {
       const t = btn.textContent.trim();
@@ -337,27 +353,24 @@ async function navigateToCompose(page, log) {
     }
     return false;
   }).catch(() => false);
-  await humanDelay(1000, 1500);
+  await humanDelay(500, 800);
 
   // 오버레이 요소 강제 제거 (blind_table, doc_check_list)
   await page.evaluate(() => {
-    // blind_table 오버레이 제거
     document.querySelectorAll('.blind_table').forEach(el => {
       el.style.display = 'none';
       el.style.pointerEvents = 'none';
     });
-    // doc_check_list 오버레이가 남아있으면 제거
     document.querySelectorAll('.doc_check_list').forEach(el => {
       el.style.display = 'none';
       el.style.pointerEvents = 'none';
     });
-    // 고정 헤더가 요소를 가리지 않도록 z-index 조정
     const header = document.querySelector('.header_wrap');
     if (header) header.style.position = 'relative';
   }).catch(() => {});
   log('compose', '오버레이 요소 제거 완료');
 
-  // jconfirm 팝업 닫기 (doc24_alert 등)
+  // 추가 jconfirm 팝업 닫기
   await dismissJconfirmAlerts(page, log);
 
   await saveScreenshot(page, 'doc24_05_compose_ready');
@@ -367,174 +380,203 @@ async function navigateToCompose(page, log) {
 
 /**
  * 수신기관 검색 및 선택
+ *
+ * 실제 페이지 구조:
+ * - #receiptinfoTmp: readonly input (표시용)
+ * - #ldapSearch: "받는기관 검색" 버튼 → 팝업 윈도우 오픈
+ * - #recvOrgCd (hidden): 선택된 기관 코드
+ * - #recvOrgNm (hidden): 선택된 기관명
+ * - #receiptinfo (hidden): 접수 정보
+ * - #recvList (textarea, hidden): 수신 목록
  */
 async function selectRecipient(page, recipient, log) {
-  log('recipient', `수신기관 선택: ${recipient}`);
+  log('recipient', `수신기관 선택 시작: "${recipient}"`);
   await dismissJconfirmAlerts(page, log);
 
-  // 수신기관 입력 필드(#receiptinfoTmp)는 readonly → 클릭하면 검색 팝업이 열림
-  // 먼저 JS click으로 수신기관 검색 팝업 열기 시도
-  let popupOpened = false;
+  // Step 1: #ldapSearch 버튼 클릭 (받는기관 검색)
+  log('recipient', '#ldapSearch 버튼 클릭 시도');
 
-  // 방법 1: JS로 receiptinfoTmp 또는 관련 버튼 onclick 실행
-  popupOpened = await page.evaluate(() => {
-    // receiptinfoTmp 클릭
-    const recvInput = document.getElementById('receiptinfoTmp');
-    if (recvInput) {
-      recvInput.click();
-      return true;
+  // 팝업 윈도우 이벤트 리스너 등록 (클릭 전에 등록해야 팝업 캐치 가능)
+  const popupPromise = page.context().waitForEvent('page', { timeout: 10000 }).catch(() => null);
+
+  // 방법 1: Playwright click
+  const ldapSearchBtn = page.locator('#ldapSearch');
+  if (await ldapSearchBtn.count().catch(() => 0) > 0) {
+    await ldapSearchBtn.click({ force: true });
+    log('recipient', '#ldapSearch 버튼 클릭 완료');
+  } else {
+    // 방법 2: JS click fallback
+    const jsClicked = await page.evaluate(() => {
+      const btn = document.getElementById('ldapSearch');
+      if (btn) { btn.click(); return true; }
+      // fallback: receiptinfoTmp 클릭
+      const input = document.getElementById('receiptinfoTmp');
+      if (input) { input.click(); return true; }
+      // fallback: 관련 JS 함수 호출
+      if (typeof openRecvOrg === 'function') { openRecvOrg(); return true; }
+      if (typeof fn_openRecvPop === 'function') { fn_openRecvPop(); return true; }
+      if (typeof openRecvPop === 'function') { openRecvPop(); return true; }
+      return false;
+    }).catch(() => false);
+    if (!jsClicked) {
+      log('recipient', '받는기관 검색 버튼을 찾을 수 없음', 'error');
+      return { success: false, error: '받는기관 검색 버튼(#ldapSearch)을 찾을 수 없습니다.' };
     }
-    // 또는 관련 함수 직접 호출
-    if (typeof openRecvOrg === 'function') { openRecvOrg(); return true; }
-    if (typeof fn_openRecvPop === 'function') { fn_openRecvPop(); return true; }
-    if (typeof openRecvPop === 'function') { openRecvPop(); return true; }
-    return false;
-  }).catch(() => false);
-  log('recipient', `JS click receiptinfoTmp: ${popupOpened}`);
-  await humanDelay(1000, 1500);
+    log('recipient', 'JS fallback으로 검색 버튼 클릭');
+  }
+  await humanDelay(500, 800);
 
-  // 방법 2: Playwright force click
-  if (!popupOpened) {
-    const recipientBtnSelectors = [
-      '#receiptinfoTmp',
-      'button:has-text("받는 기관")',
-      'button:has-text("기관검색")',
-      'a:has-text("받는 기관")',
-      'a:has-text("기관검색")',
-      '[onclick*="openRecv"]',
-      '[onclick*="openOrg"]',
-      '[onclick*="Recv"]',
-      '.btn_search_org',
-      '#searchOrg',
-    ];
+  // Step 2: 팝업 윈도우 감지
+  let searchPopup = await popupPromise;
+  if (!searchPopup) {
+    // popupPromise가 실패한 경우, 현재 열린 페이지들에서 찾기
+    const allPages = page.context().pages();
+    if (allPages.length > 1) {
+      searchPopup = allPages[allPages.length - 1];
+      log('recipient', `기존 팝업 윈도우 발견: ${searchPopup.url()}`);
+    }
+  }
 
-    for (const sel of recipientBtnSelectors) {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await btn.click({ force: true });
-        log('recipient', `수신기관 버튼 force click: ${sel}`);
-        popupOpened = true;
-        await humanDelay(1000, 1500);
+  // 팝업이 없으면 iframe/모달 확인
+  let searchContext = page;
+  let isPopupWindow = false;
+
+  if (searchPopup && searchPopup !== page) {
+    isPopupWindow = true;
+    searchContext = searchPopup;
+    await searchPopup.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+    await searchPopup.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await humanDelay(500, 800);
+    log('recipient', `팝업 윈도우 열림: ${searchPopup.url()}`);
+    await saveScreenshot(searchPopup, 'doc24_06a_popup_opened');
+  } else {
+    // iframe 확인
+    const iframes = page.frames();
+    for (const frame of iframes) {
+      const url = frame.url();
+      if (url.includes('recv') || url.includes('org') || url.includes('ldap') || url.includes('search') || url.includes('popup')) {
+        searchContext = frame;
+        log('recipient', `iframe 감지: ${url}`);
         break;
       }
     }
-  }
-
-  await saveScreenshot(page, 'doc24_06_recipient_search');
-
-  // 팝업/iframe 또는 모달 내 검색 필드 찾기
-  // 문서24는 팝업 또는 레이어 형태로 기관 검색창을 열 수 있음
-  await humanDelay(1000, 1500);
-
-  // 팝업 윈도우 확인
-  const pages = page.context().pages();
-  let searchPage = page;
-  if (pages.length > 1) {
-    searchPage = pages[pages.length - 1]; // 마지막 열린 페이지 (팝업)
-    log('recipient', `팝업 윈도우 감지: ${searchPage.url()}`);
-    await searchPage.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
-    await humanDelay(500, 1000);
-  }
-
-  // iframe 확인
-  const iframes = page.frames();
-  let searchFrame = null;
-  for (const frame of iframes) {
-    const url = frame.url();
-    if (url.includes('recv') || url.includes('org') || url.includes('search') || url.includes('popup')) {
-      searchFrame = frame;
-      log('recipient', `iframe 감지: ${url}`);
-      break;
+    // 레이어 모달 확인
+    if (searchContext === page) {
+      log('recipient', '팝업/iframe 없음 - 메인 페이지 내 모달 또는 레이어 검색');
     }
   }
 
-  const searchContext = searchFrame || searchPage;
+  await saveScreenshot(isPopupWindow ? searchPopup : page, 'doc24_06_recipient_search');
 
-  // 검색창에 수신기관명 입력
+  // Step 3: 검색 팝업 내에서 검색어 입력
   const searchInputSelectors = [
     '#searchWrd',
     '#searchKeyword',
+    '#orgNm',
+    '#insttNm',
     'input[name="searchWrd"]',
     'input[name="searchKeyword"]',
     'input[name="searchWord"]',
     'input[name="orgNm"]',
     'input[name="insttNm"]',
+    'input[name="keyword"]',
     '.search_input input',
     'input[placeholder*="검색"]',
     'input[placeholder*="기관"]',
-    'input:not([readonly])[type="text"]',
+    'input[placeholder*="입력"]',
+    'input:not([readonly]):not([type="hidden"])[type="text"]',
   ];
 
   let searchInputFound = false;
   for (const sel of searchInputSelectors) {
-    const input = searchContext.locator ? searchContext.locator(sel).first() : page.locator(sel).first();
-    if (await input.isVisible({ timeout: 1500 }).catch(() => false)) {
-      await input.click({ force: true });
-      await humanDelay(200, 300);
+    const input = searchContext.locator(sel).first();
+    const exists = await input.count().catch(() => 0);
+    if (exists > 0) {
+      await input.click({ force: true }).catch(() => {});
+      await humanDelay(300, 500);
       await input.fill(recipient);
-      log('recipient', `검색어 입력: ${sel} → "${recipient}"`);
+      log('recipient', `검색어 입력 완료: ${sel} → "${recipient}"`);
       searchInputFound = true;
 
-      // 검색 버튼 클릭
+      // Step 4: 검색 버튼 클릭
       const searchBtnSelectors = [
         'button:has-text("검색")',
         'a:has-text("검색")',
+        'input[type="button"][value*="검색"]',
         'input[type="submit"]',
         '.btn_search',
-        'button[type="button"]:has-text("검색")',
+        '#searchBtn',
         'img[alt*="검색"]',
       ];
-      const ctx = searchContext.locator ? searchContext : page;
+      let searchBtnClicked = false;
       for (const btnSel of searchBtnSelectors) {
-        const btn = ctx.locator(btnSel).first();
-        if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        const btn = searchContext.locator(btnSel).first();
+        if (await btn.count().catch(() => 0) > 0) {
           await btn.click({ force: true });
           log('recipient', `검색 버튼 클릭: ${btnSel}`);
+          searchBtnClicked = true;
           break;
         }
       }
-      // Enter 키도 시도
-      await input.press('Enter').catch(() => {});
-      await humanDelay(1500, 2500);
+      if (!searchBtnClicked) {
+        // Enter 키로 검색
+        await input.press('Enter').catch(() => {});
+        log('recipient', 'Enter 키로 검색 실행');
+      }
+
+      await humanDelay(500, 800);
       if (searchContext.waitForLoadState) {
         await searchContext.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
       }
+      await humanDelay(300, 500);
       break;
     }
   }
 
   if (!searchInputFound) {
-    // 디버그: 현재 페이지/팝업의 입력 필드 목록
-    const inputs = await (searchContext.evaluate || page.evaluate).call(searchContext.evaluate ? searchContext : page, () => {
-      return Array.from(document.querySelectorAll('input')).map(el => ({
-        id: el.id, name: el.name, type: el.type, placeholder: el.placeholder,
-        readonly: el.readOnly, visible: el.offsetParent !== null,
+    // 디버그: 팝업/페이지의 모든 input 요소 덤프
+    const evalCtx = searchContext.evaluate ? searchContext : page;
+    const inputs = await evalCtx.evaluate(() => {
+      return Array.from(document.querySelectorAll('input, textarea, select')).map(el => ({
+        tag: el.tagName, id: el.id, name: el.name, type: el.type,
+        placeholder: el.placeholder, readonly: el.readOnly,
+        visible: el.offsetParent !== null,
       }));
     }).catch(() => []);
-    log('recipient', `검색 입력 필드 못 찾음. 페이지 inputs: ${JSON.stringify(inputs).substring(0, 500)}`, 'warning');
+    log('recipient', `검색 입력 필드 못 찾음. inputs: ${JSON.stringify(inputs).substring(0, 800)}`, 'warning');
+    if (isPopupWindow) {
+      await searchPopup.close().catch(() => {});
+    }
+    return { success: false, error: `수신기관 검색 팝업에서 입력 필드를 찾지 못했습니다.` };
   }
 
-  await saveScreenshot(page, 'doc24_07_recipient_results');
+  await saveScreenshot(isPopupWindow ? searchPopup : page, 'doc24_07_recipient_results');
 
-  // 검색 결과에서 기관 선택
-  const ctx = searchContext.locator ? searchContext : page;
+  // Step 5: 검색 결과에서 기관 선택
   const resultSelectors = [
+    `td a:has-text("${recipient}")`,
     `td:has-text("${recipient}")`,
     `a:has-text("${recipient}")`,
     `li:has-text("${recipient}")`,
     `span:has-text("${recipient}")`,
-    `tr:has-text("${recipient}")`,
+    // 첫 번째 결과 행 (정확한 이름 매칭 실패 시)
+    'table tbody tr:first-child td a',
+    'table tbody tr:first-child td:nth-child(2)',
   ];
 
   let resultClicked = false;
   for (const sel of resultSelectors) {
-    const results = ctx.locator(sel);
+    const results = searchContext.locator(sel);
     const count = await results.count().catch(() => 0);
     if (count > 0) {
-      await results.first().click({ force: true });
-      log('recipient', `수신기관 선택: ${sel} (${count}개 결과 중 첫번째)`);
+      // 더블클릭 시도 (일부 팝업은 더블클릭으로 선택)
+      await results.first().dblclick({ force: true }).catch(async () => {
+        await results.first().click({ force: true }).catch(() => {});
+      });
+      const resultText = await results.first().textContent().catch(() => '');
+      log('recipient', `수신기관 선택: ${sel} → "${resultText.trim()}" (${count}개 결과 중 첫번째)`);
       resultClicked = true;
-      await humanDelay(500, 800);
+      await humanDelay(300, 500);
       break;
     }
   }
@@ -543,186 +585,218 @@ async function selectRecipient(page, recipient, log) {
     log('recipient', '검색 결과에서 기관을 선택하지 못함', 'warning');
   }
 
-  // 선택 확인/적용 버튼
+  // Step 6: 선택 확인/적용 버튼
   const confirmSelectors = [
     'button:has-text("선택")',
     'button:has-text("적용")',
     'button:has-text("확인")',
     'a:has-text("선택")',
     'a:has-text("적용")',
+    'a:has-text("확인")',
+    'input[type="button"][value*="선택"]',
+    'input[type="button"][value*="적용"]',
+    'input[type="button"][value*="확인"]',
     '.btn_select',
     '.btn_confirm',
+    '#selectBtn',
+    '#confirmBtn',
   ];
   for (const sel of confirmSelectors) {
-    const btn = ctx.locator(sel).first();
-    if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+    const btn = searchContext.locator(sel).first();
+    if (await btn.count().catch(() => 0) > 0) {
       await btn.click({ force: true });
-      log('recipient', `확인 버튼 클릭: ${sel}`);
-      await humanDelay(800, 1200);
+      log('recipient', `선택 확인 버튼 클릭: ${sel}`);
+      await humanDelay(500, 800);
       break;
     }
   }
 
-  // 팝업 윈도우였다면 메인 페이지로 돌아오기
-  if (pages.length > 1) {
-    await page.bringToFront();
+  // Step 7: 팝업 윈도우 닫기 및 메인 페이지로 복귀
+  if (isPopupWindow) {
+    // 팝업이 자동으로 닫혔는지 확인
     await humanDelay(500, 800);
+    if (!searchPopup.isClosed()) {
+      await searchPopup.close().catch(() => {});
+      log('recipient', '팝업 윈도우 수동 닫기');
+    } else {
+      log('recipient', '팝업 윈도우 자동 닫힘');
+    }
+    await page.bringToFront();
+    await humanDelay(300, 500);
   }
 
   await saveScreenshot(page, 'doc24_08_recipient_selected');
-  return { success: resultClicked };
+
+  // Step 8: 수신기관 선택 결과 검증 (#recvOrgNm hidden 필드에 값이 있는지)
+  const recvOrgNm = await page.evaluate(() => {
+    const el = document.getElementById('recvOrgNm');
+    return el ? el.value : '';
+  }).catch(() => '');
+
+  const receiptinfoTmp = await page.evaluate(() => {
+    const el = document.getElementById('receiptinfoTmp');
+    return el ? el.value : '';
+  }).catch(() => '');
+
+  log('recipient', `검증 - recvOrgNm: "${recvOrgNm}", receiptinfoTmp: "${receiptinfoTmp}"`);
+
+  if (recvOrgNm || receiptinfoTmp) {
+    log('recipient', `수신기관 선택 완료: "${recvOrgNm || receiptinfoTmp}"`);
+    return { success: true, selectedOrg: recvOrgNm || receiptinfoTmp };
+  } else {
+    log('recipient', `수신기관 선택 실패: "${recipient}"를 찾을 수 없습니다`, 'error');
+    return { success: false, error: `수신기관 검색 실패: "${recipient}"를 찾을 수 없습니다` };
+  }
 }
 
 /**
  * 제목 및 내용 입력
+ *
+ * 실제 페이지 구조:
+ * - #docTitle: input, placeholder "작성할 문서의 제목을 입력하세요."
+ * - #Document_HwpCtrl: HWP ActiveX web editor (한컴 웹에디터, 비표준)
+ * - #st_rdo1/#st_rdo2: 직인날인 예/아니오
+ * - #senderNm, #apprNm: 발신자명/제출자명 (자동 채워짐)
  */
 async function fillContent(page, title, content, log) {
-  log('content', `제목 입력: ${title.substring(0, 50)}`);
+  log('content', `제목 입력: "${title.substring(0, 50)}"`);
   await dismissJconfirmAlerts(page, log);
 
-  // 제목 입력
-  const titleSelectors = [
-    '#docTitle',
-    'input[name="docTitle"]',
-    '#title',
-    'input[name="title"]',
-    '#subject',
-    'input[name="subject"]',
-    'input[name="docSj"]',
-    '.title_input input',
-    'input[placeholder*="제목"]',
-  ];
-
+  // === 제목 입력 (#docTitle) ===
   let titleFilled = false;
-  for (const sel of titleSelectors) {
-    const input = page.locator(sel).first();
-    if (await input.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await input.click({ force: true });
-      await humanDelay(200, 300);
-      await input.fill(title);
-      log('content', `제목 입력 완료: ${sel}`);
-      titleFilled = true;
-      break;
+
+  // 방법 1: Playwright fill
+  const titleInput = page.locator('#docTitle');
+  if (await titleInput.count().catch(() => 0) > 0) {
+    await titleInput.click({ force: true }).catch(() => {});
+    await humanDelay(300, 500);
+    await titleInput.fill(title).catch(() => {});
+    titleFilled = true;
+    log('content', '#docTitle fill 완료');
+  }
+
+  // 방법 2: JS 직접 값 설정 (fallback 또는 추가 보장)
+  const jsTitle = await page.evaluate((t) => {
+    const el = document.getElementById('docTitle');
+    if (el) {
+      el.value = t;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return el.value;
+    }
+    return null;
+  }, title).catch(() => null);
+
+  if (jsTitle) {
+    titleFilled = true;
+    log('content', `#docTitle JS 값 설정 확인: "${jsTitle.substring(0, 30)}"`);
+  }
+
+  if (!titleFilled) {
+    // 최후 fallback: 다른 셀렉터 시도
+    const fallbackSelectors = [
+      'input[name="docTitle"]',
+      'input[placeholder*="제목"]',
+      '#title',
+      'input[name="title"]',
+    ];
+    for (const sel of fallbackSelectors) {
+      const input = page.locator(sel).first();
+      if (await input.count().catch(() => 0) > 0) {
+        await input.click({ force: true }).catch(() => {});
+        await input.fill(title).catch(() => {});
+        titleFilled = true;
+        log('content', `제목 fallback 입력: ${sel}`);
+        break;
+      }
     }
   }
 
-  // force fill 실패 시 JS로 직접 입력
   if (!titleFilled) {
-    titleFilled = await page.evaluate((t) => {
-      const el = document.getElementById('docTitle');
-      if (el) { el.value = t; el.dispatchEvent(new Event('input', { bubbles: true })); return true; }
-      return false;
-    }, title).catch(() => false);
-    if (titleFilled) log('content', '제목 JS 직접 입력 완료');
-    else log('content', '제목 필드를 찾지 못함', 'warning');
+    log('content', '제목 필드(#docTitle)를 찾지 못함', 'error');
+    return { success: false, error: '제목 필드(#docTitle)를 찾지 못했습니다.' };
   }
 
-  // 내용 입력 (에디터)
-  if (content) {
-    log('content', `본문 입력: ${content.substring(0, 50)}...`);
-    let contentFilled = false;
-    const htmlContent = content.replace(/\n/g, '<br>');
+  // === 제목 입력 검증 ===
+  const verifiedTitle = await page.evaluate(() => {
+    const el = document.getElementById('docTitle');
+    return el ? el.value : '';
+  }).catch(() => '');
+  if (!verifiedTitle) {
+    log('content', '제목 입력 검증 실패: #docTitle 값이 비어있음', 'warning');
+  } else {
+    log('content', `제목 입력 검증 통과: "${verifiedTitle.substring(0, 30)}"`);
+  }
 
-    // 방법 0: JS 에디터 API (CKEDITOR, tinymce, tui-editor 등)
+  await humanDelay(300, 500);
+
+  // === 본문 입력 (HWP 웹에디터 #Document_HwpCtrl) ===
+  if (content) {
+    log('content', `본문 입력 시도: "${content.substring(0, 50)}..."`);
+    let contentFilled = false;
+
+    // 방법 1: HWP ActiveX 웹 컨트롤 API (HwpCtrl.InsertText)
     contentFilled = await page.evaluate((text) => {
-      // CKEditor
-      if (window.CKEDITOR) {
-        for (const name in CKEDITOR.instances) {
-          CKEDITOR.instances[name].setData(text);
-          return true;
-        }
+      // HwpCtrl 글로벌 객체
+      if (window.HwpCtrl) {
+        try {
+          if (typeof HwpCtrl.InsertText === 'function') {
+            HwpCtrl.InsertText(text);
+            return 'HwpCtrl.InsertText';
+          }
+          if (typeof HwpCtrl.SetText === 'function') {
+            HwpCtrl.SetText(text);
+            return 'HwpCtrl.SetText';
+          }
+        } catch (e) { /* continue */ }
       }
-      // TinyMCE
-      if (window.tinymce && tinymce.activeEditor) {
-        tinymce.activeEditor.setContent(text);
-        return true;
+      // Document_HwpCtrl 객체
+      const hwpEl = document.getElementById('Document_HwpCtrl');
+      if (hwpEl) {
+        try {
+          if (typeof hwpEl.InsertText === 'function') {
+            hwpEl.InsertText(text);
+            return 'hwpEl.InsertText';
+          }
+          if (typeof hwpEl.SetText === 'function') {
+            hwpEl.SetText(text);
+            return 'hwpEl.SetText';
+          }
+          if (typeof hwpEl.PutFieldText === 'function') {
+            hwpEl.PutFieldText('본문', text);
+            return 'hwpEl.PutFieldText';
+          }
+        } catch (e) { /* continue */ }
       }
-      // Toast UI Editor
-      if (window.toastui && window.toastui.Editor) {
-        const editors = document.querySelectorAll('.toastui-editor');
-        if (editors.length > 0) return false; // frameLocator로 처리
-      }
-      // Summernote
-      if (window.jQuery && jQuery.fn.summernote) {
-        const noteEl = jQuery('.note-editable');
-        if (noteEl.length > 0) {
-          noteEl.html(text);
-          return true;
-        }
-      }
-      return false;
-    }, htmlContent).catch(() => false);
+      return null;
+    }, content).catch(() => null);
 
     if (contentFilled) {
-      log('content', '본문 입력 완료 (JS 에디터 API)');
+      log('content', `본문 입력 완료 (${contentFilled})`);
     }
 
-    // 방법 1: iframe 에디터 (문서24 WYSIWYG)
+    // 방법 2: iframe contentDocument 접근
     if (!contentFilled) {
-      const allIframes = page.locator('iframe');
-      const iframeCount = await allIframes.count();
-      log('content', `iframe ${iframeCount}개 발견`);
-
-      for (let i = 0; i < iframeCount; i++) {
-        const iframe = allIframes.nth(i);
-        const iframeId = await iframe.getAttribute('id').catch(() => '');
-        const iframeClass = await iframe.getAttribute('class').catch(() => '');
-        log('content', `iframe[${i}]: id="${iframeId}" class="${iframeClass}"`);
-
-        // iframe 내부에 contenteditable body가 있는지 확인 + 내용 삽입
-        const filled = await page.evaluate((args) => {
-          const iframes = document.querySelectorAll('iframe');
-          const iframe = iframes[args.idx];
-          if (!iframe || !iframe.contentDocument) return false;
-          const body = iframe.contentDocument.body;
-          if (!body) return false;
-          if (body.contentEditable === 'true' || body.isContentEditable ||
-              iframe.contentDocument.designMode === 'on') {
-            body.innerHTML = `<p>${args.content}</p>`;
-            return true;
-          }
-          return false;
-        }, { idx: i, content: htmlContent }).catch(() => false);
-
-        if (filled) {
-          log('content', `본문 입력 완료 (iframe[${i}] innerHTML)`);
-          contentFilled = true;
-          break;
+      const iframeResult = await page.evaluate((text) => {
+        const iframes = document.querySelectorAll('iframe');
+        for (let i = 0; i < iframes.length; i++) {
+          const iframe = iframes[i];
+          try {
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (!doc) continue;
+            const body = doc.body;
+            if (body && (body.contentEditable === 'true' || body.isContentEditable || doc.designMode === 'on')) {
+              body.innerHTML = `<p>${text.replace(/\n/g, '<br>')}</p>`;
+              return `iframe[${i}] id="${iframe.id}"`;
+            }
+          } catch (e) { /* cross-origin, skip */ }
         }
-      }
-    }
+        return null;
+      }, content).catch(() => null);
 
-    // 방법 2: Playwright frameLocator (CKEditor iframe)
-    if (!contentFilled) {
-      const editorFrameSelectors = [
-        'iframe.cke_wysiwyg_frame',
-        'iframe#content_ifr',
-        'iframe[id*="editor"]',
-        'iframe[class*="editor"]',
-        'iframe[class*="cke"]',
-      ];
-      for (const sel of editorFrameSelectors) {
-        const iframe = page.locator(sel).first();
-        if (await iframe.isVisible({ timeout: 1000 }).catch(() => false)) {
-          const frame = page.frameLocator(sel);
-          const body = frame.locator('body');
-          if (await body.count().catch(() => 0) > 0) {
-            await body.click().catch(() => {});
-            await humanDelay(200, 300);
-            await body.fill(content).catch(async () => {
-              // fill 실패 시 innerHTML
-              await page.evaluate((args) => {
-                const el = document.querySelector(args.sel);
-                if (el && el.contentDocument && el.contentDocument.body) {
-                  el.contentDocument.body.innerHTML = `<p>${args.content}</p>`;
-                }
-              }, { sel, content: htmlContent }).catch(() => {});
-            });
-            log('content', `본문 입력 완료 (frameLocator: ${sel})`);
-            contentFilled = true;
-            break;
-          }
-        }
+      if (iframeResult) {
+        contentFilled = true;
+        log('content', `본문 입력 완료 (${iframeResult})`);
       }
     }
 
@@ -738,11 +812,11 @@ async function fillContent(page, title, content, log) {
         const el = page.locator(sel).first();
         if (await el.isVisible({ timeout: 1000 }).catch(() => false)) {
           await el.click({ force: true }).catch(() => {});
-          await humanDelay(200, 300);
+          await humanDelay(300, 500);
           await page.evaluate((args) => {
             const el = document.querySelector(args.sel);
-            if (el) el.innerHTML = args.content;
-          }, { sel, content: htmlContent }).catch(() => {});
+            if (el) el.innerHTML = `<p>${args.content.replace(/\n/g, '<br>')}</p>`;
+          }, { sel, content }).catch(() => {});
           log('content', `본문 입력 완료 (${sel})`);
           contentFilled = true;
           break;
@@ -756,14 +830,12 @@ async function fillContent(page, title, content, log) {
         'textarea[name="docCn"]',
         'textarea[name="content"]',
         'textarea[name="docContent"]',
-        '.content_area textarea',
       ];
       for (const sel of textareaSelectors) {
-        const textarea = page.locator(sel).first();
-        if (await textarea.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await textarea.click({ force: true });
-          await textarea.fill(content).catch(() => {});
-          log('content', `본문 입력 완료 (textarea): ${sel}`);
+        const ta = page.locator(sel).first();
+        if (await ta.count().catch(() => 0) > 0) {
+          await ta.fill(content).catch(() => {});
+          log('content', `본문 입력 완료 (textarea: ${sel})`);
           contentFilled = true;
           break;
         }
@@ -771,7 +843,7 @@ async function fillContent(page, title, content, log) {
     }
 
     if (!contentFilled) {
-      log('content', '본문 입력 필드를 찾지 못함 - 본문 없이 진행', 'warning');
+      log('content', '본문 에디터(#Document_HwpCtrl)는 HWP ActiveX 컨트롤 - 본문 입력 불가. 제목+첨부파일로 진행합니다.', 'warning');
     }
   }
 
@@ -781,6 +853,11 @@ async function fillContent(page, title, content, log) {
 
 /**
  * 첨부파일 업로드
+ *
+ * 실제 페이지 구조:
+ * - #files_1_c100: hidden file input (name=files[])
+ * - #addFiles_1_c100: "파일 추가" button
+ * - #deleteFile_1_c100: "파일 삭제" button
  */
 async function uploadAttachments(page, files, log) {
   await dismissJconfirmAlerts(page, log);
@@ -789,7 +866,7 @@ async function uploadAttachments(page, files, log) {
     return { success: true };
   }
 
-  log('upload', `첨부파일 ${files.length}개 업로드`);
+  log('upload', `첨부파일 ${files.length}개 업로드 시작`);
 
   const tmpDir = '/tmp/doc24-upload';
   if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
@@ -811,53 +888,74 @@ async function uploadAttachments(page, files, log) {
     return { success: true };
   }
 
-  // 파일 input 찾기
-  const fileInputSelectors = [
-    'input[type="file"]',
-    'input[type="file"][name*="file"]',
-    'input[type="file"][name*="attach"]',
-    'input[type="file"][id*="file"]',
-    'input[type="file"][id*="attach"]',
-  ];
-
   let uploaded = false;
-  for (const sel of fileInputSelectors) {
-    const fileInput = page.locator(sel).first();
-    const count = await page.locator(sel).count();
-    if (count > 0) {
-      await fileInput.setInputFiles(localPaths);
-      log('upload', `파일 업로드 완료: ${sel}`);
+
+  // 방법 1: #files_1_c100 hidden file input 직접 사용 (setInputFiles는 hidden에도 동작)
+  const primaryFileInput = page.locator('#files_1_c100');
+  if (await primaryFileInput.count().catch(() => 0) > 0) {
+    try {
+      await primaryFileInput.setInputFiles(localPaths);
+      log('upload', `#files_1_c100 setInputFiles 완료 (${localPaths.length}개 파일)`);
       uploaded = true;
-      await humanDelay(2000, 3000); // 업로드 처리 대기
-      break;
+      await humanDelay(800, 1200);
+    } catch (err) {
+      log('upload', `#files_1_c100 setInputFiles 실패: ${err.message}`, 'warning');
     }
   }
 
-  // 첨부 버튼 → filechooser 방식
+  // 방법 2: 일반 file input 탐색
+  if (!uploaded) {
+    const fileInputSelectors = [
+      'input[type="file"][name*="files"]',
+      'input[type="file"][name*="file"]',
+      'input[type="file"][name*="attach"]',
+      'input[type="file"]',
+    ];
+    for (const sel of fileInputSelectors) {
+      const fileInput = page.locator(sel).first();
+      if (await fileInput.count().catch(() => 0) > 0) {
+        try {
+          await fileInput.setInputFiles(localPaths);
+          log('upload', `파일 업로드 완료: ${sel}`);
+          uploaded = true;
+          await humanDelay(800, 1200);
+          break;
+        } catch (err) {
+          log('upload', `${sel} setInputFiles 실패: ${err.message}`, 'warning');
+        }
+      }
+    }
+  }
+
+  // 방법 3: "파일 추가" 버튼 → filechooser 이벤트
   if (!uploaded) {
     const attachBtnSelectors = [
+      '#addFiles_1_c100',
+      'button:has-text("파일 추가")',
       'button:has-text("파일첨부")',
       'button:has-text("파일 첨부")',
       'a:has-text("파일첨부")',
       'button:has-text("첨부")',
-      'a:has-text("첨부")',
       'label[for*="file"]',
     ];
 
     for (const sel of attachBtnSelectors) {
       const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await btn.count().catch(() => 0) > 0) {
         log('upload', `첨부 버튼 발견: ${sel}`);
-        const [fileChooser] = await Promise.all([
-          page.waitForEvent('filechooser', { timeout: 5000 }),
-          btn.click(),
-        ]).catch(() => [null]);
-
-        if (fileChooser) {
-          await fileChooser.setFiles(localPaths);
-          log('upload', '파일 선택 완료 (filechooser)');
-          uploaded = true;
-          await humanDelay(2000, 3000);
+        try {
+          const [fileChooser] = await Promise.all([
+            page.waitForEvent('filechooser', { timeout: 5000 }),
+            btn.click({ force: true }),
+          ]);
+          if (fileChooser) {
+            await fileChooser.setFiles(localPaths);
+            log('upload', '파일 선택 완료 (filechooser)');
+            uploaded = true;
+            await humanDelay(800, 1200);
+          }
+        } catch (err) {
+          log('upload', `filechooser 방식 실패: ${err.message}`, 'warning');
         }
         break;
       }
@@ -865,12 +963,24 @@ async function uploadAttachments(page, files, log) {
   }
 
   if (!uploaded) {
-    log('upload', '파일 업로드 요소를 찾지 못함', 'warning');
+    log('upload', '파일 업로드 요소를 찾지 못함', 'error');
+  } else {
+    // 업로드 완료 대기: 파일이 첨부 목록에 나타나는지 확인
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await humanDelay(500, 800);
+
+    // 첨부 파일 테이블에 파일이 표시되는지 확인
+    const attachedCount = await page.evaluate(() => {
+      // 첨부 파일 목록 테이블/리스트에서 파일 개수 확인
+      const rows = document.querySelectorAll('.file_list tr, .attach_list li, .file_item, table.fileList tr');
+      return rows.length;
+    }).catch(() => 0);
+    log('upload', `첨부 파일 목록 확인: ${attachedCount}개 항목`);
   }
 
   // 임시 파일 정리
   for (const p of localPaths) {
-    fs.unlinkSync(p);
+    try { fs.unlinkSync(p); } catch {}
   }
 
   await saveScreenshot(page, 'doc24_10_files_uploaded');
@@ -878,183 +988,362 @@ async function uploadAttachments(page, files, log) {
 }
 
 /**
- * 발송하기
+ * 발송하기 (전송요청)
+ *
+ * 실제 페이지 구조:
+ * - #sendDoc: "전송요청" 버튼 (실제 발송)
+ * - #viewDoc: "미리보기" 버튼
+ * - #saveGian: "임시저장" 버튼
+ * - 클릭 후 jconfirm 팝업으로 발송 확인 → PDF 변환 → 결과 팝업 또는 페이지 이동
  */
 async function sendDocument(page, log) {
-  log('send', '발송 버튼 탐색');
+  log('send', '전송요청(#sendDoc) 버튼 클릭 시도');
   await dismissJconfirmAlerts(page, log);
 
-  // 발송 버튼 클릭
-  const sendSelectors = [
-    'button:has-text("보내기")',
-    'button:has-text("발송")',
-    'button:has-text("전송")',
-    'a:has-text("보내기")',
-    'a:has-text("발송")',
-    '#sendBtn',
-    '#submitBtn',
-    '.btn_send',
-    'button[type="submit"]',
-    '[onclick*="doSend"]',
-    '[onclick*="fnSend"]',
-    '[onclick*="send"]',
-  ];
-
+  // Step 1: #sendDoc 버튼 클릭
   let sendClicked = false;
-  for (const sel of sendSelectors) {
-    const btn = page.locator(sel).first();
-    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      // display:none 체크 (상단 버튼이 숨겨져 있을 수 있음)
-      const isEnabled = await btn.isEnabled().catch(() => false);
-      if (isEnabled) {
-        const btnText = await btn.textContent().catch(() => '');
-        await btn.click();
-        log('send', `발송 버튼 클릭: ${sel} ("${btnText.trim()}")`);
-        sendClicked = true;
-        await humanDelay(1000, 2000);
-        break;
-      }
-    }
+
+  // 방법 1: Playwright click
+  const sendDocBtn = page.locator('#sendDoc');
+  if (await sendDocBtn.count().catch(() => 0) > 0) {
+    const btnText = await sendDocBtn.textContent().catch(() => '');
+    await sendDocBtn.click({ force: true });
+    log('send', `#sendDoc 클릭 완료: "${btnText.trim()}"`);
+    sendClicked = true;
   }
 
-  // 하단 버튼 fallback
+  // 방법 2: JS click fallback
   if (!sendClicked) {
-    const bottomBtnSelectors = [
-      '.btn_area_bottom button:has-text("발송")',
-      '.btn_area_bottom button:has-text("보내기")',
-      '.bottom_btn button',
+    sendClicked = await page.evaluate(() => {
+      const btn = document.getElementById('sendDoc');
+      if (btn) { btn.click(); return true; }
+      // fallback: onclick 함수 직접 호출
+      if (typeof fn_sendDoc === 'function') { fn_sendDoc(); return true; }
+      if (typeof sendDoc === 'function') { sendDoc(); return true; }
+      return false;
+    }).catch(() => false);
+    if (sendClicked) log('send', 'JS fallback으로 sendDoc 클릭');
+  }
+
+  // 방법 3: 다른 셀렉터 시도
+  if (!sendClicked) {
+    const fallbackSelectors = [
+      'button:has-text("전송요청")',
+      'button:has-text("전송 요청")',
+      'a:has-text("전송요청")',
+      'button:has-text("발송")',
+      'button:has-text("보내기")',
+      '#sendBtn',
+      '[onclick*="sendDoc"]',
+      '[onclick*="fn_send"]',
     ];
-    for (const sel of bottomBtnSelectors) {
+    for (const sel of fallbackSelectors) {
       const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await btn.click();
-        log('send', `하단 발송 버튼 클릭: ${sel}`);
+      if (await btn.count().catch(() => 0) > 0) {
+        await btn.click({ force: true });
+        log('send', `fallback 발송 버튼 클릭: ${sel}`);
         sendClicked = true;
-        await humanDelay(1000, 2000);
         break;
       }
     }
   }
 
   if (!sendClicked) {
-    log('send', '발송 버튼을 찾지 못함', 'error');
-    return { success: false, error: '발송 버튼을 찾지 못했습니다.' };
+    log('send', '전송요청 버튼(#sendDoc)을 찾지 못함', 'error');
+    await saveScreenshot(page, 'doc24_11_send_btn_not_found');
+    return { success: false, error: '전송요청 버튼(#sendDoc)을 찾지 못했습니다.' };
   }
 
-  // PDF 변환 대기 (~5-6초)
-  log('send', 'PDF 변환 대기중...');
+  await humanDelay(500, 800);
+  await saveScreenshot(page, 'doc24_11_after_send_click');
+
+  // Step 2: jconfirm 발송 확인 팝업 처리
+  // 문서24는 jconfirm으로 "발송하시겠습니까?" 류의 확인 팝업을 띄움
+  log('send', 'jconfirm 발송 확인 팝업 대기');
+  let confirmClicked = false;
+
+  // jconfirm 팝업이 나타날 때까지 대기 (최대 5초)
+  for (let retry = 0; retry < 10; retry++) {
+    const jconfirmVisible = await page.locator('.jconfirm.jconfirm-open').count().catch(() => 0);
+    if (jconfirmVisible > 0) {
+      log('send', 'jconfirm 팝업 감지');
+
+      // 팝업 내용 확인 (디버그)
+      const popupContent = await page.evaluate(() => {
+        const popup = document.querySelector('.jconfirm.jconfirm-open');
+        if (!popup) return '';
+        return popup.textContent?.substring(0, 200) || '';
+      }).catch(() => '');
+      log('send', `팝업 내용: "${popupContent.trim().substring(0, 100)}"`);
+
+      // 에러 팝업인지 확인
+      const isError = popupContent.includes('오류') || popupContent.includes('실패') ||
+                      popupContent.includes('입력') || popupContent.includes('선택해');
+      if (isError) {
+        log('send', `발송 실패 팝업 감지: "${popupContent.trim().substring(0, 150)}"`, 'error');
+        // 팝업 닫기
+        await dismissJconfirmAlerts(page, log);
+        await saveScreenshot(page, 'doc24_11_send_error_popup');
+        return { success: false, error: `발송 실패: ${popupContent.trim().substring(0, 200)}` };
+      }
+
+      // 확인/예 버튼 클릭
+      const confirmBtnSelectors = [
+        '.jconfirm-buttons button:has-text("확인")',
+        '.jconfirm-buttons button:has-text("예")',
+        '.jconfirm-buttons button:has-text("전송")',
+        '.jconfirm-buttons button:has-text("발송")',
+        '.jconfirm-buttons button',
+      ];
+      for (const sel of confirmBtnSelectors) {
+        const btn = page.locator(sel).first();
+        if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
+          const btnText = await btn.textContent().catch(() => '');
+          await btn.click({ force: true });
+          log('send', `발송 확인 버튼 클릭: ${sel} ("${btnText.trim()}")`);
+          confirmClicked = true;
+          break;
+        }
+      }
+      break;
+    }
+    await humanDelay(400, 600);
+  }
+
+  if (!confirmClicked) {
+    log('send', 'jconfirm 확인 팝업이 나타나지 않음 - 직접 발송됐을 수 있음', 'warning');
+  }
+
+  // Step 3: PDF 변환 및 발송 처리 대기 (~5-6초)
+  log('send', 'PDF 변환/발송 처리 대기...');
   await humanDelay(3000, 5000);
   await page.waitForLoadState('networkidle', { timeout: TIMEOUTS.pdfConversion }).catch(() => {});
 
-  await saveScreenshot(page, 'doc24_11_after_send');
+  await saveScreenshot(page, 'doc24_12_after_confirm');
 
-  // 발송 확인 팝업 처리 (jconfirm)
-  const confirmSelectors = [
-    '.jconfirm-buttons button:has-text("확인")',
-    '.jconfirm-buttons button:has-text("예")',
-    'button:has-text("확인")',
-    'button:has-text("예")',
-    '.confirm_btn',
-  ];
+  // Step 4: 결과 확인 - 추가 jconfirm 팝업 (성공/실패)
+  for (let retry = 0; retry < 5; retry++) {
+    const jconfirmVisible = await page.locator('.jconfirm.jconfirm-open').count().catch(() => 0);
+    if (jconfirmVisible > 0) {
+      const popupContent = await page.evaluate(() => {
+        const popup = document.querySelector('.jconfirm.jconfirm-open');
+        return popup ? (popup.textContent?.substring(0, 300) || '') : '';
+      }).catch(() => '');
+      log('send', `결과 팝업: "${popupContent.trim().substring(0, 150)}"`);
 
-  for (const sel of confirmSelectors) {
-    const btn = page.locator(sel).first();
-    if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      const btnText = await btn.textContent().catch(() => '');
-      await btn.click();
-      log('send', `발송 확인 클릭: ${sel} ("${btnText.trim()}")`);
-      await humanDelay(2000, 4000);
-      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      // 성공 키워드 확인
+      const isSuccess = popupContent.includes('완료') || popupContent.includes('성공') ||
+                        popupContent.includes('전송되었') || popupContent.includes('발송되었') ||
+                        popupContent.includes('처리되었');
+      // 실패 키워드 확인
+      const isFailure = popupContent.includes('실패') || popupContent.includes('오류') ||
+                        popupContent.includes('에러');
+
+      // 팝업 닫기 (확인 버튼 클릭)
+      await page.evaluate(() => {
+        const popup = document.querySelector('.jconfirm.jconfirm-open');
+        if (popup) {
+          const btn = popup.querySelector('.jconfirm-buttons button');
+          if (btn) btn.click();
+        }
+      }).catch(() => {});
+      await humanDelay(500, 800);
+
+      if (isFailure) {
+        log('send', `발송 실패: ${popupContent.trim().substring(0, 200)}`, 'error');
+        await saveScreenshot(page, 'doc24_12_send_failed');
+        return { success: false, error: `발송 실패: ${popupContent.trim().substring(0, 200)}` };
+      }
+
+      if (isSuccess) {
+        log('send', '발송 성공 확인');
+      }
       break;
     }
+    await humanDelay(500, 800);
   }
 
-  // 추가 확인 팝업 (두 번째)
-  await humanDelay(1000, 2000);
-  for (const sel of confirmSelectors) {
-    const btn = page.locator(sel).first();
-    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await btn.click();
-      log('send', `추가 확인 클릭: ${sel}`);
-      await humanDelay(1500, 2500);
-      break;
-    }
-  }
+  // Step 5: 페이지 이동 확인 (발송 후 목록 페이지로 이동하는 경우)
+  const finalUrl = page.url();
+  log('send', `발송 후 URL: ${finalUrl}`);
+
+  const isRedirected = finalUrl.includes('sendDocList') || finalUrl.includes('index') ||
+                       !finalUrl.includes('docWriteForm');
 
   await saveScreenshot(page, 'doc24_12_send_confirmed');
-  log('send', '발송 완료');
+
+  if (isRedirected) {
+    log('send', '발송 완료 (페이지 이동 확인)');
+  } else {
+    log('send', '발송 완료 (페이지 이동 미확인 - 성공 여부 보낸문서함에서 확인 필요)', 'warning');
+  }
+
   return { success: true };
 }
 
 /**
  * 보낸문서함에서 접수 확인 + 스크린샷
+ *
+ * 보낸문서함 URL: https://docu.gdoc.go.kr/doc/snd/sendDocList.do
+ * 테이블 구조: 첫 번째 행이 가장 최근 문서
  */
 async function checkSentBox(page, title, log) {
-  log('receipt', '보낸문서함 확인');
+  log('receipt', `보낸문서함 확인 - 검증 제목: "${title.substring(0, 30)}"`);
+  await dismissJconfirmAlerts(page, log);
 
-  // 보낸문서함 이동
+  // Step 1: 보낸문서함 이동
   await page.goto('https://docu.gdoc.go.kr/doc/snd/sendDocList.do', {
     waitUntil: 'domcontentloaded',
     timeout: TIMEOUTS.navigation,
   });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await humanDelay(2000, 3000);
+  await humanDelay(800, 1200);
+  await dismissJconfirmAlerts(page, log);
 
   await saveScreenshot(page, 'doc24_13_sent_box');
 
-  // 가장 최근 문서 확인
-  const recentDocSelectors = [
-    'table tbody tr:first-child td a',
-    'table tbody tr:first-child',
-    '.doc_list li:first-child a',
-    '.document_item:first-child',
-    'ul.list li:first-child a',
-  ];
+  // Step 2: 최신 문서(첫 번째 행) 확인
+  const latestDocInfo = await page.evaluate((expectedTitle) => {
+    // 테이블의 첫 번째 데이터 행
+    const firstRow = document.querySelector('table tbody tr:first-child');
+    if (!firstRow) return { found: false, error: '테이블 행을 찾을 수 없음' };
 
-  let docClicked = false;
-  for (const sel of recentDocSelectors) {
-    const doc = page.locator(sel).first();
-    if (await doc.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await doc.click();
-      log('receipt', `최근 문서 클릭: ${sel}`);
-      docClicked = true;
-      await humanDelay(2000, 3000);
-      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-      break;
+    const cells = firstRow.querySelectorAll('td');
+    const cellTexts = Array.from(cells).map(td => td.textContent?.trim() || '');
+
+    // 문서 제목이 포함된 셀 찾기
+    let docTitle = '';
+    let docLink = null;
+    for (const cell of cells) {
+      const link = cell.querySelector('a');
+      if (link) {
+        docTitle = link.textContent?.trim() || '';
+        docLink = link;
+        break;
+      }
+    }
+
+    // 제목이 없으면 셀 텍스트에서 가장 긴 것을 제목으로 추정
+    if (!docTitle) {
+      docTitle = cellTexts.reduce((a, b) => a.length > b.length ? a : b, '');
+    }
+
+    // 제목 매칭 확인
+    const titleMatches = docTitle.includes(expectedTitle) || expectedTitle.includes(docTitle) ||
+                         docTitle.replace(/\s+/g, '') === expectedTitle.replace(/\s+/g, '');
+
+    return {
+      found: true,
+      docTitle,
+      titleMatches,
+      cellTexts: cellTexts.join(' | '),
+      hasLink: !!docLink,
+    };
+  }, title).catch(() => ({ found: false, error: 'evaluate 실패' }));
+
+  log('receipt', `최신 문서 정보: ${JSON.stringify(latestDocInfo)}`);
+
+  if (!latestDocInfo.found) {
+    log('receipt', `보낸문서함에서 문서를 찾지 못함: ${latestDocInfo.error}`, 'error');
+    const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+    return {
+      receiptNumber: null,
+      documentUrl: page.url(),
+      screenshotB64: screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null,
+      error: '보낸문서함에서 문서를 찾지 못했습니다.',
+    };
+  }
+
+  if (!latestDocInfo.titleMatches) {
+    log('receipt', `제목 불일치! 기대: "${title}", 실제: "${latestDocInfo.docTitle}"`, 'warning');
+  } else {
+    log('receipt', `제목 일치 확인: "${latestDocInfo.docTitle}"`);
+  }
+
+  // Step 3: 최신 문서 클릭하여 상세 페이지 이동
+  const docClicked = await page.evaluate(() => {
+    const firstRow = document.querySelector('table tbody tr:first-child');
+    if (!firstRow) return false;
+    const link = firstRow.querySelector('a');
+    if (link) { link.click(); return true; }
+    // 링크가 없으면 행 자체를 클릭
+    firstRow.click();
+    return true;
+  }).catch(() => false);
+
+  if (docClicked) {
+    log('receipt', '최신 문서 클릭 완료');
+    await humanDelay(800, 1200);
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  } else {
+    // Playwright 셀렉터로 시도
+    const docSelectors = [
+      'table tbody tr:first-child td a',
+      'table tbody tr:first-child',
+    ];
+    for (const sel of docSelectors) {
+      const el = page.locator(sel).first();
+      if (await el.count().catch(() => 0) > 0) {
+        await el.click({ force: true });
+        log('receipt', `최신 문서 클릭 (fallback): ${sel}`);
+        await humanDelay(800, 1200);
+        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+        break;
+      }
     }
   }
 
   const documentUrl = page.url();
-  log('receipt', `문서 URL: ${documentUrl}`);
+  log('receipt', `문서 상세 URL: ${documentUrl}`);
   await saveScreenshot(page, 'doc24_14_document_detail');
 
-  // 접수번호/문서번호 추출
+  // Step 4: 접수번호/문서번호 추출
   const receiptNumber = await page.evaluate(() => {
-    const text = document.body.innerText;
+    const text = document.body.innerText || '';
     const patterns = [
-      /문서번호\s*[:\s]*([A-Za-z0-9\-]+)/,
-      /접수번호\s*[:\s]*([A-Za-z0-9\-]+)/,
-      /발송번호\s*[:\s]*([A-Za-z0-9\-]+)/,
-      /관리번호\s*[:\s]*([A-Za-z0-9\-]+)/,
+      /문서번호\s*[:\s]*([A-Za-z0-9가-힣\-_]+)/,
+      /접수번호\s*[:\s]*([A-Za-z0-9가-힣\-_]+)/,
+      /발송번호\s*[:\s]*([A-Za-z0-9가-힣\-_]+)/,
+      /관리번호\s*[:\s]*([A-Za-z0-9가-힣\-_]+)/,
+      /등록번호\s*[:\s]*([A-Za-z0-9가-힣\-_]+)/,
     ];
     for (const p of patterns) {
       const m = text.match(p);
-      if (m) return m[1];
+      if (m && m[1].length >= 3) return m[1];
+    }
+    // #regnum1 + #regnum2 필드에서도 추출 시도
+    const reg1 = document.getElementById('regnum1');
+    const reg2 = document.getElementById('regnum2');
+    if (reg1 && reg1.value) {
+      return reg2 && reg2.value ? `${reg1.value}-${reg2.value}` : reg1.value;
     }
     return null;
   }).catch(() => null);
 
   if (receiptNumber) {
-    log('receipt', `접수번호: ${receiptNumber}`);
+    log('receipt', `문서번호 추출: ${receiptNumber}`);
   } else {
-    log('receipt', '접수번호 추출 실패', 'warning');
+    log('receipt', '문서번호 추출 실패 - 보낸문서함 목록에서 확인 필요', 'warning');
   }
 
-  // 최종 스크린샷
+  // Step 5: 제목 불일치 시 에러 반환
+  if (!latestDocInfo.titleMatches) {
+    const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+    return {
+      receiptNumber,
+      documentUrl,
+      screenshotB64: screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null,
+      error: `발송이 확인되지 않았습니다. 보낸문서함 최신 문서 제목: "${latestDocInfo.docTitle}"`,
+    };
+  }
+
+  // Step 6: 최종 스크린샷
   const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
   const screenshotB64 = screenshotBuf
     ? `data:image/png;base64,${screenshotBuf.toString('base64')}`
     : null;
+
+  log('receipt', `보낸문서함 확인 완료 - 문서번호: ${receiptNumber || '미추출'}`);
 
   return {
     receiptNumber,
@@ -1174,15 +1463,38 @@ async function submitDoc24Document(params, onProgress = () => {}) {
     await dumpPageStructure(page, log);
 
     // Step 4: 수신기관 선택
-    await selectRecipient(page, recipient, log);
+    const recipientResult = await selectRecipient(page, recipient, log);
+    if (!recipientResult.success) {
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      return {
+        success: false,
+        taskId,
+        error: recipientResult.error || `수신기관 선택 실패: "${recipient}"`,
+        logs,
+        screenshot: screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null,
+      };
+    }
     onProgress(50);
 
     // Step 5: 제목/내용 입력
-    await fillContent(page, title, content || '', log);
+    const contentResult = await fillContent(page, title, content || '', log);
+    if (!contentResult.success) {
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      return {
+        success: false,
+        taskId,
+        error: contentResult.error || '제목/내용 입력 실패',
+        logs,
+        screenshot: screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null,
+      };
+    }
     onProgress(60);
 
     // Step 6: 첨부파일 업로드
-    await uploadAttachments(page, files, log);
+    const uploadResult = await uploadAttachments(page, files, log);
+    if (!uploadResult.success) {
+      log('upload', '첨부파일 업로드 실패 - 발송은 계속 진행', 'warning');
+    }
     onProgress(70);
 
     await saveScreenshot(page, 'doc24_before_send');
@@ -1207,7 +1519,22 @@ async function submitDoc24Document(params, onProgress = () => {}) {
     const receiptResult = await checkSentBox(page, title, log);
 
     onProgress(100);
-    log('success', `문서24 발송 완료 (접수번호: ${receiptResult.receiptNumber || '확인필요'})`);
+
+    // checkSentBox에서 에러가 반환된 경우 (제목 불일치 등)
+    if (receiptResult.error) {
+      log('receipt', `보낸문서함 확인 결과: ${receiptResult.error}`, 'warning');
+      return {
+        success: false,
+        taskId,
+        error: receiptResult.error,
+        receiptNumber: receiptResult.receiptNumber,
+        documentUrl: receiptResult.documentUrl,
+        screenshot: receiptResult.screenshotB64,
+        logs,
+      };
+    }
+
+    log('success', `문서24 발송 완료 (문서번호: ${receiptResult.receiptNumber || '확인필요'})`);
 
     return {
       success: true,
@@ -1216,8 +1543,8 @@ async function submitDoc24Document(params, onProgress = () => {}) {
       documentUrl: receiptResult.documentUrl,
       screenshot: receiptResult.screenshotB64,
       message: receiptResult.receiptNumber
-        ? `문서24를 통해 접수가 완료되었습니다. 접수번호: ${receiptResult.receiptNumber}`
-        : '문서24를 통해 문서가 발송되었습니다.',
+        ? `문서24를 통해 발송이 완료되었습니다. 문서번호: ${receiptResult.receiptNumber}`
+        : '문서24를 통해 문서가 발송되었습니다. 보낸문서함에서 확인해주세요.',
       logs,
     };
 
