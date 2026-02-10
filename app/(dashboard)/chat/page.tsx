@@ -236,7 +236,11 @@ export default function ChatPage() {
   const executeRpaSubmit = async () => {
     if (!uploadedFile) return;
 
-    // 필수 입력 검증 (주민번호: rrn1 6자리, rrn2 7자리)
+    // 필수 입력 검증
+    if (!authData.serviceUrl) {
+      alert("신청할 민원 서비스를 선택해주세요. 상단 검색란에서 민원을 검색하여 선택하세요.");
+      return;
+    }
     if (!authData.name || !authData.rrn1 || !authData.rrn2 || !authData.phoneNumber) {
       alert("이름, 주민등록번호, 휴대폰번호를 모두 입력해주세요.");
       return;
@@ -249,39 +253,68 @@ export default function ChatPage() {
     const { uploadedFileData } = useChatStore.getState();
     const fileBase64 = uploadedFileData[uploadedFile.savedPath];
 
+    console.log('[RPA v3] 인증 요청 시작:', {
+      serviceUrl: authData.serviceUrl,
+      serviceName: authData.serviceName,
+      fileName: uploadedFile.originalName,
+      hasFileBase64: !!fileBase64,
+      fileBase64Length: fileBase64?.length || 0,
+      authMethod: authData.authMethod,
+    });
+
     setShowAuthModal(false);
-    setRpaState({ status: 'connecting', message: '🤖 로봇이 정부24에 접속 중입니다... (화면은 뜨지 않습니다)' });
+    setRpaState({ status: 'connecting', message: '🤖 로봇이 정부24에 접속 중입니다...\n약 30~40초 소요됩니다.' });
 
     try {
-      // 1초 후 안내 메시지 업데이트
-      setTimeout(() => {
-        if (useChatStore.getState().rpaState.status === 'connecting') {
-          setRpaState({ status: 'connecting', message: '🤖 로봇이 정부24에 접속 중입니다...\n잠시 후 휴대폰으로 인증 알림이 발송됩니다.' });
+      // 10초 후 안내 메시지 업데이트
+      const progressTimer = setTimeout(() => {
+        const s = useChatStore.getState().rpaState.status;
+        if (s === 'connecting' || s === 'logging_in') {
+          setRpaState({ status: 'logging_in', message: '🔐 정부24 간편인증 폼 작성 중...\n거의 완료됩니다.' });
         }
-      }, 1500);
+      }, 10000);
 
-      setRpaState({ status: 'logging_in', message: '🔐 간편인증 요청 중... 휴대폰 알림을 확인해주세요.' });
+      const bodyObj = {
+        mode: 'upload',
+        fileBase64: fileBase64 || undefined,
+        fileName: uploadedFile.originalName,
+        serviceUrl: authData.serviceUrl,
+        serviceName: authData.serviceName || undefined,
+        authData: {
+          name: authData.name,
+          rrn1: authData.rrn1,
+          rrn2: authData.rrn2,
+          phoneNumber: authData.phoneNumber,
+          carrier: authData.carrier || undefined,
+          authMethod: authData.authMethod,
+        },
+      };
+
+      console.log('[RPA v3] fetch 시작, body size:', JSON.stringify(bodyObj).length);
 
       const res = await fetch('/api/rpa/submit-v2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'upload',
-          fileBase64,
-          fileName: uploadedFile.originalName,
-          serviceUrl: authData.serviceUrl || undefined,
-          serviceName: authData.serviceName || undefined,
-          authData: {
-            name: authData.name,
-            rrn1: authData.rrn1,      // 주민번호 앞자리
-            rrn2: authData.rrn2,      // 주민번호 뒷자리
-            phoneNumber: authData.phoneNumber,
-            carrier: authData.carrier || undefined,
-            authMethod: authData.authMethod,
-          },
-        }),
+        body: JSON.stringify(bodyObj),
       });
-      const data = await res.json();
+
+      clearTimeout(progressTimer);
+      console.log('[RPA v3] fetch 완료, status:', res.status);
+
+      // 응답 파싱 (clone으로 안전하게)
+      const resClone = res.clone();
+      let data;
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        const text = await resClone.text().catch(() => '');
+        console.error('[RPA v3] JSON 파싱 실패:', res.status, jsonErr, text.slice(0, 200));
+        setRpaState({ status: 'error', message: `서버 응답 오류 (HTTP ${res.status}): ${text.slice(0, 80) || '응답을 파싱할 수 없습니다'}` });
+        setTimeout(() => resetRpaState(), 10000);
+        return;
+      }
+
+      console.log('[RPA v3] 서버 응답:', JSON.stringify(data).slice(0, 300));
 
       if (data.success) {
         if (data.action === 'AUTHENTICATE') {
@@ -291,26 +324,21 @@ export default function ChatPage() {
             submissionId: data.submissionId,
           });
         } else if (data.step === 'submitted') {
-          setRpaState({
-            status: 'submitted',
-            message: '접수 완료!',
-            submissionId: data.submissionId,
-          });
+          setRpaState({ status: 'submitted', message: '접수 완료!', submissionId: data.submissionId });
           setTimeout(() => resetRpaState(), 5000);
         } else {
-          setRpaState({
-            status: 'auth_required',
-            message: data.message || '처리 중...',
-            submissionId: data.submissionId,
-          });
+          setRpaState({ status: 'auth_required', message: data.message || '처리 중...', submissionId: data.submissionId });
         }
       } else {
+        console.error('[RPA v3] API 에러:', data.error, data.details);
         setRpaState({ status: 'error', message: data.error || '접수 실패' });
-        setTimeout(() => resetRpaState(), 5000);
+        setTimeout(() => resetRpaState(), 10000);
       }
-    } catch (err) {
-      setRpaState({ status: 'error', message: '서버 연결 오류' });
-      setTimeout(() => resetRpaState(), 5000);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      console.error('[RPA v3] fetch 예외:', err);
+      setRpaState({ status: 'error', message: `서버 연결 오류 - ${errMsg}` });
+      setTimeout(() => resetRpaState(), 10000);
     }
   };
 
@@ -516,22 +544,107 @@ export default function ChatPage() {
           {rpaState.status === 'auth_required' && rpaState.submissionId && (
             <button
               onClick={async () => {
-                setRpaState({ status: 'uploading', message: '서류 제출 중...' });
+                const sid = rpaState.submissionId;
                 try {
-                  const res = await fetch('/api/rpa/submit-v2?action=confirm', {
+                  // Step 1: 인증 확인 (쿠키 획득)
+                  setRpaState({ status: 'verifying', message: '🔐 인증 확인 중... 잠시 기다려주세요.', submissionId: sid });
+                  console.log('[RPA v3] Step 1: 인증 확인 시작');
+                  const confirmRes = await fetch('/api/rpa/submit-v2?action=confirm', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ submissionId: rpaState.submissionId }),
+                    body: JSON.stringify({ submissionId: sid }),
                   });
-                  const data = await res.json();
-                  if (data.success) {
-                    setRpaState({ status: 'submitted', message: data.message || '접수 완료!' });
-                    setTimeout(() => resetRpaState(), 5000);
-                  } else {
-                    setRpaState({ status: 'error', message: data.error || '접수 실패' });
+                  const confirmClone = confirmRes.clone();
+                  let confirmData;
+                  try { confirmData = await confirmRes.json(); } catch {
+                    const t = await confirmClone.text().catch(() => '');
+                    setRpaState({ status: 'error', message: `인증 확인 응답 오류 (${confirmRes.status}): ${t.slice(0, 80)}` });
+                    return;
                   }
-                } catch (err) {
-                  setRpaState({ status: 'error', message: '서버 연결 오류' });
+                  console.log('[RPA v3] Step 1 응답:', confirmData);
+
+                  if (!confirmData.success) {
+                    setRpaState({ status: 'error', message: confirmData.error || '인증 확인 실패' });
+                    return;
+                  }
+
+                  // Step 2: 민원 제출 (비동기 큐 등록)
+                  setRpaState({ status: 'uploading', message: '📄 정부24에 서류 제출 요청 중...', submissionId: sid });
+                  console.log('[RPA v3] Step 2: 민원 제출 큐 등록 시작');
+                  const submitRes = await fetch('/api/rpa/submit-v2?action=submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ submissionId: sid }),
+                  });
+                  const submitClone = submitRes.clone();
+                  let submitData;
+                  try { submitData = await submitRes.json(); } catch {
+                    const t = await submitClone.text().catch(() => '');
+                    setRpaState({ status: 'error', message: `제출 응답 오류 (${submitRes.status}): ${t.slice(0, 80)}` });
+                    return;
+                  }
+                  console.log('[RPA v3] Step 2 응답:', submitData);
+
+                  if (!submitData.success) {
+                    setRpaState({ status: 'error', message: submitData.error || '민원 제출 실패' });
+                    return;
+                  }
+
+                  // Step 3: 폴링으로 제출 상태 확인 (5초 간격, 최대 5분)
+                  console.log('[RPA v3] Step 3: 제출 상태 폴링 시작');
+                  setRpaState({ status: 'uploading', message: '📄 정부24에 서류 제출 중...\n약 2~4분 소요됩니다.', submissionId: sid });
+
+                  const progressMessages: Record<string, string> = {
+                    '10': '📁 파일 준비 중...',
+                    '20': '📁 파일 저장 완료',
+                    '30': '🌐 브라우저 시작...',
+                    '40': '🔗 정부24 페이지 이동 중...',
+                    '50': '📋 신청 페이지 진입...',
+                    '60': '📝 신청 폼 작성 중...',
+                    '70': '📎 파일 업로드 중...',
+                    '80': '📤 제출 버튼 클릭...',
+                    '90': '🔍 접수번호 확인 중...',
+                  };
+
+                  const maxPolls = 60; // 5초 x 60 = 5분
+                  for (let poll = 0; poll < maxPolls; poll++) {
+                    await new Promise(r => setTimeout(r, 5000)); // 5초 대기
+
+                    try {
+                      const statusRes = await fetch('/api/rpa/submit-v2?action=submit-status', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ submissionId: sid }),
+                      });
+                      const statusData = await statusRes.json();
+                      console.log(`[RPA v3] 폴링 #${poll + 1}:`, statusData);
+
+                      if (statusData.status === 'submitted') {
+                        setRpaState({ status: 'submitted', message: statusData.message || '접수 완료!' });
+                        setTimeout(() => resetRpaState(), 5000);
+                        return;
+                      }
+                      if (statusData.status === 'failed') {
+                        setRpaState({ status: 'error', message: statusData.error || '민원 제출 실패' });
+                        return;
+                      }
+
+                      // 진행 중 - 진행률 기반 메시지
+                      const elapsed = (poll + 1) * 5;
+                      const progress = statusData.progress || 0;
+                      const progMsg = progressMessages[String(progress)] || '처리 중...';
+                      setRpaState({ status: 'uploading', message: `📄 정부24 서류 제출 중 (${elapsed}초)\n${progMsg}`, submissionId: sid });
+                    } catch (pollErr) {
+                      console.warn('[RPA v3] 폴링 오류:', pollErr);
+                    }
+                  }
+
+                  // 5분 초과 - 아직 진행 중일 수 있음
+                  setRpaState({ status: 'error', message: '제출 처리가 아직 진행 중입니다.\n잠시 후 새로고침하여 결과를 확인하거나,\n정부24(gov.kr)에서 나의 신청내역을 확인해주세요.' });
+                } catch (err: unknown) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  console.error('[RPA v3] 확인/제출 예외:', err);
+                  setRpaState({ status: 'error', message: `연결 오류: ${msg}` });
                 }
               }}
               className="mt-3 w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-base font-bold rounded-lg transition-all shadow-md flex items-center justify-center gap-2 animate-pulse"
@@ -713,25 +826,31 @@ export default function ChatPage() {
                             key={svc.code}
                             type="button"
                             onClick={() => {
+                              if (!svc.gov24Url) {
+                                alert(`"${svc.name}"은(는) 온라인 자동접수가 지원되지 않습니다. 온라인 신청 가능한 서비스를 선택해주세요.`);
+                                return;
+                              }
                               setAuthData({
                                 ...authData,
-                                serviceUrl: svc.gov24Url || '',
+                                serviceUrl: svc.gov24Url,
                                 serviceName: svc.name,
                               });
                               setShowServiceDropdown(false);
                               setServiceSearch('');
                             }}
-                            className="w-full text-left px-3 py-2 hover:bg-teal-50 border-b border-gray-100 last:border-0"
+                            className={`w-full text-left px-3 py-2 border-b border-gray-100 last:border-0 ${svc.gov24Url ? 'hover:bg-teal-50' : 'opacity-50 cursor-not-allowed'}`}
                           >
                             <div className="text-sm font-medium text-gray-900">{svc.name}</div>
-                            <div className="text-xs text-gray-500">{svc.category} | {svc.fee} | {svc.gov24Url ? '온라인 신청' : '방문 신청'}</div>
+                            <div className="text-xs text-gray-500">{svc.category} | {svc.fee} | {svc.gov24Url ? '✅ 온라인 신청' : '❌ 온라인 미지원'}</div>
                           </button>
                         ))}
                       </div>
                     )}
                   </>
                 )}
-                <p className="mt-1 text-xs text-gray-500">정부24에서 신청할 민원을 검색하여 선택하세요.</p>
+                <p className={`mt-1 text-xs ${authData.serviceUrl ? 'text-gray-500' : 'text-red-500 font-medium'}`}>
+                  {authData.serviceUrl ? '정부24에서 신청할 민원이 선택되었습니다.' : '⚠️ 민원 서비스를 반드시 선택해야 자동접수가 가능합니다.'}
+                </p>
               </div>
 
               {/* 인증 수단 선택 */}
@@ -842,7 +961,7 @@ export default function ChatPage() {
                 </button>
                 <button
                   onClick={executeRpaSubmit}
-                  disabled={!authData.name || authData.rrn1.length !== 6 || authData.rrn2.length !== 7 || !authData.phoneNumber}
+                  disabled={!authData.serviceUrl || !authData.name || authData.rrn1.length !== 6 || authData.rrn2.length !== 7 || !authData.phoneNumber}
                   className="flex-1 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   🚀 인증 요청 시작

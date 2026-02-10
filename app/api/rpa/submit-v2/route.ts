@@ -42,18 +42,53 @@ const RPA_WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-
 const RPA_WORKER_API_KEY = process.env.RPA_WORKER_API_KEY || process.env.WORKER_API_KEY || '';
 
 /**
- * RPA Worker API 호출 헬퍼
+ * RPA Worker API POST 호출 헬퍼
  */
-async function callWorker(endpoint: string, data: Record<string, unknown>) {
-  const response = await fetch(`${RPA_WORKER_URL}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': RPA_WORKER_API_KEY,
-    },
-    body: JSON.stringify(data),
-  });
-  return response.json();
+async function callWorker(endpoint: string, data: Record<string, unknown>, timeoutMs = 55000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${RPA_WORKER_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': RPA_WORKER_API_KEY,
+      },
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    });
+    return response.json();
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return { success: false, error: `Worker 응답 시간 초과 (${timeoutMs / 1000}초). 다시 시도해주세요.` };
+    }
+    return { success: false, error: `Worker 연결 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * RPA Worker API GET 호출 헬퍼
+ */
+async function callWorkerGet(endpoint: string, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${RPA_WORKER_URL}${endpoint}`, {
+      method: 'GET',
+      headers: { 'X-API-Key': RPA_WORKER_API_KEY },
+      signal: controller.signal,
+    });
+    return response.json();
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      return { success: false, error: 'Worker 상태 조회 시간 초과' };
+    }
+    return { success: false, error: `Worker 연결 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}` };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -153,12 +188,12 @@ async function handleRealRpaAuthRequest(
 }
 
 /**
- * Real RPA - 인증 확인 및 민원 제출 (Railway Worker 호출)
+ * Real RPA - Step 1: 인증 확인만 (쿠키 획득 → DB 저장)
+ * Vercel 60초 제한 내에 완료 가능 (~10초)
  */
 async function handleRealRpaConfirm(submissionId: string, userId: string) {
   console.log(`[Submit-V2] Real RPA: 인증 확인 요청 (submissionId: ${submissionId})`);
 
-  // 기존 제출 건 조회
   const submission = await prisma.civilServiceSubmission.findUnique({
     where: { id: submissionId },
   });
@@ -167,15 +202,19 @@ async function handleRealRpaConfirm(submissionId: string, userId: string) {
     return { success: false, error: '신청 건을 찾을 수 없습니다.' };
   }
 
-  if (submission.status !== 'auth_required') {
+  if (submission.status !== 'auth_required' && submission.status !== 'auth_confirmed') {
     return { success: false, error: `현재 상태: ${submission.status}. 인증 대기 상태가 아닙니다.` };
+  }
+
+  // 이미 인증 완료된 경우 → 바로 submit 단계로 안내
+  if (submission.status === 'auth_confirmed') {
+    return { success: true, submissionId, step: 'auth_confirmed', action: 'SUBMIT_READY', message: '인증이 이미 완료되었습니다. 제출을 진행합니다.' };
   }
 
   const resultData = JSON.parse(submission.resultData || '{}');
   const workerTaskId = resultData.workerTaskId;
 
-  // Worker에 인증 확인 요청 (clickConfirm: true로 "인증 완료" 버튼 클릭)
-  // Vercel maxDuration 60초 → Worker 타임아웃 50초
+  // Worker에 인증 확인 요청 (clickConfirm으로 "인증 완료" 버튼 클릭)
   console.log(`[Submit-V2] Real RPA: Worker 인증 확인 호출 (taskId: ${workerTaskId})`);
   const confirmResult = await callWorker('/gov24/auth/confirm', {
     taskId: workerTaskId,
@@ -184,57 +223,66 @@ async function handleRealRpaConfirm(submissionId: string, userId: string) {
   });
 
   if (!confirmResult.success) {
-    // 트래킹 로그 업데이트
     await prisma.submissionTrackingLog.create({
-      data: {
-        submissionId,
-        step: 'auth_confirm',
-        stepOrder: 3,
-        status: 'failed',
-        message: confirmResult.error || '인증 확인 실패',
-        startedAt: new Date(),
-        completedAt: new Date(),
-      },
+      data: { submissionId, step: 'auth_confirm', stepOrder: 3, status: 'failed', message: confirmResult.error || '인증 확인 실패', startedAt: new Date(), completedAt: new Date() },
     });
     return { success: false, error: confirmResult.error || '인증이 완료되지 않았습니다. 스마트폰에서 인증을 완료해주세요.' };
   }
 
-  // 인증 성공 → 실제 민원 제출 진행
-  console.log(`[Submit-V2] Real RPA: 인증 완료, 실제 민원 제출 시작`);
+  // 인증 성공 → 쿠키를 DB에 저장, status를 auth_confirmed로 변경
+  console.log(`[Submit-V2] Real RPA: 인증 완료, 쿠키 저장 (${confirmResult.cookies?.length || 0}개)`);
 
-  // 인증 트래킹 로그
   await prisma.submissionTrackingLog.create({
+    data: { submissionId, step: 'auth_confirm', stepOrder: 3, status: 'success', message: '간편인증 완료', startedAt: new Date(), completedAt: new Date() },
+  });
+
+  await prisma.civilServiceSubmission.update({
+    where: { id: submissionId },
     data: {
-      submissionId,
-      step: 'auth_confirm',
-      stepOrder: 3,
-      status: 'success',
-      message: '간편인증 완료',
-      startedAt: new Date(),
-      completedAt: new Date(),
+      status: 'auth_confirmed',
+      resultData: JSON.stringify({ ...resultData, cookies: confirmResult.cookies, authConfirmedAt: new Date().toISOString() }),
     },
   });
 
-  // serviceUrl 검증 - 없으면 제출 불가
+  return {
+    success: true,
+    submissionId,
+    step: 'auth_confirmed',
+    action: 'SUBMIT_READY',
+    message: '✅ 인증 완료! 민원 제출을 시작합니다...',
+  };
+}
+
+/**
+ * Real RPA - Step 2: 민원 제출 (저장된 쿠키로 gov24 접수)
+ * Vercel 60초 제한 내에 완료 가능 (~30-40초)
+ */
+async function handleRealRpaSubmit(submissionId: string, userId: string) {
+  console.log(`[Submit-V2] Real RPA: 민원 제출 시작 (submissionId: ${submissionId})`);
+
+  const submission = await prisma.civilServiceSubmission.findUnique({
+    where: { id: submissionId },
+  });
+
+  if (!submission || submission.userId !== userId) {
+    return { success: false, error: '신청 건을 찾을 수 없습니다.' };
+  }
+
+  if (submission.status !== 'auth_confirmed') {
+    return { success: false, error: `현재 상태: ${submission.status}. 인증 완료 상태가 아닙니다.` };
+  }
+
+  const resultData = JSON.parse(submission.resultData || '{}');
+  const cookies = resultData.cookies;
+
+  if (!cookies || cookies.length === 0) {
+    return { success: false, error: '인증 쿠키가 없습니다. 인증을 다시 진행해주세요.' };
+  }
+
+  // serviceUrl 검증
   const serviceUrl = submission.targetUrl || '';
   if (!serviceUrl || !serviceUrl.includes('gov.kr')) {
-    console.log(`[Submit-V2] Real RPA: serviceUrl 없음 - 제출 불가`);
-    await prisma.civilServiceSubmission.update({
-      where: { id: submissionId },
-      data: {
-        status: 'failed',
-        resultData: JSON.stringify({
-          ...resultData,
-          error: '정부24 민원 서비스 URL이 지정되지 않았습니다.',
-          authCompleted: true,
-          cookies: confirmResult.cookies?.length || 0,
-        }),
-      },
-    });
-    return {
-      success: false,
-      error: '정부24 민원 서비스 URL이 지정되지 않았습니다. 로봇 자동접수 시 민원 URL을 입력해주세요.',
-    };
+    return { success: false, error: '정부24 민원 서비스 URL이 지정되지 않았습니다.' };
   }
 
   // 파일 정보 준비
@@ -247,100 +295,48 @@ async function handleRealRpaConfirm(submissionId: string, userId: string) {
     });
   }
 
-  // Worker /gov24/submit 호출 (실제 민원 제출)
-  console.log(`[Submit-V2] Real RPA: Worker /gov24/submit 호출 (파일 ${files.length}개, serviceUrl: ${serviceUrl})`);
-  const submitResult = await callWorker('/gov24/submit', {
-    cookies: confirmResult.cookies,
-    serviceCode: submission.serviceCode || '',
-    serviceUrl,
-    formData: {},
-    files,
+  // Worker 비동기 큐에 제출 작업 등록 (즉시 반환, 백그라운드 처리)
+  console.log(`[Submit-V2] Real RPA: Worker /queue/add 호출 (파일 ${files.length}개, serviceUrl: ${serviceUrl})`);
+  const queueResult = await callWorker('/queue/add', {
+    taskType: 'gov24_submit',
+    taskData: {
+      cookies,
+      serviceCode: submission.serviceCode || '',
+      serviceUrl,
+      formData: {},
+      files,
+    },
   });
 
-  if (!submitResult.success) {
-    // 제출 실패
+  if (!queueResult.success || !queueResult.jobId) {
     await prisma.submissionTrackingLog.create({
-      data: {
-        submissionId,
-        step: 'submit',
-        stepOrder: 6,
-        status: 'failed',
-        message: submitResult.error || '민원 제출 실패',
-        startedAt: new Date(),
-        completedAt: new Date(),
-      },
+      data: { submissionId, step: 'submit', stepOrder: 6, status: 'failed', message: queueResult.error || '작업 등록 실패', startedAt: new Date(), completedAt: new Date() },
     });
-
-    await prisma.civilServiceSubmission.update({
-      where: { id: submissionId },
-      data: {
-        status: 'failed',
-        errorMessage: submitResult.error || '민원 제출 실패',
-        resultData: JSON.stringify({
-          ...resultData,
-          cookies: confirmResult.cookies,
-          submitError: submitResult.error,
-          submitLogs: submitResult.logs,
-        }),
-      },
-    });
-
-    return {
-      success: false,
-      submissionId,
-      error: submitResult.error || '민원 제출에 실패했습니다. 정부24에서 직접 제출해주세요.',
-      logs: submitResult.logs,
-    };
+    return { success: false, submissionId, error: queueResult.error || '민원 제출 작업 등록에 실패했습니다.' };
   }
 
-  // 제출 성공
-  const appNumber = submitResult.receiptNumber || null;
+  // jobId를 DB에 저장, status를 submitting으로 변경
+  console.log(`[Submit-V2] Real RPA: 큐 등록 완료 (jobId: ${queueResult.jobId})`);
 
   await prisma.civilServiceSubmission.update({
     where: { id: submissionId },
     data: {
-      status: 'submitted',
-      applicationNumber: appNumber,
-      completedAt: new Date(),
-      resultData: JSON.stringify({
-        ...resultData,
-        fileBase64: undefined, // DB 용량 절약: 제출 완료 후 base64 제거
-        cookies: confirmResult.cookies,
-        submitResult: {
-          receiptNumber: appNumber,
-          finalUrl: submitResult.finalUrl,
-          phase: submitResult.phase,
-        },
-        completedAt: new Date().toISOString(),
-      }),
+      status: 'submitting',
+      resultData: JSON.stringify({ ...resultData, workerJobId: queueResult.jobId, submitStartedAt: new Date().toISOString() }),
     },
   });
 
   await prisma.submissionTrackingLog.create({
-    data: {
-      submissionId,
-      step: 'submitted',
-      stepOrder: 6,
-      status: 'success',
-      message: appNumber
-        ? `정부24 접수 완료 (접수번호: ${appNumber})`
-        : '정부24 제출 완료 (접수번호 확인 필요)',
-      startedAt: new Date(),
-      completedAt: new Date(),
-    },
+    data: { submissionId, step: 'submit_queued', stepOrder: 5, status: 'success', message: `Worker 큐 등록 (jobId: ${queueResult.jobId})`, startedAt: new Date(), completedAt: new Date() },
   });
-
-  console.log(`[Submit-V2] Real RPA: 접수 완료 (접수번호: ${appNumber || '미확인'})`);
 
   return {
     success: true,
     submissionId,
-    step: 'submitted',
-    status: 'submitted',
-    message: appNumber
-      ? `✅ 정부24 접수 완료! 접수번호: ${appNumber}`
-      : '✅ 정부24에 제출되었습니다. 접수번호는 정부24에서 확인해주세요.',
-    applicationNumber: appNumber,
+    step: 'submitting',
+    status: 'submitting',
+    workerJobId: queueResult.jobId,
+    message: '📄 정부24에 서류를 제출하고 있습니다. 잠시 기다려주세요...',
   };
 }
 
@@ -418,9 +414,19 @@ export async function POST(request: NextRequest) {
       return handleStatusCheck(request, session.user.id);
     }
 
-    // --- Action: Confirm Submit ---
+    // --- Action: Confirm (인증 확인만) ---
     if (action === 'confirm') {
       return handleConfirm(request, session.user.id);
+    }
+
+    // --- Action: Submit (민원 제출) ---
+    if (action === 'submit') {
+      return handleSubmitAction(request, session.user.id);
+    }
+
+    // --- Action: Submit Status (제출 상태 폴링) ---
+    if (action === 'submit-status') {
+      return handleSubmitStatusAction(request, session.user.id);
     }
 
     // --- Main Pipeline ---
@@ -528,57 +534,28 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // serviceUrl 미제공 시: 정부24 로그인 → 간편인증 요청 (Real-Time RPA)
+      // =====================================================================
+      // Real RPA: Railway Worker를 통한 실제 간편인증 (authData가 있으면 항상 이 경로)
+      // =====================================================================
+      if (input.authData) {
+        console.log(`[Submit-V2] Real-Time RPA: 간편인증 요청 (serviceUrl: ${input.serviceUrl || '없음'})`);
+        const rpaResult = await handleRealRpaAuthRequest(
+          session.user.id,
+          input.authData,
+          { filePath, fileType, fileName: input.fileName || '', fileBase64: input.fileBase64 || undefined },
+          input.serviceName || '정부24 자동 접수',
+          input.serviceUrl || ''
+        );
+        return NextResponse.json(rpaResult);
+      }
+
+      // 인증 정보 없으면 에러 (UI에서 인증 수단 선택 필요)
       if (!input.serviceUrl) {
-        console.log(`[Submit-V2] Real-Time RPA: serviceUrl 없음 → 정부24 로그인부터 시작`);
-
-        // =====================================================================
-        // Real RPA: Railway Worker를 통한 실제 간편인증
-        // =====================================================================
-        if (input.authData) {
-          // 인증 정보가 있으면 Real RPA 실행
-          const rpaResult = await handleRealRpaAuthRequest(
-            session.user.id,
-            input.authData,
-            { filePath, fileType, fileName: input.fileName || '', fileBase64: input.fileBase64 || undefined },
-            input.serviceName || '정부24 자동 접수',
-            input.serviceUrl || ''
-          );
-          return NextResponse.json(rpaResult);
-        }
-
-        // 인증 정보 없으면 에러 (UI에서 인증 수단 선택 필요)
         return NextResponse.json({
           success: false,
           error: '인증 정보가 필요합니다. 인증 수단(카카오/네이버/PASS/토스)과 개인정보를 입력해주세요.',
           requiresAuth: true,
         }, { status: 400 });
-
-        // =====================================================================
-        // Legacy: 기존 로직 (authData 없이 호출된 경우 - 향후 제거 예정)
-        // =====================================================================
-        /*
-        const submission = await prisma.civilServiceSubmission.create({
-          data: {
-            serviceName: input.serviceName || '채팅 파일 접수',
-            serviceCode: `chat_upload_${fileType}`,
-            targetSite: 'gov24',
-            targetUrl: '',
-            applicationData: JSON.stringify({ filePath: input.fileName || filePath, fileType }),
-            applicantName: session.user.name || '',
-            status: 'auth_required',
-            userId: session.user.id,
-            resultData: JSON.stringify({
-              filePath,
-              fileType,
-              documentStatus,
-              pipeline: 'v2_realtime',
-            }),
-          },
-        });
-
-        // ... legacy Gov24Worker code removed ...
-        */
       }
 
     } else {
@@ -832,18 +809,12 @@ async function handleConfirm(request: NextRequest, userId: string) {
     return NextResponse.json({ success: false, error: 'submissionId 필요' }, { status: 400 });
   }
 
-  // =====================================================================
-  // Real RPA: Railway Worker를 통한 인증 확인 및 민원 제출
-  // =====================================================================
+  // Step 1: 인증 확인 (쿠키 획득)
   const rpaResult = await handleRealRpaConfirm(submissionId, userId);
   if (!rpaResult.success) {
     return NextResponse.json(rpaResult, { status: 400 });
   }
   return NextResponse.json(rpaResult);
-
-  // =====================================================================
-  // Legacy: 기존 Gov24Worker 로직 (제거됨)
-  // =====================================================================
   /*
   const submission = await prisma.civilServiceSubmission.findUnique({
     where: { id: submissionId },
@@ -936,6 +907,138 @@ export async function GET() {
       { order: 6, name: 'submitted', description: '제출 완료' },
     ],
   });
+}
+
+// =============================================================================
+// Action: Submit Status (비동기 제출 상태 폴링)
+// =============================================================================
+
+async function handleSubmitStatusAction(request: NextRequest, userId: string) {
+  const body = await request.json();
+  const { submissionId } = body;
+
+  if (!submissionId) {
+    return NextResponse.json({ success: false, error: 'submissionId 필요' }, { status: 400 });
+  }
+
+  const submission = await prisma.civilServiceSubmission.findUnique({
+    where: { id: submissionId },
+  });
+
+  if (!submission || submission.userId !== userId) {
+    return NextResponse.json({ success: false, error: '신청 건을 찾을 수 없습니다.' }, { status: 404 });
+  }
+
+  // 이미 완료/실패된 경우 DB 상태 그대로 반환
+  if (submission.status === 'submitted') {
+    return NextResponse.json({
+      success: true, submissionId, step: 'submitted', status: 'submitted',
+      message: submission.applicationNumber ? `✅ 접수 완료! 접수번호: ${submission.applicationNumber}` : '✅ 제출 완료!',
+      applicationNumber: submission.applicationNumber,
+    });
+  }
+  if (submission.status === 'failed') {
+    return NextResponse.json({
+      success: false, submissionId, step: 'failed', status: 'failed',
+      error: submission.errorMessage || '민원 제출 실패',
+    });
+  }
+
+  const resultData = JSON.parse(submission.resultData || '{}');
+  const workerJobId = resultData.workerJobId;
+
+  if (!workerJobId) {
+    return NextResponse.json({ success: false, error: 'Worker 작업 ID가 없습니다.' }, { status: 400 });
+  }
+
+  // Worker에서 작업 상태 조회
+  console.log(`[Submit-V2] 제출 상태 폴링: jobId=${workerJobId}`);
+  const statusResult = await callWorkerGet(`/tasks/${workerJobId}`);
+
+  if (!statusResult.success) {
+    return NextResponse.json({
+      success: true, submissionId, step: 'submitting', status: 'submitting',
+      message: '📄 서류 제출 진행 중...',
+    });
+  }
+
+  // Worker 작업 완료
+  if (statusResult.state === 'completed') {
+    const result = statusResult.result || {};
+    const appNumber = result.receiptNumber || null;
+
+    await prisma.civilServiceSubmission.update({
+      where: { id: submissionId },
+      data: {
+        status: 'submitted',
+        applicationNumber: appNumber,
+        completedAt: new Date(),
+        resultData: JSON.stringify({
+          ...resultData,
+          fileBase64: undefined,
+          submitResult: { receiptNumber: appNumber, finalUrl: result.finalUrl, phase: result.phase },
+          completedAt: new Date().toISOString(),
+        }),
+      },
+    });
+
+    await prisma.submissionTrackingLog.create({
+      data: { submissionId, step: 'submitted', stepOrder: 6, status: 'success', message: appNumber ? `정부24 접수 완료 (접수번호: ${appNumber})` : '정부24 제출 완료', startedAt: new Date(), completedAt: new Date() },
+    });
+
+    console.log(`[Submit-V2] 제출 완료: 접수번호=${appNumber || '미확인'}`);
+
+    return NextResponse.json({
+      success: true, submissionId, step: 'submitted', status: 'submitted',
+      message: appNumber ? `✅ 정부24 접수 완료! 접수번호: ${appNumber}` : '✅ 정부24에 제출되었습니다.',
+      applicationNumber: appNumber,
+    });
+  }
+
+  // Worker 작업 실패
+  if (statusResult.state === 'failed') {
+    const errorMsg = statusResult.failedReason || '민원 제출 실패';
+
+    await prisma.civilServiceSubmission.update({
+      where: { id: submissionId },
+      data: { status: 'failed', errorMessage: errorMsg },
+    });
+
+    await prisma.submissionTrackingLog.create({
+      data: { submissionId, step: 'submit', stepOrder: 6, status: 'failed', message: errorMsg, startedAt: new Date(), completedAt: new Date() },
+    });
+
+    return NextResponse.json({
+      success: false, submissionId, step: 'failed', status: 'failed',
+      error: errorMsg,
+    });
+  }
+
+  // 아직 진행 중 (pending / processing)
+  return NextResponse.json({
+    success: true, submissionId, step: 'submitting', status: 'submitting',
+    progress: statusResult.progress || 0,
+    message: `📄 정부24에 서류를 제출하고 있습니다... (${statusResult.progress || 0}%)`,
+  });
+}
+
+// =============================================================================
+// Action: Submit (민원 제출 - 인증 완료 후 별도 호출)
+// =============================================================================
+
+async function handleSubmitAction(request: NextRequest, userId: string) {
+  const body = await request.json();
+  const { submissionId } = body;
+
+  if (!submissionId) {
+    return NextResponse.json({ success: false, error: 'submissionId 필요' }, { status: 400 });
+  }
+
+  const result = await handleRealRpaSubmit(submissionId, userId);
+  if (!result.success) {
+    return NextResponse.json(result, { status: 400 });
+  }
+  return NextResponse.json(result);
 }
 
 // =============================================================================
