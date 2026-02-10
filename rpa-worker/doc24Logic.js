@@ -40,7 +40,7 @@ async function saveScreenshot(page, prefix = 'doc24') {
  * 문서24 로그인
  */
 async function loginToDoc24(page, loginId, password, log) {
-  log('login', '문서24 로그인 시작');
+  log('login', `문서24 로그인 시작 - ID: ${loginId}, PW길이: ${password?.length || 0}, PW첫글자: ${password?.[0] || '?'}, PW끝글자: ${password?.[password.length-1] || '?'}`);
 
   // 로그인 페이지 이동
   await page.goto('https://docu.gdoc.go.kr/cmm/main/loginForm.do', {
@@ -103,6 +103,14 @@ async function loginToDoc24(page, loginId, password, log) {
     }
   }
 
+  // dialog(alert) 메시지 캡처
+  let dialogMsg = '';
+  page.on('dialog', async (dialog) => {
+    dialogMsg = dialog.message();
+    log('login', `Dialog 감지: "${dialogMsg}"`);
+    await dialog.accept().catch(() => {});
+  });
+
   // 로그인 버튼 클릭
   const loginBtn = page.locator('#loginBtn');
   if (await loginBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -117,6 +125,12 @@ async function loginToDoc24(page, loginId, password, log) {
   // 로그인 결과 대기
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await humanDelay(2000, 3000);
+
+  // dialog 메시지가 있으면 에러 반환
+  if (dialogMsg) {
+    log('login', `로그인 실패 (alert): ${dialogMsg}`, 'error');
+    return { success: false, error: `문서24: ${dialogMsg}` };
+  }
 
   // 중복 세션 확인 팝업 처리 (jconfirm)
   const confirmBtn = page.locator('.jconfirm-buttons button').first();
