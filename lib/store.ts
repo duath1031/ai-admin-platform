@@ -22,6 +22,7 @@ interface RpaState {
   status: RpaStatus;
   message: string;
   submissionId: string | null;
+  screenshot?: string | null;
 }
 
 interface ChatState {

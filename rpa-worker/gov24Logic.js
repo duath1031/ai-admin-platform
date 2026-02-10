@@ -1139,13 +1139,15 @@ async function submitGov24Service(params, onProgress = () => {}) {
     if (afterApplyUrl.includes('/login') || afterApplyUrl.includes('nlogin')) {
       log('apply', '로그인 페이지로 리디렉트됨 - 인증 세션이 만료되었거나 유효하지 않음', 'warning');
       await saveScreenshot(page, `${taskId}_02_login_redirect`);
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
       return {
         success: false,
         taskId,
         phase: 'error',
         error: '인증 세션이 만료되었습니다. 다시 인증을 진행해주세요.',
         logs,
-        screenshots: [`${taskId}_02_login_redirect`],
+        screenshot: screenshotB64,
       };
     }
 
@@ -1374,13 +1376,15 @@ async function submitGov24Service(params, onProgress = () => {}) {
     if (!submitClicked) {
       await saveScreenshot(page, `${taskId}_05_no_submit_btn`);
       log('submit', '제출 버튼을 찾지 못함', 'warning');
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
       return {
         success: false,
         taskId,
         phase: 'error',
         error: '제출 버튼을 찾지 못했습니다. 페이지 구조를 확인해주세요.',
         logs,
-        screenshots: [`${taskId}_05_no_submit_btn`],
+        screenshot: screenshotB64,
       };
     }
 
@@ -1450,6 +1454,8 @@ async function submitGov24Service(params, onProgress = () => {}) {
     if (errorAlerts.length > 0) {
       await saveScreenshot(page, `${taskId}_07_alert_error`);
       log('error', `폼 검증 실패 alert: ${errorAlerts.join(', ')}`, 'error');
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
       return {
         success: false,
         taskId,
@@ -1457,6 +1463,7 @@ async function submitGov24Service(params, onProgress = () => {}) {
         error: `정부24 폼 검증 실패: ${errorAlerts[0]}`,
         finalUrl,
         logs,
+        screenshot: screenshotB64,
       };
     }
 
@@ -1476,6 +1483,10 @@ async function submitGov24Service(params, onProgress = () => {}) {
 
     await saveScreenshot(page, `${taskId}_07_final`);
 
+    // 최종 스크린샷 캡처
+    const finalScreenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+    const finalScreenshotB64 = finalScreenshotBuf ? `data:image/png;base64,${finalScreenshotBuf.toString('base64')}` : null;
+
     if (receiptNumber || isCompleted) {
       log('success', `민원 제출 완료 (접수번호: ${receiptNumber || '확인필요'})`);
       return {
@@ -1488,10 +1499,11 @@ async function submitGov24Service(params, onProgress = () => {}) {
         receiptNumber,
         finalUrl,
         logs,
+        screenshot: finalScreenshotB64,
       };
     }
 
-    // 제출 버튼 클릭했지만 결과 미확인 → 실패로 처리 (이전에는 success:true였음)
+    // 제출 버튼 클릭했지만 결과 미확인 → 실패로 처리
     log('warning', '제출 후 접수 확인 페이지를 찾지 못함', 'warning');
     return {
       success: false,
@@ -1501,15 +1513,19 @@ async function submitGov24Service(params, onProgress = () => {}) {
       receiptNumber: null,
       finalUrl,
       logs,
+      screenshot: finalScreenshotB64,
     };
 
   } catch (error) {
     log('error', error.message, 'error');
 
+    let errorScreenshotB64 = null;
     if (context) {
       const pages = context.pages();
       if (pages.length > 0) {
         await saveScreenshot(pages[0], `${taskId}_error`);
+        const errBuf = await pages[0].screenshot({ fullPage: false }).catch(() => null);
+        errorScreenshotB64 = errBuf ? `data:image/png;base64,${errBuf.toString('base64')}` : null;
       }
     }
 
@@ -1519,6 +1535,7 @@ async function submitGov24Service(params, onProgress = () => {}) {
       phase: 'error',
       error: error.message,
       logs,
+      screenshot: errorScreenshotB64,
     };
 
   } finally {

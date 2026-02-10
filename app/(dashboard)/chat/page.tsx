@@ -540,6 +540,13 @@ export default function ChatPage() {
               </button>
             )}
           </div>
+          {/* 스크린샷 표시 (성공/실패 시) */}
+          {rpaState.screenshot && (rpaState.status === 'submitted' || rpaState.status === 'error') && (
+            <div className="mt-2">
+              <p className="text-xs mb-1 opacity-70">{rpaState.status === 'submitted' ? '접수 완료 화면:' : '실패 시점 화면:'}</p>
+              <img src={rpaState.screenshot} alt="정부24 결과 화면" className="w-full rounded border max-h-64 object-contain" />
+            </div>
+          )}
           {/* auth_required 상태: 인증 완료 버튼 표시 */}
           {rpaState.status === 'auth_required' && rpaState.submissionId && (
             <button
@@ -620,12 +627,11 @@ export default function ChatPage() {
                       console.log(`[RPA v3] 폴링 #${poll + 1}:`, statusData);
 
                       if (statusData.status === 'submitted') {
-                        setRpaState({ status: 'submitted', message: statusData.message || '접수 완료!' });
-                        setTimeout(() => resetRpaState(), 5000);
+                        setRpaState({ status: 'submitted', message: statusData.message || '접수 완료!', screenshot: statusData.screenshot || null });
                         return;
                       }
                       if (statusData.status === 'failed') {
-                        setRpaState({ status: 'error', message: statusData.error || '민원 제출 실패' });
+                        setRpaState({ status: 'error', message: statusData.error || '민원 제출 실패', screenshot: statusData.screenshot || null });
                         return;
                       }
 

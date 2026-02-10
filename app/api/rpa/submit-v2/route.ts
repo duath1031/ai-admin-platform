@@ -965,39 +965,76 @@ async function handleSubmitStatusAction(request: NextRequest, userId: string) {
   // Worker 작업 완료
   if (statusResult.state === 'completed') {
     const result = statusResult.result || {};
-    const appNumber = result.receiptNumber || null;
 
-    await prisma.civilServiceSubmission.update({
-      where: { id: submissionId },
-      data: {
-        status: 'submitted',
+    if (result.success === true) {
+      // 실제 제출 성공
+      const appNumber = result.receiptNumber || null;
+
+      await prisma.civilServiceSubmission.update({
+        where: { id: submissionId },
+        data: {
+          status: 'submitted',
+          applicationNumber: appNumber,
+          completedAt: new Date(),
+          resultData: JSON.stringify({
+            ...resultData,
+            fileBase64: undefined,
+            submitResult: { receiptNumber: appNumber, finalUrl: result.finalUrl, phase: result.phase },
+            screenshot: result.screenshot || null,
+            completedAt: new Date().toISOString(),
+          }),
+        },
+      });
+
+      await prisma.submissionTrackingLog.create({
+        data: { submissionId, step: 'submitted', stepOrder: 6, status: 'success', message: appNumber ? `정부24 접수 완료 (접수번호: ${appNumber})` : '정부24 제출 완료', startedAt: new Date(), completedAt: new Date() },
+      });
+
+      console.log(`[Submit-V2] 제출 완료: 접수번호=${appNumber || '미확인'}`);
+
+      return NextResponse.json({
+        success: true, submissionId, step: 'submitted', status: 'submitted',
+        message: appNumber ? `✅ 정부24 접수 완료! 접수번호: ${appNumber}` : '✅ 정부24에 제출되었습니다.',
         applicationNumber: appNumber,
-        completedAt: new Date(),
-        resultData: JSON.stringify({
-          ...resultData,
-          fileBase64: undefined,
-          submitResult: { receiptNumber: appNumber, finalUrl: result.finalUrl, phase: result.phase },
-          completedAt: new Date().toISOString(),
-        }),
-      },
-    });
+        screenshot: result.screenshot || null,
+      });
+    } else {
+      // Worker 함수는 완료했지만 제출 실패
+      const errorMsg = result.error || '정부24 제출 중 오류가 발생했습니다.';
 
-    await prisma.submissionTrackingLog.create({
-      data: { submissionId, step: 'submitted', stepOrder: 6, status: 'success', message: appNumber ? `정부24 접수 완료 (접수번호: ${appNumber})` : '정부24 제출 완료', startedAt: new Date(), completedAt: new Date() },
-    });
+      await prisma.civilServiceSubmission.update({
+        where: { id: submissionId },
+        data: {
+          status: 'failed',
+          errorMessage: errorMsg,
+          resultData: JSON.stringify({
+            ...resultData,
+            fileBase64: undefined,
+            failedResult: { error: errorMsg, phase: result.phase, finalUrl: result.finalUrl },
+            screenshot: result.screenshot || null,
+            failedAt: new Date().toISOString(),
+          }),
+        },
+      });
 
-    console.log(`[Submit-V2] 제출 완료: 접수번호=${appNumber || '미확인'}`);
+      await prisma.submissionTrackingLog.create({
+        data: { submissionId, step: 'submit', stepOrder: 6, status: 'failed', message: errorMsg, startedAt: new Date(), completedAt: new Date() },
+      });
 
-    return NextResponse.json({
-      success: true, submissionId, step: 'submitted', status: 'submitted',
-      message: appNumber ? `✅ 정부24 접수 완료! 접수번호: ${appNumber}` : '✅ 정부24에 제출되었습니다.',
-      applicationNumber: appNumber,
-    });
+      console.log(`[Submit-V2] 제출 실패 (Worker completed but success=false): ${errorMsg}`);
+
+      return NextResponse.json({
+        success: false, submissionId, step: 'failed', status: 'failed',
+        error: errorMsg,
+        screenshot: result.screenshot || null,
+      });
+    }
   }
 
-  // Worker 작업 실패
+  // Worker 작업 실패 (큐 레벨 에러)
   if (statusResult.state === 'failed') {
     const errorMsg = statusResult.failedReason || '민원 제출 실패';
+    const result = statusResult.result || {};
 
     await prisma.civilServiceSubmission.update({
       where: { id: submissionId },
@@ -1011,6 +1048,7 @@ async function handleSubmitStatusAction(request: NextRequest, userId: string) {
     return NextResponse.json({
       success: false, submissionId, step: 'failed', status: 'failed',
       error: errorMsg,
+      screenshot: result.screenshot || null,
     });
   }
 

@@ -85,8 +85,7 @@ export const SERVICE_REGISTRY: Record<string, ServiceDefinition> = {
     name: '통신판매업 신고',
     category: '전자상거래',
     gov24: {
-      cappBizCD: '14800000001',
-      directUrl: getGov24DirectUrl('14800000001'),
+      // cappBizCD 확인 필요: 14800000001은 환경개선부담금 조정신청 페이지였음
       searchKeyword: '통신판매업 신고',
     },
     document: {
