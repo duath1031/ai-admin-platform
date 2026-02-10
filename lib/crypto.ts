@@ -7,9 +7,11 @@ import crypto from 'crypto';
 const ALGORITHM = 'aes-256-gcm';
 
 function getKey(): Buffer {
-  const keyHex = process.env.DOC24_ENCRYPTION_KEY;
+  const keyHex = process.env.DOC24_ENCRYPTION_KEY?.trim();
   if (!keyHex || keyHex.length !== 64) {
-    throw new Error('DOC24_ENCRYPTION_KEY 환경변수가 설정되지 않았거나 길이가 잘못되었습니다 (64자 hex 필요)');
+    throw new Error(
+      `DOC24_ENCRYPTION_KEY error: exists=${!!keyHex}, length=${keyHex?.length ?? 0}, expected=64`
+    );
   }
   return Buffer.from(keyHex, 'hex');
 }

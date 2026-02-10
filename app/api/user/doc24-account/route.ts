@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
     console.error('[Doc24Account POST] Error:', error);
     if (error.message?.includes('DOC24_ENCRYPTION_KEY')) {
       return NextResponse.json(
-        { error: '서버 암호화 설정 오류. 관리자에게 문의해주세요.' },
+        { error: `암호화 키 오류: ${error.message}` },
         { status: 500 }
       );
     }
