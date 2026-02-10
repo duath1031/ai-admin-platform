@@ -992,7 +992,7 @@ async function confirmGov24Auth(params) {
 const fs = require('fs');
 const path = require('path');
 
-async function submitGov24Service(params) {
+async function submitGov24Service(params, onProgress = () => {}) {
   const { cookies, serviceCode, serviceUrl, formData = {}, files = [] } = params;
   const taskId = uuidv4();
   const logs = [];
@@ -1009,6 +1009,7 @@ async function submitGov24Service(params) {
 
   try {
     log('init', `민원 제출 시작 (파일 ${files.length}개)`);
+    onProgress(20);
 
     // =========================================================================
     // Step 1: base64 파일 → /tmp 저장
@@ -1032,6 +1033,7 @@ async function submitGov24Service(params) {
     // =========================================================================
     // Step 2: 브라우저 + 쿠키 설정
     // =========================================================================
+    onProgress(30);
     const stealth = await launchStealthBrowser();
     browser = stealth.browser;
     context = stealth.context;
@@ -1064,13 +1066,14 @@ async function submitGov24Service(params) {
     // Step 3: 서비스 페이지 이동
     // =========================================================================
     const targetUrl = serviceUrl || `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${serviceCode}`;
+    onProgress(40);
     log('navigate', `서비스 페이지 이동: ${targetUrl}`);
 
     await page.goto(targetUrl, {
       waitUntil: 'domcontentloaded',
       timeout: TIMEOUTS.navigation,
     });
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await humanDelay(1000, 2000);
     await saveScreenshot(page, `${taskId}_01_service_page`);
 
@@ -1106,6 +1109,7 @@ async function submitGov24Service(params) {
     }).catch(() => []);
     log('debug', `페이지 요소 분석: ${JSON.stringify(pageElements)}`);
 
+    onProgress(50);
     log('apply', '신청 버튼 탐색');
     const applySelectors = [
       // 정부24 실제 패턴 (디버그로 확인됨)
@@ -1228,7 +1232,7 @@ async function submitGov24Service(params) {
       await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
       await humanDelay(2000, 3000);
     } else {
-      await page.waitForLoadState('networkidle').catch(() => {});
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
       await humanDelay(1000, 2000);
     }
     await saveScreenshot(page, `${taskId}_02_apply_page`);
@@ -1255,6 +1259,7 @@ async function submitGov24Service(params) {
     // =========================================================================
     // Step 5: 파일 업로드
     // =========================================================================
+    onProgress(60);
     if (localFilePaths.length > 0) {
       log('upload', `파일 업로드 시도 (${localFilePaths.length}개)`);
 
@@ -1388,6 +1393,7 @@ async function submitGov24Service(params) {
     }).catch(() => []);
     log('debug', `제출 페이지 요소: ${JSON.stringify(submitPageElements)}`);
 
+    onProgress(80);
     log('submit', '제출 버튼 탐색');
     const submitSelectors = [
       // onclick 기반 (가장 정확함)
@@ -1486,13 +1492,14 @@ async function submitGov24Service(params) {
     }
 
     // 페이지 로드 대기
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await humanDelay(2000, 4000);
     await saveScreenshot(page, `${taskId}_06_after_submit`);
 
     // =========================================================================
     // Step 8: 접수번호 추출
     // =========================================================================
+    onProgress(90);
     log('receipt', '접수번호 추출 시도');
 
     const pageText = await page.textContent('body').catch(() => '');

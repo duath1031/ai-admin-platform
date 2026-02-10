@@ -35,8 +35,8 @@ async function processJob(job) {
         break;
 
       case 'gov24_submit':
-        updateJob(jobId, { progress: 30 });
-        result = await submitGov24Service(data);
+        updateJob(jobId, { progress: 20 });
+        result = await submitGov24Service(data, (progress) => updateJob(jobId, { progress }));
         break;
 
       case 'generic_rpa':
