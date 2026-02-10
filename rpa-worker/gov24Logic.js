@@ -1056,185 +1056,78 @@ async function submitGov24Service(params, onProgress = () => {}) {
 
     const page = stealth.page;
 
-    // 다이얼로그(alert/confirm) 자동 처리
+    // 다이얼로그(alert/confirm) 추적 - 에러 alert 감지용
+    const dialogMessages = [];
     page.on('dialog', async (dialog) => {
-      log('dialog', `${dialog.type()}: ${dialog.message()}`);
+      const msg = dialog.message();
+      log('dialog', `${dialog.type()}: ${msg}`);
+      dialogMessages.push(msg);
       await dialog.accept();
     });
 
     // =========================================================================
-    // Step 3: 서비스 페이지 이동
+    // Step 3: 직접 신청 URL로 이동 (정보 페이지 건너뛰기)
     // =========================================================================
-    const targetUrl = serviceUrl || `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${serviceCode}`;
+    // serviceUrl에서 CappBizCD 추출 → AA040_apply.do로 직접 이동
     onProgress(40);
-    log('navigate', `서비스 페이지 이동: ${targetUrl}`);
+    const cappBizCDMatch = (serviceUrl || '').match(/CappBizCD=([^&]+)/);
+    const cappBizCD = cappBizCDMatch ? cappBizCDMatch[1] : serviceCode;
 
-    await page.goto(targetUrl, {
+    // 방법 1: 직접 신청 URL (쿠키가 있으면 로그인 건너뛰고 바로 폼)
+    const directApplyUrl = `https://www.gov.kr/mw/AA040_apply.do?CappBizCD=${cappBizCD}`;
+    log('navigate', `직접 신청 URL 이동: ${directApplyUrl}`);
+
+    await page.goto(directApplyUrl, {
       waitUntil: 'domcontentloaded',
       timeout: TIMEOUTS.navigation,
     });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await humanDelay(1000, 2000);
-    await saveScreenshot(page, `${taskId}_01_service_page`);
 
-    // 현재 URL과 페이지 제목 기록
-    const currentUrl = page.url();
-    const pageTitle = await page.title();
+    let currentUrl = page.url();
+    let pageTitle = await page.title();
     log('navigate', `현재 페이지: ${pageTitle} (${currentUrl})`);
+    await saveScreenshot(page, `${taskId}_01_direct_apply`);
 
-    // =========================================================================
-    // Step 4: 페이지 구조 분석 + "신청" 버튼 찾기 및 클릭
-    // =========================================================================
-    // 페이지에 있는 모든 클릭 가능한 요소 수집 (디버그)
-    const pageElements = await page.evaluate(() => {
-      const elements = [];
-      // 모든 a, button, input[type=button/submit] 요소
-      const clickables = document.querySelectorAll('a, button, input[type="button"], input[type="submit"], [onclick]');
-      clickables.forEach((el, i) => {
-        const text = (el.textContent || el.value || '').trim().substring(0, 60);
-        if (!text) return;
-        const tag = el.tagName;
-        const className = el.className || '';
-        const href = el.href || '';
-        const onclick = el.getAttribute('onclick') || '';
-        const id = el.id || '';
-        // 신청/제출/접수 관련 키워드만 필터
-        const keywords = ['신청', '제출', '접수', '확인', '첨부', '업로드', '등록', '작성', 'submit', 'apply'];
-        const isRelevant = keywords.some(k => text.includes(k) || onclick.includes(k) || className.includes(k));
-        if (isRelevant || i < 30) { // 처음 30개 + 관련 키워드
-          elements.push({ tag, text: text.substring(0, 40), className: className.substring(0, 50), id, href: href.substring(0, 80), onclick: onclick.substring(0, 80) });
-        }
-      });
-      return elements.slice(0, 50);
-    }).catch(() => []);
-    log('debug', `페이지 요소 분석: ${JSON.stringify(pageElements)}`);
+    // 로그인 페이지로 리디렉트된 경우 → 쿠키가 만료됨
+    if (currentUrl.includes('/login') || currentUrl.includes('nlogin') || currentUrl.includes('plus.gov.kr/login')) {
+      log('navigate', '로그인 페이지 리디렉트 → 정보 페이지 경유 방식으로 전환', 'warning');
 
-    onProgress(50);
-    log('apply', '신청 버튼 탐색');
-    const applySelectors = [
-      // 정부24 실제 패턴 (디버그로 확인됨)
-      '#applyBtn',                          // SPAN#applyBtn "신고하기" (onclick: applyConfirm)
-      '#memberApplyBtn',                    // "회원 신청하기"
-      '#nonMemberApplyBtn',                 // "비회원 신청하기"
-      '#onlyMemberApplyBtn',                // "회원 신청하기" (회원전용)
-      '[onclick*="applyConfirm"]',          // applyConfirm(...) 호출 요소
-      // 텍스트 기반 (정확한 매칭)
-      'span.btn_L:has-text("신고하기")',
-      'span.btn_L:has-text("신청하기")',
-      'a:has-text("신청하기")',
-      'button:has-text("신청하기")',
-      'a:has-text("인터넷으로 신청")',
-      'a:has-text("인터넷신청")',
-      'button:has-text("인터넷신청")',
-      'a:has-text("온라인 신청")',
-      'a:has-text("민원신청")',
-      'button:has-text("민원신청")',
-      ':has-text("신고하기"):not(a[href*="InfoCapp"])',  // 탭 링크 제외
-      // 클래스 기반
-      'a.btn_apply',
-      'a.btn_blue_l',
-      'a.btn_blue:has-text("신청")',
-      // onclick 기반
-      '[onclick*="doApply"]',
-      '[onclick*="applyService"]',
-      '[onclick*="fn_apply"]',
-      '[onclick*="goApply"]',
-      // input 기반
-      'input[type="button"][value*="신청"]',
-      'input[type="button"][value*="신고"]',
-    ];
-
-    let applyClicked = false;
-    for (const sel of applySelectors) {
-      try {
-        const btn = page.locator(sel).first();
-        if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-          const btnText = await btn.textContent().catch(() => '');
-          log('apply', `신청 버튼 발견: ${sel} (text: "${btnText.trim().substring(0, 30)}")`);
-          await humanDelay(300, 800);
-          await btn.click();
-          applyClicked = true;
-          break;
-        }
-      } catch (e) {
-        // 잘못된 셀렉터는 무시
-      }
-    }
-
-    // 추가: 텍스트 기반 broad 검색 (span, a, button 포함)
-    if (!applyClicked) {
-      const allLinks = page.locator('a, button, span[onclick], span.btn_L, [id*="pplyBtn"]');
-      const count = await allLinks.count();
-      for (let i = 0; i < count; i++) {
-        try {
-          const el = allLinks.nth(i);
-          const text = await el.textContent().catch(() => '');
-          const trimmed = text.trim();
-          // "신청작성예시", "신청 방법" 등 제외
-          const excludeTexts = ['신청작성예시', '신청 방법', '회원 신청', '비회원 신청'];
-          if (excludeTexts.some(ex => trimmed.includes(ex))) continue;
-
-          if (trimmed && (
-            trimmed === '신청하기' || trimmed === '신고하기' ||
-            trimmed === '인터넷으로 신청하기' ||
-            trimmed === '민원신청하기' || trimmed === '민원신청' ||
-            /^인터넷.*신청/.test(trimmed) || /^온라인.*신청/.test(trimmed)
-          )) {
-            const isVisible = await el.isVisible().catch(() => false);
-            if (isVisible) {
-              log('apply', `신청 버튼 발견 (텍스트 탐색): "${trimmed}"`);
-              await humanDelay(300, 800);
-              await el.click();
-              applyClicked = true;
-              break;
-            }
-          }
-        } catch (e) {
-          // skip
-        }
-      }
-    }
-
-    if (!applyClicked) {
-      // 신청 버튼을 못 찾으면 현재 페이지가 이미 신청 폼일 수 있음
-      log('apply', '신청 버튼 미발견 - 현재 페이지가 신청 폼인지 확인');
-      // 폼 요소가 있는지 확인
-      const hasForm = await page.locator('form, input[type="text"], textarea, input[type="file"]').count();
-      log('apply', `폼 요소 수: ${hasForm}`);
-    }
-
-    if (applyClicked) {
-      // 신청 버튼 클릭 후 잠시 대기 (모달이 뜰 수 있음)
-      await humanDelay(1500, 2500);
-
-      // ========= 회원/비회원 선택 모달 처리 =========
-      // 정부24는 신청 버튼 클릭 시 "회원 신청하기" / "비회원 신청하기" 팝업을 띄움
-      const memberBtn = page.locator('#memberApplyBtn');
-      const nonMemberBtn = page.locator('#nonMemberApplyBtn');
-      const memberVisible = await memberBtn.isVisible({ timeout: 2000 }).catch(() => false);
-      const nonMemberVisible = await nonMemberBtn.isVisible({ timeout: 1000 }).catch(() => false);
-
-      if (memberVisible || nonMemberVisible) {
-        log('apply', `로그인 선택 모달 발견 (회원: ${memberVisible}, 비회원: ${nonMemberVisible})`);
-        // 인증 쿠키가 있으므로 "회원 신청하기" 클릭
-        if (memberVisible) {
-          await humanDelay(300, 800);
-          await memberBtn.click();
-          log('apply', '회원 신청하기 클릭');
-        } else if (nonMemberVisible) {
-          await humanDelay(300, 800);
-          await nonMemberBtn.click();
-          log('apply', '비회원 신청하기 클릭');
-        }
-      }
-
-      // 페이지 전환 대기
-      await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-      await humanDelay(2000, 3000);
-    } else {
+      // 방법 2: 정보 페이지 → 신청 버튼 클릭 (fallback)
+      const infoUrl = serviceUrl || `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${cappBizCD}`;
+      await page.goto(infoUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.navigation });
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
       await humanDelay(1000, 2000);
+
+      currentUrl = page.url();
+      pageTitle = await page.title();
+      log('navigate', `정보 페이지: ${pageTitle} (${currentUrl})`);
+
+      // 신청 버튼 클릭 (간소화: 핵심 셀렉터만)
+      onProgress(50);
+      const applyBtn = page.locator('#applyBtn');
+      if (await applyBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await applyBtn.click();
+        log('apply', '#applyBtn 클릭');
+        await humanDelay(1500, 2500);
+
+        // 회원/비회원 모달
+        const memberBtn = page.locator('#memberApplyBtn');
+        if (await memberBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await memberBtn.click();
+          log('apply', '회원 신청하기 클릭');
+        }
+        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+        await humanDelay(1000, 2000);
+      }
     }
+
+    onProgress(50);
+    // 현재 페이지 상태 확인
+    currentUrl = page.url();
+    pageTitle = await page.title();
+    log('apply', `신청 폼 페이지: ${pageTitle} (${currentUrl})`);
+    await saveScreenshot(page, `${taskId}_02_apply_page`);
     await saveScreenshot(page, `${taskId}_02_apply_page`);
 
     // 신청 버튼 클릭 후 새 페이지 URL/제목 기록
@@ -1548,9 +1441,26 @@ async function submitGov24Service(params, onProgress = () => {}) {
       }
     }
 
-    // 접수 완료 여부 확인 (단순 "접수" 포함이 아닌, 실제 완료 메시지 확인)
-    // 제출 후 URL이 변경되었거나, 명확한 완료 메시지가 있어야 함
-    const urlChanged = finalUrl !== afterApplyUrl;
+    // alert 다이얼로그로 인한 실패 감지
+    // "입력하세요", "선택하세요" 등 폼 검증 실패 alert
+    const errorAlerts = dialogMessages.filter(m =>
+      m.includes('입력하세요') || m.includes('선택하세요') || m.includes('확인하세요') ||
+      m.includes('올바르지 않') || m.includes('오류') || m.includes('실패')
+    );
+    if (errorAlerts.length > 0) {
+      await saveScreenshot(page, `${taskId}_07_alert_error`);
+      log('error', `폼 검증 실패 alert: ${errorAlerts.join(', ')}`, 'error');
+      return {
+        success: false,
+        taskId,
+        phase: 'form_error',
+        error: `정부24 폼 검증 실패: ${errorAlerts[0]}`,
+        finalUrl,
+        logs,
+      };
+    }
+
+    // 접수 완료 여부 확인
     const isCompleted = (
       pageText.includes('접수가 완료되었습니다') ||
       pageText.includes('신청이 완료되었습니다') ||
@@ -1558,12 +1468,11 @@ async function submitGov24Service(params, onProgress = () => {}) {
       pageText.includes('정상적으로 접수') ||
       pageText.includes('정상적으로 신청') ||
       pageText.includes('처리가 완료되었습니다') ||
-      // URL에 result/complete 등이 포함된 경우
       finalUrl.includes('result') ||
       finalUrl.includes('complete') ||
       finalUrl.includes('finish')
     );
-    log('receipt', `URL 변경: ${urlChanged}, 완료 메시지: ${isCompleted}`);
+    log('receipt', `완료 메시지: ${isCompleted}, alert 수: ${dialogMessages.length}`);
 
     await saveScreenshot(page, `${taskId}_07_final`);
 
@@ -1582,13 +1491,13 @@ async function submitGov24Service(params, onProgress = () => {}) {
       };
     }
 
-    // 제출은 했지만 접수번호를 못 찾은 경우
+    // 제출 버튼 클릭했지만 결과 미확인 → 실패로 처리 (이전에는 success:true였음)
     log('warning', '제출 후 접수 확인 페이지를 찾지 못함', 'warning');
     return {
-      success: true,
+      success: false,
       taskId,
-      phase: 'submitted',
-      message: '제출 버튼을 클릭했습니다. 접수 결과를 정부24에서 확인해주세요.',
+      phase: 'unknown',
+      error: '제출 버튼을 클릭했지만 접수 결과를 확인하지 못했습니다. 정부24에서 직접 확인해주세요.',
       receiptNumber: null,
       finalUrl,
       logs,
