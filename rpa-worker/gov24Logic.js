@@ -987,137 +987,447 @@ async function confirmGov24Auth(params) {
 }
 
 // =============================================================================
-// 정부24 검색으로 민원 서비스 찾기
+// 정부24 검색으로 민원 서비스 찾기 (v4: 실제 페이지 구조 대응)
 // =============================================================================
 
 /**
- * 정부24에서 민원 서비스를 검색하여 서비스 정보 페이지 URL을 찾는다
+ * 정부24에서 민원 서비스를 검색하여 서비스 정보 페이지로 이동한다
+ * v4: 실제 gov24 검색 페이지 DOM 구조에 맞는 셀렉터 사용
+ *
  * @param {Page} page - Playwright 페이지
  * @param {string} serviceName - 검색할 서비스명 (예: "통신판매업 신고")
  * @param {Function} log - 로깅 함수
- * @returns {object} - { success, serviceUrl, foundName, error }
+ * @returns {object} - { success, serviceUrl, foundName, navigated, error }
  */
 async function searchAndNavigateToService(page, serviceName, log) {
-  log('search', `정부24에서 "${serviceName}" 검색 시작`);
+  log('search', `========================================`);
+  log('search', `정부24 검색 시작: "${serviceName}"`);
+  log('search', `========================================`);
 
   try {
-    // 1. 정부24 통합검색 페이지로 이동
+    // =====================================================================
+    // Step 1: 정부24 통합검색 페이지 이동
+    // =====================================================================
     const searchUrl = `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(serviceName)}`;
+    log('search', `[Step 1] 통합검색 이동: ${searchUrl}`);
+
     await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     await humanDelay(2000, 3000);
 
-    log('search', `검색 페이지 로드 완료: ${page.url()}`);
-    await saveScreenshot(page, `search_01_results`);
+    const afterSearchUrl = page.url();
+    const afterSearchTitle = await page.title().catch(() => '');
+    log('search', `[Step 1] 로드 완료 - URL: ${afterSearchUrl}`);
+    log('search', `[Step 1] 페이지 제목: "${afterSearchTitle}"`);
+    await saveScreenshot(page, 'search_step1_loaded');
 
-    // 2. 검색 결과에서 민원 서비스 링크 찾기 (CappBizCD 포함 링크 또는 InfoCapp 링크)
+    // 메인 페이지 리디렉트 감지 (검색 결과가 아닌 gov.kr 메인으로 갔는지)
+    const isMainPage = (
+      afterSearchUrl === 'https://www.gov.kr/' ||
+      afterSearchUrl === 'https://www.gov.kr' ||
+      afterSearchUrl.match(/^https:\/\/www\.gov\.kr\/?$/) ||
+      afterSearchUrl.match(/^https:\/\/www\.gov\.kr\/main/)
+    );
+    if (isMainPage) {
+      log('search', '[Step 1] ⚠ 메인 페이지로 리디렉트됨 - 검색 입력 시도', 'warning');
+
+      // 메인 페이지의 검색창에 직접 입력
+      const searchInputSelectors = [
+        'input#searchInput', 'input[name="srhWrd"]', 'input[name="query"]',
+        'input.search_input', 'input[type="search"]', 'input[placeholder*="검색"]',
+        '#headerSearchInput', '.total_search input',
+      ];
+
+      let searchSubmitted = false;
+      for (const sel of searchInputSelectors) {
+        try {
+          const input = page.locator(sel).first();
+          if (await input.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await input.click();
+            await input.fill(serviceName);
+            log('search', `[Step 1] 검색창 입력 성공: ${sel}`);
+
+            // Enter 또는 검색 버튼 클릭
+            await page.keyboard.press('Enter');
+            await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+            await humanDelay(2000, 3000);
+            searchSubmitted = true;
+            log('search', `[Step 1] 검색 제출 완료, 현재 URL: ${page.url()}`);
+            break;
+          }
+        } catch { continue; }
+      }
+
+      if (!searchSubmitted) {
+        // 검색창도 못 찾음 → URL 파라미터 방식 재시도
+        log('search', '[Step 1] 검색창 못 찾음 - URL 방식 재시도');
+        const retryUrl = `https://www.gov.kr/search?svcType=MINWON&srhWrd=${encodeURIComponent(serviceName)}`;
+        await page.goto(retryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+        await humanDelay(2000, 3000);
+      }
+
+      await saveScreenshot(page, 'search_step1_after_retry');
+    }
+
+    // =====================================================================
+    // Step 2: "민원" 탭 클릭 (검색 결과 필터링)
+    // =====================================================================
+    log('search', '[Step 2] 민원 탭 클릭 시도');
+
+    const minwonTabSelectors = [
+      // 정확한 텍스트 매칭 (탭 메뉴)
+      'a:has-text("민원")',
+      'button:has-text("민원")',
+      // 탭 메뉴 구조
+      '.tab_menu a:has-text("민원")',
+      '.search_tab a:has-text("민원")',
+      '.tab_list a:has-text("민원")',
+      'ul.tabs a:has-text("민원")',
+      'nav a:has-text("민원")',
+      // data 속성
+      '[data-tab="minwon"]',
+      '[data-tab="MINWON"]',
+      '#tab_minwon',
+      // URL 기반
+      'a[href*="svcType=MINWON"]',
+      'a[href*="tabId=MINWON"]',
+      'a[href*="minwon"]',
+      // li 내부
+      'li:has-text("민원") > a',
+      'li:has-text("민원서비스") > a',
+    ];
+
+    let minwonTabClicked = false;
+    for (const sel of minwonTabSelectors) {
+      try {
+        const tab = page.locator(sel).first();
+        if (await tab.isVisible({ timeout: 1500 }).catch(() => false)) {
+          const tabText = await tab.textContent().catch(() => '');
+          // "민원" 탭인지 확인 (다른 메뉴 아이템 제외)
+          if (tabText && tabText.trim().length < 20) {
+            await tab.click();
+            log('search', `[Step 2] 민원 탭 클릭 성공: ${sel} ("${tabText.trim()}")`);
+            minwonTabClicked = true;
+            await humanDelay(1500, 2500);
+            await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+            break;
+          }
+        }
+      } catch { continue; }
+    }
+
+    if (!minwonTabClicked) {
+      log('search', '[Step 2] 민원 탭을 찾지 못함 - 전체 검색 결과에서 탐색', 'warning');
+    }
+
+    await saveScreenshot(page, 'search_step2_after_tab');
+
+    // =====================================================================
+    // Step 3: 페이지 구조 분석 (디버그)
+    // =====================================================================
+    log('search', '[Step 3] 페이지 구조 분석');
+
+    const pageDebug = await page.evaluate(() => {
+      const debug = {};
+
+      // 전체 링크 수
+      debug.totalLinks = document.querySelectorAll('a').length;
+
+      // gov24 민원 링크 찾기
+      const gov24Links = [];
+      for (const link of document.querySelectorAll('a')) {
+        const href = link.href || '';
+        const text = (link.textContent || '').trim();
+        if (href.includes('CappBizCD') || href.includes('InfoCapp') || href.includes('AA020')) {
+          gov24Links.push({ text: text.substring(0, 80), href: href.substring(0, 200) });
+        }
+      }
+      debug.gov24Links = gov24Links.slice(0, 10);
+
+      // 검색 결과 영역 탐색
+      const searchAreas = [];
+      const areaSelectors = [
+        '.search_list', '.result_list', '.list_type', '.service_list',
+        '.minwon_list', '[class*="search_result"]', '[class*="result_list"]',
+        '.search-result', '#searchResult', '#resultList',
+        '.content_list', '.board_list', 'ul.list',
+      ];
+      for (const sel of areaSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          searchAreas.push({
+            selector: sel,
+            childCount: el.children.length,
+            linkCount: el.querySelectorAll('a').length,
+            textPreview: el.textContent?.substring(0, 150),
+          });
+        }
+      }
+      debug.searchAreas = searchAreas;
+
+      // 현재 페이지 본문 텍스트 (첫 500자)
+      debug.bodyTextPreview = document.body?.innerText?.substring(0, 500);
+
+      // 검색 결과 건수 표시 요소
+      const countEls = document.querySelectorAll('[class*="count"], [class*="total"], .result_count, .search_count');
+      debug.resultCounts = Array.from(countEls).slice(0, 5).map(el => ({
+        className: el.className,
+        text: el.textContent?.trim().substring(0, 50),
+      }));
+
+      return debug;
+    }).catch(() => ({ error: 'evaluate failed' }));
+
+    log('search', `[Step 3] 전체 링크: ${pageDebug.totalLinks}개, gov24 링크: ${pageDebug.gov24Links?.length || 0}개`);
+    if (pageDebug.gov24Links?.length > 0) {
+      log('search', `[Step 3] gov24 링크: ${JSON.stringify(pageDebug.gov24Links.slice(0, 5))}`);
+    }
+    if (pageDebug.searchAreas?.length > 0) {
+      log('search', `[Step 3] 검색 영역: ${JSON.stringify(pageDebug.searchAreas)}`);
+    }
+    if (pageDebug.resultCounts?.length > 0) {
+      log('search', `[Step 3] 결과 건수: ${JSON.stringify(pageDebug.resultCounts)}`);
+    }
+    log('search', `[Step 3] 본문 미리보기: ${(pageDebug.bodyTextPreview || '').substring(0, 200)}`);
+
+    // =====================================================================
+    // Step 4: 검색 결과에서 서비스 링크 찾기 (3가지 전략)
+    // =====================================================================
+    log('search', '[Step 4] 서비스 링크 탐색 (3가지 전략)');
+
     const searchResult = await page.evaluate((targetName) => {
       const results = [];
-      // 검색 결과 링크들 수집
-      const allLinks = document.querySelectorAll('a[href*="CappBizCD"], a[href*="InfoCapp"], a[href*="AA020"]');
+      const normalizedTarget = targetName.replace(/\s+/g, '').toLowerCase();
+      const seen = new Set();
+
+      function addResult(text, href, source) {
+        if (!text || !href || text.length < 2 || text.length > 100) return;
+        if (seen.has(href)) return;
+        seen.add(href);
+        results.push({ text: text.trim(), href, source });
+      }
+
+      // Strategy 1: CappBizCD/InfoCapp/AA020 포함 링크 (가장 정확)
+      const cappLinks = document.querySelectorAll('a[href*="CappBizCD"], a[href*="InfoCapp"], a[href*="AA020"]');
+      for (const link of cappLinks) {
+        addResult((link.textContent || '').trim(), link.href, 'capp_link');
+      }
+
+      // Strategy 2: 검색 결과 목록 영역 내 링크
+      const listAreaSelectors = [
+        '.search_list a', '.result_list a', '.list_type a',
+        '.service_list a', '.minwon_list a', '.content_list a',
+        '.board_list a', '#searchResult a', '#resultList a',
+        'ul.list a', 'ol.list a', 'table a',
+        '.search-result a', '.result a',
+      ];
+      for (const sel of listAreaSelectors) {
+        try {
+          const links = document.querySelectorAll(sel);
+          for (const link of links) {
+            const href = link.href || '';
+            if (href.includes('gov.kr')) {
+              addResult((link.textContent || '').trim(), href, sel);
+            }
+          }
+        } catch {}
+      }
+
+      // Strategy 3: 전체 링크에서 serviceName 텍스트 매칭
+      const allLinks = document.querySelectorAll('a');
       for (const link of allLinks) {
         const text = (link.textContent || '').trim();
         const href = link.href || '';
-        if (text && href && text.length < 100) {
-          results.push({ text, href, score: 0 });
+        const normalizedText = text.replace(/\s+/g, '').toLowerCase();
+
+        // 서비스명과 텍스트가 매칭되는 gov.kr 링크
+        if (href.includes('gov.kr') && (
+          normalizedText.includes(normalizedTarget) ||
+          normalizedTarget.includes(normalizedText)
+        )) {
+          addResult(text, href, 'text_match');
         }
       }
 
-      // 텍스트 매칭 점수 계산
-      const normalizedTarget = targetName.replace(/\s+/g, '').toLowerCase();
+      // 점수 계산
       for (const r of results) {
         const normalizedText = r.text.replace(/\s+/g, '').toLowerCase();
+
         if (normalizedText === normalizedTarget) {
-          r.score = 100; // 정확히 일치
+          r.score = 100;
         } else if (normalizedText.includes(normalizedTarget)) {
-          r.score = 80; // 포함
+          r.score = 80;
         } else if (normalizedTarget.includes(normalizedText)) {
-          r.score = 60; // 검색어가 결과 포함
+          r.score = 60;
         } else {
           // 단어 단위 매칭
           const targetWords = normalizedTarget.split(/[^가-힣a-z0-9]+/).filter(Boolean);
           const matchedWords = targetWords.filter(w => normalizedText.includes(w));
-          r.score = Math.round((matchedWords.length / targetWords.length) * 50);
+          r.score = Math.round((matchedWords.length / Math.max(targetWords.length, 1)) * 50);
+        }
+
+        // CappBizCD/InfoCapp 링크 보너스
+        if (r.href.includes('CappBizCD') || r.href.includes('InfoCapp')) {
+          r.score += 15;
+        }
+        // mw/ 경로 보너스 (정부24 민원 서비스 경로)
+        if (r.href.includes('/mw/')) {
+          r.score += 5;
         }
       }
 
-      // 점수순 정렬, 상위 결과 반환
       results.sort((a, b) => b.score - a.score);
+
       return {
-        totalLinks: results.length,
-        topResults: results.slice(0, 5).map(r => ({ text: r.text.substring(0, 60), href: r.href, score: r.score })),
-        bestMatch: results.length > 0 && results[0].score >= 40 ? results[0] : null,
+        totalFound: results.length,
+        topResults: results.slice(0, 8).map(r => ({
+          text: r.text.substring(0, 60),
+          href: r.href.substring(0, 150),
+          score: r.score,
+          source: r.source,
+        })),
+        bestMatch: results.length > 0 && results[0].score >= 30 ? {
+          text: results[0].text,
+          href: results[0].href,
+          score: results[0].score,
+          source: results[0].source,
+        } : null,
       };
     }, serviceName);
 
-    log('search', `검색 결과: ${searchResult.totalLinks}개 링크, 최고 매칭: ${searchResult.bestMatch ? searchResult.bestMatch.text + ' (score:' + searchResult.bestMatch.score + ')' : '없음'}`);
-    if (searchResult.topResults.length > 0) {
-      log('search', `상위 결과: ${JSON.stringify(searchResult.topResults.slice(0, 3))}`);
+    log('search', `[Step 4] 총 ${searchResult.totalFound}개 후보 링크`);
+    if (searchResult.topResults?.length > 0) {
+      for (const r of searchResult.topResults.slice(0, 5)) {
+        log('search', `  → [${r.score}점] "${r.text}" (${r.source}) ${r.href}`);
+      }
     }
 
-    if (searchResult.bestMatch && searchResult.bestMatch.score >= 40) {
+    // 최고 매칭 결과로 이동
+    if (searchResult.bestMatch && searchResult.bestMatch.score >= 30) {
       const foundUrl = searchResult.bestMatch.href;
       const foundName = searchResult.bestMatch.text;
-      log('search', `민원 찾음: "${foundName}" → ${foundUrl}`);
+      log('search', `[Step 4] ✓ 민원 찾음: "${foundName}" (score: ${searchResult.bestMatch.score})`);
+      log('search', `[Step 4] 이동: ${foundUrl}`);
 
-      // 찾은 페이지로 이동
       await page.goto(foundUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
       await humanDelay(1000, 2000);
 
       const afterUrl = page.url();
-      log('search', `서비스 페이지: ${afterUrl}`);
-      await saveScreenshot(page, `search_02_service_page`);
+      log('search', `[Step 4] 서비스 페이지 도착: ${afterUrl}`);
+      await saveScreenshot(page, 'search_step4_service_page');
 
       return {
         success: true,
         serviceUrl: afterUrl,
         foundName,
-        navigated: true, // 이미 해당 페이지에 있음
+        navigated: true,
       };
     }
 
-    // 3. 검색 결과에서 못 찾음 → 민원 목록 검색 시도
-    log('search', '통합검색에서 못 찾음, 민원 목록에서 재검색');
+    log('search', '[Step 4] 통합검색에서 매칭되는 민원을 찾지 못함');
 
-    // 민원 서비스 목록 페이지
+    // =====================================================================
+    // Step 5: Fallback - 민원 목록 페이지(AA020InfoCappList.do) 검색
+    // =====================================================================
+    log('search', '[Step 5] 민원 목록 페이지(AA020InfoCappList.do)에서 재검색');
+
     const minwonListUrl = `https://www.gov.kr/mw/AA020InfoCappList.do?SearchText=${encodeURIComponent(serviceName)}`;
+    log('search', `[Step 5] URL: ${minwonListUrl}`);
+
     await page.goto(minwonListUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-    await humanDelay(1000, 2000);
+    await humanDelay(1500, 2500);
 
-    log('search', `민원 목록 검색: ${page.url()}`);
-    await saveScreenshot(page, `search_03_minwon_list`);
+    const listPageUrl = page.url();
+    log('search', `[Step 5] 로드 완료: ${listPageUrl}`);
+    await saveScreenshot(page, 'search_step5_minwon_list');
 
-    // 민원 목록에서 링크 찾기
-    const listResult = await page.evaluate((targetName) => {
-      const normalizedTarget = targetName.replace(/\s+/g, '').toLowerCase();
-      const links = document.querySelectorAll('a[href*="CappBizCD"]');
-      for (const link of links) {
-        const text = (link.textContent || '').trim().replace(/\s+/g, '').toLowerCase();
-        if (text.includes(normalizedTarget) || normalizedTarget.includes(text)) {
-          return { found: true, href: link.href, text: link.textContent.trim() };
+    // 민원 목록 페이지 분석 & 링크 탐색
+    const listDebug = await page.evaluate(() => {
+      const cappLinks = [];
+      for (const link of document.querySelectorAll('a')) {
+        const href = link.href || '';
+        const text = (link.textContent || '').trim();
+        if (href.includes('CappBizCD') || href.includes('InfoCapp') || href.includes('AA020InfoCappView')) {
+          cappLinks.push({ text: text.substring(0, 80), href: href.substring(0, 200) });
         }
       }
-      return { found: false };
+      return {
+        totalLinks: document.querySelectorAll('a').length,
+        cappLinks: cappLinks.slice(0, 15),
+        bodyText: document.body?.innerText?.substring(0, 300),
+      };
+    }).catch(() => ({ error: 'evaluate failed' }));
+
+    log('search', `[Step 5] 민원 목록: ${listDebug.cappLinks?.length || 0}개 민원 링크`);
+    if (listDebug.cappLinks?.length > 0) {
+      log('search', `[Step 5] 목록 링크: ${JSON.stringify(listDebug.cappLinks.slice(0, 5))}`);
+    }
+
+    const listResult = await page.evaluate((targetName) => {
+      const normalizedTarget = targetName.replace(/\s+/g, '').toLowerCase();
+      const candidates = [];
+
+      for (const link of document.querySelectorAll('a')) {
+        const href = link.href || '';
+        const text = (link.textContent || '').trim();
+        if (!text || text.length < 2 || text.length > 100) continue;
+        if (!href.includes('gov.kr')) continue;
+
+        const normalizedText = text.replace(/\s+/g, '').toLowerCase();
+        let score = 0;
+
+        if (normalizedText === normalizedTarget) score = 100;
+        else if (normalizedText.includes(normalizedTarget)) score = 80;
+        else if (normalizedTarget.includes(normalizedText)) score = 60;
+        else {
+          const targetWords = normalizedTarget.split(/[^가-힣a-z0-9]+/).filter(Boolean);
+          const matchedWords = targetWords.filter(w => normalizedText.includes(w));
+          score = Math.round((matchedWords.length / Math.max(targetWords.length, 1)) * 50);
+        }
+
+        if (score >= 30) {
+          if (href.includes('CappBizCD') || href.includes('InfoCapp')) score += 15;
+          candidates.push({ text, href, score });
+        }
+      }
+
+      candidates.sort((a, b) => b.score - a.score);
+      return candidates.length > 0
+        ? { found: true, text: candidates[0].text, href: candidates[0].href, score: candidates[0].score }
+        : { found: false };
     }, serviceName);
 
     if (listResult.found) {
-      log('search', `민원 목록에서 찾음: "${listResult.text}" → ${listResult.href}`);
+      log('search', `[Step 5] ✓ 민원 목록에서 찾음: "${listResult.text}" (score: ${listResult.score})`);
+      log('search', `[Step 5] 이동: ${listResult.href}`);
+
       await page.goto(listResult.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
       await humanDelay(1000, 2000);
 
+      const afterUrl = page.url();
+      log('search', `[Step 5] 서비스 페이지: ${afterUrl}`);
+      await saveScreenshot(page, 'search_step5_found');
+
       return {
         success: true,
-        serviceUrl: page.url(),
+        serviceUrl: afterUrl,
         foundName: listResult.text,
         navigated: true,
       };
     }
 
-    // 아무것도 못 찾음
-    log('search', `"${serviceName}" 관련 민원을 정부24에서 찾을 수 없음`, 'warning');
+    // =====================================================================
+    // Step 6: 최종 실패
+    // =====================================================================
+    log('search', `========================================`);
+    log('search', `✗ "${serviceName}" 관련 민원을 정부24에서 찾을 수 없음`, 'warning');
+    log('search', `========================================`);
+    await saveScreenshot(page, 'search_step6_not_found');
+
     return {
       success: false,
       error: `정부24에서 "${serviceName}" 관련 민원을 찾을 수 없습니다. 정확한 민원 서비스명을 입력해주세요.`,
@@ -1125,6 +1435,7 @@ async function searchAndNavigateToService(page, serviceName, log) {
 
   } catch (error) {
     log('search', `검색 중 오류: ${error.message}`, 'error');
+    await saveScreenshot(page, 'search_error').catch(() => {});
     return {
       success: false,
       error: `정부24 검색 중 오류: ${error.message}`,
@@ -1289,21 +1600,54 @@ async function submitGov24Service(params, onProgress = () => {}) {
           currentUrl = page.url();
           pageTitle = await page.title();
           log('navigate', `검색 후 페이지: ${pageTitle} (${currentUrl})`);
+          await saveScreenshot(page, `${taskId}_search_found`);
 
           // 검색 결과가 서비스 정보 페이지인 경우 → 신청 버튼 클릭 필요
-          const foundApplyBtn = page.locator('#applyBtn');
-          if (await foundApplyBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-            await foundApplyBtn.click();
-            log('apply', '검색 후 #applyBtn 클릭');
-            await humanDelay(1500, 2500);
+          // 여러 셀렉터로 시도 (정부24 페이지마다 구조가 다를 수 있음)
+          const applyBtnSelectors = [
+            '#applyBtn',
+            'span#applyBtn',
+            '[onclick*="applyConfirm"]',
+            'a:has-text("신청하기"):not([href*="InfoCapp"])',
+            'a:has-text("신고하기")',
+            'button:has-text("신청하기")',
+            'button:has-text("신고하기")',
+            '.btn_apply',
+            'a.btn_blue:has-text("신청")',
+          ];
 
-            const memberBtn = page.locator('#memberApplyBtn');
-            if (await memberBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-              await memberBtn.click();
-              log('apply', '회원 신청하기 클릭');
+          let applyClicked = false;
+          for (const sel of applyBtnSelectors) {
+            try {
+              const btn = page.locator(sel).first();
+              if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                const btnText = await btn.textContent().catch(() => '');
+                await btn.click();
+                log('apply', `검색 후 신청 버튼 클릭: ${sel} ("${btnText.trim().substring(0, 30)}")`);
+                applyClicked = true;
+                await humanDelay(1500, 2500);
+                break;
+              }
+            } catch { continue; }
+          }
+
+          if (applyClicked) {
+            // 회원/비회원 모달 처리
+            const memberBtnSelectors = ['#memberApplyBtn', 'a:has-text("회원 신청")', 'button:has-text("회원 신청")'];
+            for (const sel of memberBtnSelectors) {
+              try {
+                const btn = page.locator(sel).first();
+                if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                  await btn.click();
+                  log('apply', `회원 신청 클릭: ${sel}`);
+                  break;
+                }
+              } catch { continue; }
             }
             await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
             await humanDelay(1000, 2000);
+          } else {
+            log('apply', '신청 버튼 없음 - 이미 신청 폼 페이지일 수 있음');
           }
           // 계속 진행 (아래 폼/제출 로직으로)
         } else {
