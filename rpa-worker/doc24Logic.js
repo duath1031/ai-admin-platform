@@ -48,7 +48,7 @@ async function loginToDoc24(page, loginId, password, log, accountType = 'persona
     timeout: TIMEOUTS.navigation,
   });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await humanDelay(1500, 2500);
+  await humanDelay(800, 1200);
   await saveScreenshot(page, 'doc24_01_login_page');
 
   // 계정 유형에 따른 탭 선택
@@ -168,7 +168,7 @@ async function loginToDoc24(page, loginId, password, log, accountType = 'persona
 
   // 로그인 결과 대기
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await humanDelay(2000, 3000);
+  await humanDelay(1000, 1500);
 
   // dialog 메시지가 있으면 에러 반환
   if (dialogMsg) {
@@ -234,7 +234,7 @@ async function navigateToCompose(page, log) {
     timeout: TIMEOUTS.navigation,
   });
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await humanDelay(2000, 3000);
+  await humanDelay(1500, 2000);
 
   const currentUrl = page.url();
   log('compose', `현재 URL: ${currentUrl}`);
@@ -247,39 +247,81 @@ async function navigateToCompose(page, log) {
 
   await saveScreenshot(page, 'doc24_04_compose_page');
 
-  // 발송 안내사항 체크박스 처리 (4개)
-  const checkboxes = page.locator('input[type="checkbox"]');
-  const checkboxCount = await checkboxes.count();
-  if (checkboxCount > 0) {
-    log('compose', `체크박스 ${checkboxCount}개 발견`);
-    for (let i = 0; i < checkboxCount; i++) {
-      const cb = checkboxes.nth(i);
-      const isChecked = await cb.isChecked().catch(() => true);
-      if (!isChecked) {
-        await cb.check().catch(() => {});
-        await humanDelay(200, 400);
+  // 발송 안내사항(doc_check_list) 체크박스 처리 - JS로 강제 체크
+  const checkResult = await page.evaluate(() => {
+    const checkboxes = document.querySelectorAll('.doc_check_list input[type="checkbox"], input[type="checkbox"]');
+    let checked = 0;
+    checkboxes.forEach(cb => {
+      if (!cb.checked) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+        checked++;
       }
-    }
-    log('compose', '안내사항 체크 완료');
+    });
+    return { total: checkboxes.length, checked };
+  }).catch(() => ({ total: 0, checked: 0 }));
+  log('compose', `체크박스 JS 처리: ${checkResult.total}개 중 ${checkResult.checked}개 체크`);
+  await humanDelay(300, 500);
 
-    // 확인/다음 버튼
-    const nextBtnSelectors = [
-      'button:has-text("확인")',
-      'button:has-text("다음")',
-      '.jconfirm-buttons button',
-      'button[type="submit"]',
-    ];
-    for (const sel of nextBtnSelectors) {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await btn.click();
-        log('compose', `확인 버튼 클릭: ${sel}`);
-        await humanDelay(1500, 2500);
-        await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
-        break;
-      }
+  // 확인/다음 버튼 클릭 (doc_check_list 내부 버튼 우선)
+  const nextBtnSelectors = [
+    '.doc_check_list button',
+    '.doc_check_list a.btn',
+    'button:has-text("확인")',
+    'button:has-text("다음")',
+    '.jconfirm-buttons button',
+  ];
+  for (const sel of nextBtnSelectors) {
+    const btn = page.locator(sel).first();
+    if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await btn.click({ force: true });
+      log('compose', `확인 버튼 클릭: ${sel}`);
+      await humanDelay(1000, 1500);
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      break;
     }
   }
+
+  // JS로도 확인 버튼 클릭 시도 (오버레이가 아직 남아있을 경우)
+  await page.evaluate(() => {
+    // doc_check_list 내부 확인/다음 버튼 찾기
+    const btns = document.querySelectorAll('.doc_check_list button, .doc_check_list a.btn');
+    for (const btn of btns) {
+      if (btn.textContent.includes('확인') || btn.textContent.includes('다음')) {
+        btn.click();
+        return true;
+      }
+    }
+    // 일반 확인 버튼
+    const allBtns = document.querySelectorAll('button');
+    for (const btn of allBtns) {
+      const t = btn.textContent.trim();
+      if (t === '확인' || t === '다음') {
+        btn.click();
+        return true;
+      }
+    }
+    return false;
+  }).catch(() => false);
+  await humanDelay(1000, 1500);
+
+  // 오버레이 요소 강제 제거 (blind_table, doc_check_list)
+  await page.evaluate(() => {
+    // blind_table 오버레이 제거
+    document.querySelectorAll('.blind_table').forEach(el => {
+      el.style.display = 'none';
+      el.style.pointerEvents = 'none';
+    });
+    // doc_check_list 오버레이가 남아있으면 제거
+    document.querySelectorAll('.doc_check_list').forEach(el => {
+      el.style.display = 'none';
+      el.style.pointerEvents = 'none';
+    });
+    // 고정 헤더가 요소를 가리지 않도록 z-index 조정
+    const header = document.querySelector('.header_wrap');
+    if (header) header.style.position = 'relative';
+  }).catch(() => {});
+  log('compose', '오버레이 요소 제거 완료');
 
   await saveScreenshot(page, 'doc24_05_compose_ready');
   log('compose', '문서작성 페이지 준비 완료');
@@ -292,58 +334,105 @@ async function navigateToCompose(page, log) {
 async function selectRecipient(page, recipient, log) {
   log('recipient', `수신기관 선택: ${recipient}`);
 
-  // 수신기관 버튼 클릭
-  const recipientBtnSelectors = [
-    'button:has-text("받는 기관")',
-    'button:has-text("수신기관")',
-    'button:has-text("기관검색")',
-    'a:has-text("받는 기관")',
-    'a:has-text("수신기관")',
-    '.btn_search_org',
-    '#searchOrg',
-    '[onclick*="openRecv"]',
-    '[onclick*="openOrg"]',
-    '[onclick*="searchOrg"]',
-  ];
+  // 수신기관 입력 필드(#receiptinfoTmp)는 readonly → 클릭하면 검색 팝업이 열림
+  // 먼저 JS click으로 수신기관 검색 팝업 열기 시도
+  let popupOpened = false;
 
-  let recipientBtnClicked = false;
-  for (const sel of recipientBtnSelectors) {
-    const btn = page.locator(sel).first();
-    if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await btn.click();
-      log('recipient', `수신기관 버튼 클릭: ${sel}`);
-      recipientBtnClicked = true;
-      await humanDelay(1500, 2500);
-      break;
+  // 방법 1: JS로 receiptinfoTmp 또는 관련 버튼 onclick 실행
+  popupOpened = await page.evaluate(() => {
+    // receiptinfoTmp 클릭
+    const recvInput = document.getElementById('receiptinfoTmp');
+    if (recvInput) {
+      recvInput.click();
+      return true;
     }
-  }
+    // 또는 관련 함수 직접 호출
+    if (typeof openRecvOrg === 'function') { openRecvOrg(); return true; }
+    if (typeof fn_openRecvPop === 'function') { fn_openRecvPop(); return true; }
+    if (typeof openRecvPop === 'function') { openRecvPop(); return true; }
+    return false;
+  }).catch(() => false);
+  log('recipient', `JS click receiptinfoTmp: ${popupOpened}`);
+  await humanDelay(1000, 1500);
 
-  if (!recipientBtnClicked) {
-    // 페이지 내에서 직접 수신기관 입력 필드 찾기
-    log('recipient', '수신기관 버튼 못 찾음 - 입력 필드 직접 탐색');
+  // 방법 2: Playwright force click
+  if (!popupOpened) {
+    const recipientBtnSelectors = [
+      '#receiptinfoTmp',
+      'button:has-text("받는 기관")',
+      'button:has-text("기관검색")',
+      'a:has-text("받는 기관")',
+      'a:has-text("기관검색")',
+      '[onclick*="openRecv"]',
+      '[onclick*="openOrg"]',
+      '[onclick*="Recv"]',
+      '.btn_search_org',
+      '#searchOrg',
+    ];
+
+    for (const sel of recipientBtnSelectors) {
+      const btn = page.locator(sel).first();
+      if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await btn.click({ force: true });
+        log('recipient', `수신기관 버튼 force click: ${sel}`);
+        popupOpened = true;
+        await humanDelay(1000, 1500);
+        break;
+      }
+    }
   }
 
   await saveScreenshot(page, 'doc24_06_recipient_search');
 
+  // 팝업/iframe 또는 모달 내 검색 필드 찾기
+  // 문서24는 팝업 또는 레이어 형태로 기관 검색창을 열 수 있음
+  await humanDelay(1000, 1500);
+
+  // 팝업 윈도우 확인
+  const pages = page.context().pages();
+  let searchPage = page;
+  if (pages.length > 1) {
+    searchPage = pages[pages.length - 1]; // 마지막 열린 페이지 (팝업)
+    log('recipient', `팝업 윈도우 감지: ${searchPage.url()}`);
+    await searchPage.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+    await humanDelay(500, 1000);
+  }
+
+  // iframe 확인
+  const iframes = page.frames();
+  let searchFrame = null;
+  for (const frame of iframes) {
+    const url = frame.url();
+    if (url.includes('recv') || url.includes('org') || url.includes('search') || url.includes('popup')) {
+      searchFrame = frame;
+      log('recipient', `iframe 감지: ${url}`);
+      break;
+    }
+  }
+
+  const searchContext = searchFrame || searchPage;
+
   // 검색창에 수신기관명 입력
   const searchInputSelectors = [
+    '#searchWrd',
     '#searchKeyword',
+    'input[name="searchWrd"]',
     'input[name="searchKeyword"]',
     'input[name="searchWord"]',
     'input[name="orgNm"]',
+    'input[name="insttNm"]',
     '.search_input input',
     'input[placeholder*="검색"]',
     'input[placeholder*="기관"]',
-    'input[type="text"]',
+    'input:not([readonly])[type="text"]',
   ];
 
   let searchInputFound = false;
   for (const sel of searchInputSelectors) {
-    // 메인 페이지와 팝업/iframe 모두 확인
-    let input = page.locator(sel).first();
-    if (await input.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await input.click();
-      await humanDelay(200, 400);
+    const input = searchContext.locator ? searchContext.locator(sel).first() : page.locator(sel).first();
+    if (await input.isVisible({ timeout: 1500 }).catch(() => false)) {
+      await input.click({ force: true });
+      await humanDelay(200, 300);
       await input.fill(recipient);
       log('recipient', `검색어 입력: ${sel} → "${recipient}"`);
       searchInputFound = true;
@@ -351,51 +440,63 @@ async function selectRecipient(page, recipient, log) {
       // 검색 버튼 클릭
       const searchBtnSelectors = [
         'button:has-text("검색")',
+        'a:has-text("검색")',
         'input[type="submit"]',
         '.btn_search',
-        'a:has-text("검색")',
         'button[type="button"]:has-text("검색")',
+        'img[alt*="검색"]',
       ];
+      const ctx = searchContext.locator ? searchContext : page;
       for (const btnSel of searchBtnSelectors) {
-        const btn = page.locator(btnSel).first();
+        const btn = ctx.locator(btnSel).first();
         if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-          await btn.click();
+          await btn.click({ force: true });
           log('recipient', `검색 버튼 클릭: ${btnSel}`);
           break;
         }
       }
-      await humanDelay(2000, 3000);
-      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      // Enter 키도 시도
+      await input.press('Enter').catch(() => {});
+      await humanDelay(1500, 2500);
+      if (searchContext.waitForLoadState) {
+        await searchContext.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      }
       break;
     }
   }
 
   if (!searchInputFound) {
-    log('recipient', '검색 입력 필드를 찾지 못함', 'warning');
+    // 디버그: 현재 페이지/팝업의 입력 필드 목록
+    const inputs = await (searchContext.evaluate || page.evaluate).call(searchContext.evaluate ? searchContext : page, () => {
+      return Array.from(document.querySelectorAll('input')).map(el => ({
+        id: el.id, name: el.name, type: el.type, placeholder: el.placeholder,
+        readonly: el.readOnly, visible: el.offsetParent !== null,
+      }));
+    }).catch(() => []);
+    log('recipient', `검색 입력 필드 못 찾음. 페이지 inputs: ${JSON.stringify(inputs).substring(0, 500)}`, 'warning');
   }
 
   await saveScreenshot(page, 'doc24_07_recipient_results');
 
   // 검색 결과에서 기관 선택
+  const ctx = searchContext.locator ? searchContext : page;
   const resultSelectors = [
     `td:has-text("${recipient}")`,
     `a:has-text("${recipient}")`,
     `li:has-text("${recipient}")`,
     `span:has-text("${recipient}")`,
-    `.result_item:has-text("${recipient}")`,
     `tr:has-text("${recipient}")`,
   ];
 
   let resultClicked = false;
   for (const sel of resultSelectors) {
-    const results = page.locator(sel);
-    const count = await results.count();
+    const results = ctx.locator(sel);
+    const count = await results.count().catch(() => 0);
     if (count > 0) {
-      // 첫 번째 결과 클릭
-      await results.first().click();
+      await results.first().click({ force: true });
       log('recipient', `수신기관 선택: ${sel} (${count}개 결과 중 첫번째)`);
       resultClicked = true;
-      await humanDelay(500, 1000);
+      await humanDelay(500, 800);
       break;
     }
   }
@@ -409,17 +510,25 @@ async function selectRecipient(page, recipient, log) {
     'button:has-text("선택")',
     'button:has-text("적용")',
     'button:has-text("확인")',
+    'a:has-text("선택")',
+    'a:has-text("적용")',
     '.btn_select',
     '.btn_confirm',
   ];
   for (const sel of confirmSelectors) {
-    const btn = page.locator(sel).first();
+    const btn = ctx.locator(sel).first();
     if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
-      await btn.click();
+      await btn.click({ force: true });
       log('recipient', `확인 버튼 클릭: ${sel}`);
-      await humanDelay(1000, 2000);
+      await humanDelay(800, 1200);
       break;
     }
+  }
+
+  // 팝업 윈도우였다면 메인 페이지로 돌아오기
+  if (pages.length > 1) {
+    await page.bringToFront();
+    await humanDelay(500, 800);
   }
 
   await saveScreenshot(page, 'doc24_08_recipient_selected');

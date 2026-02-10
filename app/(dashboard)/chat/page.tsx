@@ -345,7 +345,7 @@ export default function ChatPage() {
 
       let pollCount = 0;
       let unknownCount = 0;
-      const maxPolls = 100; // 최대 5분 (3초 간격)
+      const maxPolls = 200; // 최대 10분 (3초 간격)
       const pollInterval = setInterval(async () => {
         pollCount++;
         if (pollCount > maxPolls) {
