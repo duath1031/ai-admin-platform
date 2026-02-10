@@ -212,6 +212,7 @@ export async function POST(request: NextRequest) {
     const workerResult = await callWorker('/doc24/submit', 'POST', {
       loginId: account.doc24LoginId,
       password: decryptedPassword,
+      accountType: account.accountType || 'personal',
       recipient,
       title,
       content: content || '',

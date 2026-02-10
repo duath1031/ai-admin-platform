@@ -39,8 +39,8 @@ async function saveScreenshot(page, prefix = 'doc24') {
 /**
  * 문서24 로그인
  */
-async function loginToDoc24(page, loginId, password, log) {
-  log('login', `문서24 로그인 시작 - ID: ${loginId}, PW길이: ${password?.length || 0}, PW첫글자: ${password?.[0] || '?'}, PW끝글자: ${password?.[password.length-1] || '?'}`);
+async function loginToDoc24(page, loginId, password, log, accountType = 'personal') {
+  log('login', `문서24 로그인 시작 - ID: ${loginId}, accountType: ${accountType}, PW길이: ${password?.length || 0}`);
 
   // 로그인 페이지 이동
   await page.goto('https://docu.gdoc.go.kr/cmm/main/loginForm.do', {
@@ -51,12 +51,64 @@ async function loginToDoc24(page, loginId, password, log) {
   await humanDelay(1500, 2500);
   await saveScreenshot(page, 'doc24_01_login_page');
 
-  // 개인 탭 확인 (기본 선택되어 있을 수 있음)
-  const personalTab = page.locator('.lm_type1 a').first();
-  if (await personalTab.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await personalTab.click().catch(() => {});
-    await humanDelay(300, 500);
+  // 계정 유형에 따른 탭 선택
+  if (accountType === 'corp_rep' || accountType === 'corp_member') {
+    // 법인/단체 탭 클릭
+    const corpTab = page.locator('#entrprsHref, a[href="#entrprs"]').first();
+    if (await corpTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await corpTab.click();
+      log('login', '법인/단체사용자 탭 선택');
+      await humanDelay(500, 800);
+
+      // mberSe를 C로 설정 (법인)
+      await page.evaluate(() => {
+        const mberSe = document.getElementById('mberSe');
+        if (mberSe) mberSe.value = 'C';
+      });
+
+      // 법인 내 역할 구분 (CR: 대표, CA: 업무관리자, CC: 부서사용자)
+      if (accountType === 'corp_rep') {
+        // 대표 사용자 라디오 선택
+        const repRadio = page.locator('input[value="CR"], #mberSeEntrprs[value="CR"]').first();
+        if (await repRadio.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await repRadio.check();
+          log('login', '대표 사용자 선택 (CR)');
+        } else {
+          // radio가 아닌 경우 직접 값 설정
+          await page.evaluate(() => {
+            const el = document.getElementById('mberSeEntrprs');
+            if (el) el.value = 'CR';
+            // 라디오 버튼이면 클릭
+            const radios = document.querySelectorAll('input[name="mberSeEntrprs"]');
+            radios.forEach(r => { if (r.value === 'CR') r.checked = true; });
+          });
+          log('login', '대표 사용자 값 직접 설정 (CR)');
+        }
+      } else {
+        // 일반(부서) 사용자
+        await page.evaluate(() => {
+          const el = document.getElementById('mberSeEntrprs');
+          if (el) el.value = 'CC';
+          const radios = document.querySelectorAll('input[name="mberSeEntrprs"]');
+          radios.forEach(r => { if (r.value === 'CC') r.checked = true; });
+        });
+        log('login', '부서 사용자 값 설정 (CC)');
+      }
+      await humanDelay(300, 500);
+    } else {
+      log('login', '법인/단체 탭을 찾을 수 없음, 기본 탭으로 진행', 'warn');
+    }
+  } else {
+    // 개인 탭 클릭
+    const personalTab = page.locator('#gnrlHref, a[href="#gnrl"]').first();
+    if (await personalTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await personalTab.click();
+      log('login', '개인사용자 탭 선택');
+      await humanDelay(300, 500);
+    }
   }
+
+  await saveScreenshot(page, 'doc24_01b_tab_selected');
 
   // ID 입력
   const idInput = page.locator('#id');
@@ -94,7 +146,6 @@ async function loginToDoc24(page, loginId, password, log) {
       log('login', '약관 전체 동의 체크');
       await humanDelay(300, 500);
     }
-    // 약관 동의 저장 버튼
     const termSave = page.locator('#termSave');
     if (await termSave.isVisible({ timeout: 1000 }).catch(() => false)) {
       await termSave.click();
@@ -828,6 +879,7 @@ async function submitDoc24Document(params, onProgress = () => {}) {
   const {
     loginId,
     password,
+    accountType = 'personal',
     recipient,
     title,
     content,
@@ -867,7 +919,7 @@ async function submitDoc24Document(params, onProgress = () => {}) {
     onProgress(20);
 
     // Step 2: 로그인
-    const loginResult = await loginToDoc24(page, loginId, password, log);
+    const loginResult = await loginToDoc24(page, loginId, password, log, accountType);
     if (!loginResult.success) {
       const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
       return {

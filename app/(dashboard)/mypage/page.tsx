@@ -25,9 +25,10 @@ export default function MyPage() {
   const [activities, setActivities] = useState<RecentActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   // 문서24 계정 연동
-  const [doc24Account, setDoc24Account] = useState<{ isLinked: boolean; maskedId?: string; displayName?: string } | null>(null);
+  const [doc24Account, setDoc24Account] = useState<{ isLinked: boolean; maskedId?: string; displayName?: string; accountType?: string } | null>(null);
   const [doc24Id, setDoc24Id] = useState('');
   const [doc24Password, setDoc24Password] = useState('');
+  const [doc24AccountType, setDoc24AccountType] = useState('personal');
   const [doc24Linking, setDoc24Linking] = useState(false);
 
   useEffect(() => {
@@ -81,13 +82,14 @@ export default function MyPage() {
       const res = await fetch('/api/user/doc24-account', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ doc24Id, doc24Password }),
+        body: JSON.stringify({ doc24Id, doc24Password, accountType: doc24AccountType }),
       });
       const data = await res.json();
       if (data.success) {
-        setDoc24Account({ isLinked: true, maskedId: data.maskedId });
+        setDoc24Account({ isLinked: true, maskedId: data.maskedId, accountType: doc24AccountType });
         setDoc24Id('');
         setDoc24Password('');
+        setDoc24AccountType('personal');
       } else {
         alert(data.error || '연동 실패');
       }
@@ -283,7 +285,9 @@ export default function MyPage() {
                   </div>
                   <div className="flex-1">
                     <p className="font-medium text-gray-900">{doc24Account.maskedId}</p>
-                    <p className="text-sm text-green-600">연동됨</p>
+                    <p className="text-sm text-green-600">
+                      연동됨 ({doc24Account.accountType === 'corp_rep' ? '법인/단체 대표' : doc24Account.accountType === 'corp_member' ? '법인/단체 일반' : '개인'})
+                    </p>
                   </div>
                   <button
                     onClick={handleUnlinkDoc24}
@@ -295,8 +299,17 @@ export default function MyPage() {
               ) : (
                 <div className="space-y-3">
                   <p className="text-sm text-gray-500">
-                    문서24 계정을 연동하면 AI 채팅에서 민원을 자동 발송할 수 있습니다.
+                    문서24 계정을 연동하면 AI 채팅에서 공문을 자동 발송할 수 있습니다.
                   </p>
+                  <select
+                    value={doc24AccountType}
+                    onChange={(e) => setDoc24AccountType(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="personal">개인 사용자</option>
+                    <option value="corp_rep">법인/단체 사용자 (대표)</option>
+                    <option value="corp_member">법인/단체 사용자 (일반)</option>
+                  </select>
                   <input
                     type="text"
                     placeholder="문서24 아이디"

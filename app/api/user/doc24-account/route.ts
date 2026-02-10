@@ -26,6 +26,7 @@ export async function GET() {
       select: {
         doc24LoginId: true,
         displayName: true,
+        accountType: true,
         isActive: true,
         lastUsedAt: true,
         createdAt: true,
@@ -46,6 +47,7 @@ export async function GET() {
       isLinked: true,
       maskedId,
       displayName: account.displayName,
+      accountType: account.accountType,
       isActive: account.isActive,
       lastUsedAt: account.lastUsedAt,
       createdAt: account.createdAt,
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { doc24Id, doc24Password, displayName } = body;
+    const { doc24Id, doc24Password, displayName, accountType } = body;
 
     if (!doc24Id || !doc24Password) {
       return NextResponse.json(
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
         encryptionIv: iv,
         encryptionTag: tag,
         displayName: displayName || null,
+        accountType: accountType || 'personal',
         isActive: true,
         updatedAt: new Date(),
       },
@@ -103,6 +106,7 @@ export async function POST(request: NextRequest) {
         encryptionIv: iv,
         encryptionTag: tag,
         displayName: displayName || null,
+        accountType: accountType || 'personal',
       },
     });
 
