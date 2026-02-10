@@ -1006,70 +1006,92 @@ async function searchAndNavigateToService(page, serviceName, log) {
 
   try {
     // =====================================================================
-    // Step 1: 정부24 통합검색 페이지 이동
+    // Step 1: 정부24 메인 페이지 → 검색창으로 검색
+    // (gov.kr/search URL은 plus.gov.kr 대기열로 리디렉트되어 메인으로 돌아감)
     // =====================================================================
-    const searchUrl = `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(serviceName)}`;
-    log('search', `[Step 1] 통합검색 이동: ${searchUrl}`);
+    log('search', '[Step 1] 정부24 메인 페이지 이동 → 검색창 사용');
 
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-    await humanDelay(2000, 3000);
-
-    const afterSearchUrl = page.url();
-    const afterSearchTitle = await page.title().catch(() => '');
-    log('search', `[Step 1] 로드 완료 - URL: ${afterSearchUrl}`);
-    log('search', `[Step 1] 페이지 제목: "${afterSearchTitle}"`);
-    await saveScreenshot(page, 'search_step1_loaded');
-
-    // 메인 페이지 리디렉트 감지 (검색 결과가 아닌 gov.kr 메인으로 갔는지)
-    const isMainPage = (
-      afterSearchUrl === 'https://www.gov.kr/' ||
-      afterSearchUrl === 'https://www.gov.kr' ||
-      afterSearchUrl.match(/^https:\/\/www\.gov\.kr\/?$/) ||
-      afterSearchUrl.match(/^https:\/\/www\.gov\.kr\/main/)
-    );
-    if (isMainPage) {
-      log('search', '[Step 1] ⚠ 메인 페이지로 리디렉트됨 - 검색 입력 시도', 'warning');
-
-      // 메인 페이지의 검색창에 직접 입력
-      const searchInputSelectors = [
-        'input#searchInput', 'input[name="srhWrd"]', 'input[name="query"]',
-        'input.search_input', 'input[type="search"]', 'input[placeholder*="검색"]',
-        '#headerSearchInput', '.total_search input',
-      ];
-
-      let searchSubmitted = false;
-      for (const sel of searchInputSelectors) {
-        try {
-          const input = page.locator(sel).first();
-          if (await input.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await input.click();
-            await input.fill(serviceName);
-            log('search', `[Step 1] 검색창 입력 성공: ${sel}`);
-
-            // Enter 또는 검색 버튼 클릭
-            await page.keyboard.press('Enter');
-            await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-            await humanDelay(2000, 3000);
-            searchSubmitted = true;
-            log('search', `[Step 1] 검색 제출 완료, 현재 URL: ${page.url()}`);
-            break;
-          }
-        } catch { continue; }
-      }
-
-      if (!searchSubmitted) {
-        // 검색창도 못 찾음 → URL 파라미터 방식 재시도
-        log('search', '[Step 1] 검색창 못 찾음 - URL 방식 재시도');
-        const retryUrl = `https://www.gov.kr/search?svcType=MINWON&srhWrd=${encodeURIComponent(serviceName)}`;
-        await page.goto(retryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-        await humanDelay(2000, 3000);
-      }
-
-      await saveScreenshot(page, 'search_step1_after_retry');
+    // 현재 페이지가 이미 gov.kr이면 재이동 불필요
+    const curUrl = page.url();
+    if (!curUrl.includes('gov.kr') || curUrl.includes('login') || curUrl.includes('plus.gov.kr')) {
+      await page.goto('https://www.gov.kr', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      await humanDelay(2000, 3000);
     }
 
+    log('search', `[Step 1] 현재 페이지: ${page.url()}`);
+    await saveScreenshot(page, 'search_step1_main');
+
+    // 메인 페이지 검색창에 직접 입력 (test-url로 확인: input#mainSearch, input[type="search"])
+    const searchInputSelectors = [
+      'input#mainSearch',
+      'input[type="search"]',
+      'input#searchInput',
+      'input[name="srhWrd"]',
+      'input[name="query"]',
+      'input.search_input',
+      'input[placeholder*="검색"]',
+      '#headerSearchInput',
+      '.total_search input',
+    ];
+
+    let searchSubmitted = false;
+    for (const sel of searchInputSelectors) {
+      try {
+        const input = page.locator(sel).first();
+        if (await input.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await input.click();
+          await humanDelay(300, 500);
+          await input.fill(serviceName);
+          await humanDelay(300, 500);
+          log('search', `[Step 1] 검색창 입력 성공: ${sel} → "${serviceName}"`);
+
+          // 검색 버튼 클릭 또는 Enter
+          const searchBtnSelectors = [
+            'button:has-text("검색")',
+            'button[type="submit"]',
+            '.btn_search',
+            'a:has-text("검색")',
+          ];
+          let btnClicked = false;
+          for (const btnSel of searchBtnSelectors) {
+            try {
+              const btn = page.locator(btnSel).first();
+              if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+                await btn.click();
+                btnClicked = true;
+                log('search', `[Step 1] 검색 버튼 클릭: ${btnSel}`);
+                break;
+              }
+            } catch { continue; }
+          }
+          if (!btnClicked) {
+            await page.keyboard.press('Enter');
+            log('search', '[Step 1] Enter 키로 검색 제출');
+          }
+
+          await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+          await humanDelay(2000, 3000);
+          searchSubmitted = true;
+          log('search', `[Step 1] 검색 제출 완료, 현재 URL: ${page.url()}`);
+          break;
+        }
+      } catch { continue; }
+    }
+
+    if (!searchSubmitted) {
+      log('search', '[Step 1] 검색창 못 찾음 - Step 5(민원 목록)로 바로 이동', 'warning');
+    }
+
+    await saveScreenshot(page, 'search_step1_after_search');
+
+    // 검색이 성공한 경우에만 Step 2~4 실행
+    // 검색창을 못 찾은 경우 바로 Step 5(민원 목록 페이지)로 점프
+    if (!searchSubmitted) {
+      log('search', '[Step 2~4 건너뜀] 검색 미제출 → Step 5로 이동');
+    }
+
+    if (searchSubmitted) {
     // =====================================================================
     // Step 2: "민원" 탭 클릭 (검색 결과 필터링)
     // =====================================================================
@@ -1327,9 +1349,11 @@ async function searchAndNavigateToService(page, serviceName, log) {
     }
 
     log('search', '[Step 4] 통합검색에서 매칭되는 민원을 찾지 못함');
+    } // end if (searchSubmitted)
 
     // =====================================================================
     // Step 5: Fallback - 민원 목록 페이지(AA020InfoCappList.do) 검색
+    // (검색 미제출 or 통합검색 실패 시 도달)
     // =====================================================================
     log('search', '[Step 5] 민원 목록 페이지(AA020InfoCappList.do)에서 재검색');
 
