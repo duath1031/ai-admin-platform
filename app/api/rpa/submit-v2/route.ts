@@ -302,6 +302,7 @@ async function handleRealRpaSubmit(submissionId: string, userId: string) {
     taskData: {
       cookies,
       serviceCode: submission.serviceCode || '',
+      serviceName: submission.serviceName || '',
       serviceUrl,
       formData: {},
       files,

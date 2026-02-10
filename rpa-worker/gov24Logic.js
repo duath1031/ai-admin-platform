@@ -987,13 +987,159 @@ async function confirmGov24Auth(params) {
 }
 
 // =============================================================================
+// 정부24 검색으로 민원 서비스 찾기
+// =============================================================================
+
+/**
+ * 정부24에서 민원 서비스를 검색하여 서비스 정보 페이지 URL을 찾는다
+ * @param {Page} page - Playwright 페이지
+ * @param {string} serviceName - 검색할 서비스명 (예: "통신판매업 신고")
+ * @param {Function} log - 로깅 함수
+ * @returns {object} - { success, serviceUrl, foundName, error }
+ */
+async function searchAndNavigateToService(page, serviceName, log) {
+  log('search', `정부24에서 "${serviceName}" 검색 시작`);
+
+  try {
+    // 1. 정부24 통합검색 페이지로 이동
+    const searchUrl = `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(serviceName)}`;
+    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await humanDelay(2000, 3000);
+
+    log('search', `검색 페이지 로드 완료: ${page.url()}`);
+    await saveScreenshot(page, `search_01_results`);
+
+    // 2. 검색 결과에서 민원 서비스 링크 찾기 (CappBizCD 포함 링크 또는 InfoCapp 링크)
+    const searchResult = await page.evaluate((targetName) => {
+      const results = [];
+      // 검색 결과 링크들 수집
+      const allLinks = document.querySelectorAll('a[href*="CappBizCD"], a[href*="InfoCapp"], a[href*="AA020"]');
+      for (const link of allLinks) {
+        const text = (link.textContent || '').trim();
+        const href = link.href || '';
+        if (text && href && text.length < 100) {
+          results.push({ text, href, score: 0 });
+        }
+      }
+
+      // 텍스트 매칭 점수 계산
+      const normalizedTarget = targetName.replace(/\s+/g, '').toLowerCase();
+      for (const r of results) {
+        const normalizedText = r.text.replace(/\s+/g, '').toLowerCase();
+        if (normalizedText === normalizedTarget) {
+          r.score = 100; // 정확히 일치
+        } else if (normalizedText.includes(normalizedTarget)) {
+          r.score = 80; // 포함
+        } else if (normalizedTarget.includes(normalizedText)) {
+          r.score = 60; // 검색어가 결과 포함
+        } else {
+          // 단어 단위 매칭
+          const targetWords = normalizedTarget.split(/[^가-힣a-z0-9]+/).filter(Boolean);
+          const matchedWords = targetWords.filter(w => normalizedText.includes(w));
+          r.score = Math.round((matchedWords.length / targetWords.length) * 50);
+        }
+      }
+
+      // 점수순 정렬, 상위 결과 반환
+      results.sort((a, b) => b.score - a.score);
+      return {
+        totalLinks: results.length,
+        topResults: results.slice(0, 5).map(r => ({ text: r.text.substring(0, 60), href: r.href, score: r.score })),
+        bestMatch: results.length > 0 && results[0].score >= 40 ? results[0] : null,
+      };
+    }, serviceName);
+
+    log('search', `검색 결과: ${searchResult.totalLinks}개 링크, 최고 매칭: ${searchResult.bestMatch ? searchResult.bestMatch.text + ' (score:' + searchResult.bestMatch.score + ')' : '없음'}`);
+    if (searchResult.topResults.length > 0) {
+      log('search', `상위 결과: ${JSON.stringify(searchResult.topResults.slice(0, 3))}`);
+    }
+
+    if (searchResult.bestMatch && searchResult.bestMatch.score >= 40) {
+      const foundUrl = searchResult.bestMatch.href;
+      const foundName = searchResult.bestMatch.text;
+      log('search', `민원 찾음: "${foundName}" → ${foundUrl}`);
+
+      // 찾은 페이지로 이동
+      await page.goto(foundUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      await humanDelay(1000, 2000);
+
+      const afterUrl = page.url();
+      log('search', `서비스 페이지: ${afterUrl}`);
+      await saveScreenshot(page, `search_02_service_page`);
+
+      return {
+        success: true,
+        serviceUrl: afterUrl,
+        foundName,
+        navigated: true, // 이미 해당 페이지에 있음
+      };
+    }
+
+    // 3. 검색 결과에서 못 찾음 → 민원 목록 검색 시도
+    log('search', '통합검색에서 못 찾음, 민원 목록에서 재검색');
+
+    // 민원 서비스 목록 페이지
+    const minwonListUrl = `https://www.gov.kr/mw/AA020InfoCappList.do?SearchText=${encodeURIComponent(serviceName)}`;
+    await page.goto(minwonListUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await humanDelay(1000, 2000);
+
+    log('search', `민원 목록 검색: ${page.url()}`);
+    await saveScreenshot(page, `search_03_minwon_list`);
+
+    // 민원 목록에서 링크 찾기
+    const listResult = await page.evaluate((targetName) => {
+      const normalizedTarget = targetName.replace(/\s+/g, '').toLowerCase();
+      const links = document.querySelectorAll('a[href*="CappBizCD"]');
+      for (const link of links) {
+        const text = (link.textContent || '').trim().replace(/\s+/g, '').toLowerCase();
+        if (text.includes(normalizedTarget) || normalizedTarget.includes(text)) {
+          return { found: true, href: link.href, text: link.textContent.trim() };
+        }
+      }
+      return { found: false };
+    }, serviceName);
+
+    if (listResult.found) {
+      log('search', `민원 목록에서 찾음: "${listResult.text}" → ${listResult.href}`);
+      await page.goto(listResult.href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      await humanDelay(1000, 2000);
+
+      return {
+        success: true,
+        serviceUrl: page.url(),
+        foundName: listResult.text,
+        navigated: true,
+      };
+    }
+
+    // 아무것도 못 찾음
+    log('search', `"${serviceName}" 관련 민원을 정부24에서 찾을 수 없음`, 'warning');
+    return {
+      success: false,
+      error: `정부24에서 "${serviceName}" 관련 민원을 찾을 수 없습니다. 정확한 민원 서비스명을 입력해주세요.`,
+    };
+
+  } catch (error) {
+    log('search', `검색 중 오류: ${error.message}`, 'error');
+    return {
+      success: false,
+      error: `정부24 검색 중 오류: ${error.message}`,
+    };
+  }
+}
+
+// =============================================================================
 // 정부24 민원 제출 (Phase 25.5: Real Submission)
 // =============================================================================
 const fs = require('fs');
 const path = require('path');
 
 async function submitGov24Service(params, onProgress = () => {}) {
-  const { cookies, serviceCode, serviceUrl, formData = {}, files = [] } = params;
+  const { cookies, serviceCode, serviceName: paramServiceName, serviceUrl, formData = {}, files = [] } = params;
   const taskId = uuidv4();
   const logs = [];
   const tmpFiles = []; // 정리할 임시 파일 목록
@@ -1127,36 +1273,69 @@ async function submitGov24Service(params, onProgress = () => {}) {
       pageContent.includes('점검 중')
     );
 
-    if (is404Page || isErrorPage) {
-      log('navigate', '404/에러 페이지 감지', 'error');
-      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
-      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
-      return {
-        success: false,
-        taskId,
-        phase: 'error',
-        errorCode: 'PAGE_NOT_FOUND',
-        error: `정부24에서 해당 민원 서비스 페이지를 찾을 수 없습니다. CappBizCD가 올바른지 확인하거나, 정부24에서 직접 검색해주세요. (URL: ${currentUrl})`,
-        finalUrl: currentUrl,
-        logs,
-        screenshot: screenshotB64,
-      };
-    }
+    // 서비스명 추출 (검색 재시도에 사용)
+    const serviceName = paramServiceName || serviceCode || '';
 
-    if (isSearchPage) {
-      log('navigate', '검색 페이지로 이동됨 - 직접 서비스 페이지가 아님', 'warning');
-      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
-      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
-      return {
-        success: false,
-        taskId,
-        phase: 'error',
-        errorCode: 'SEARCH_PAGE',
-        error: '정부24 검색 페이지로 이동되었습니다. 이 서비스는 직접 URL이 등록되지 않아 자동 접수가 불가합니다. 정부24에서 해당 서비스의 정확한 URL을 입력해주세요.',
-        finalUrl: currentUrl,
-        logs,
-        screenshot: screenshotB64,
-      };
+    if (is404Page || isErrorPage || isSearchPage) {
+      log('navigate', `${is404Page ? '404' : isSearchPage ? '검색' : '에러'} 페이지 감지 → 정부24 검색으로 민원 자동 탐색`, 'warning');
+
+      // 검색으로 민원 페이지 찾기
+      if (serviceName) {
+        const searchResult = await searchAndNavigateToService(page, serviceName, log);
+
+        if (searchResult.success) {
+          log('navigate', `검색으로 민원 찾음: ${searchResult.foundName}`);
+          // searchAndNavigateToService가 이미 해당 페이지로 이동함
+          currentUrl = page.url();
+          pageTitle = await page.title();
+          log('navigate', `검색 후 페이지: ${pageTitle} (${currentUrl})`);
+
+          // 검색 결과가 서비스 정보 페이지인 경우 → 신청 버튼 클릭 필요
+          const foundApplyBtn = page.locator('#applyBtn');
+          if (await foundApplyBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await foundApplyBtn.click();
+            log('apply', '검색 후 #applyBtn 클릭');
+            await humanDelay(1500, 2500);
+
+            const memberBtn = page.locator('#memberApplyBtn');
+            if (await memberBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await memberBtn.click();
+              log('apply', '회원 신청하기 클릭');
+            }
+            await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+            await humanDelay(1000, 2000);
+          }
+          // 계속 진행 (아래 폼/제출 로직으로)
+        } else {
+          // 검색으로도 못 찾음
+          const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+          const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
+          return {
+            success: false,
+            taskId,
+            phase: 'error',
+            errorCode: 'SERVICE_NOT_FOUND',
+            error: searchResult.error || `정부24에서 "${serviceName}" 민원을 찾을 수 없습니다. 정확한 민원명을 입력하거나 정부24 URL을 직접 입력해주세요.`,
+            finalUrl: currentUrl,
+            logs,
+            screenshot: screenshotB64,
+          };
+        }
+      } else {
+        // serviceName도 없음
+        const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+        const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
+        return {
+          success: false,
+          taskId,
+          phase: 'error',
+          errorCode: 'PAGE_NOT_FOUND',
+          error: `정부24에서 해당 민원 서비스 페이지를 찾을 수 없습니다. 서비스명 또는 URL을 확인해주세요. (URL: ${currentUrl})`,
+          finalUrl: currentUrl,
+          logs,
+          screenshot: screenshotB64,
+        };
+      }
     }
 
     // 로그인 페이지로 리디렉트된 경우 → 쿠키가 만료됨
