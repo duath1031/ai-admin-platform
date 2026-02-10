@@ -286,7 +286,11 @@ export default function MyPage() {
                   <div className="flex-1">
                     <p className="font-medium text-gray-900">{doc24Account.maskedId}</p>
                     <p className="text-sm text-green-600">
-                      연동됨 ({doc24Account.accountType === 'corp_rep' ? '법인/단체 대표' : doc24Account.accountType === 'corp_member' ? '법인/단체 일반' : '개인'})
+                      연동됨 ({
+                        doc24Account.accountType === 'corp_rep' ? '법인/단체 대표' :
+                        doc24Account.accountType === 'corp_admin' ? '법인/단체 업무관리자' :
+                        doc24Account.accountType === 'corp_member' ? '법인/단체 부서사용자' : '개인'
+                      })
                     </p>
                   </div>
                   <button
@@ -301,14 +305,30 @@ export default function MyPage() {
                   <p className="text-sm text-gray-500">
                     문서24 계정을 연동하면 AI 채팅에서 공문을 자동 발송할 수 있습니다.
                   </p>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-xs text-amber-800 font-medium mb-1">ID/비밀번호 로그인만 지원됩니다</p>
+                    <p className="text-xs text-amber-700">
+                      간편인증(카카오/네이버 등)으로 가입하신 경우, 문서24 홈페이지에서 <strong>ID/비밀번호를 설정</strong>한 후 연동해주세요.
+                      공인인증서로만 가입된 경우에도 ID/비밀번호 재설정이 필요합니다.
+                    </p>
+                    <a
+                      href="https://docu.gdoc.go.kr"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline mt-1 inline-block"
+                    >
+                      문서24 바로가기 &rarr;
+                    </a>
+                  </div>
                   <select
                     value={doc24AccountType}
                     onChange={(e) => setDoc24AccountType(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                   >
                     <option value="personal">개인 사용자</option>
-                    <option value="corp_rep">법인/단체 사용자 (대표)</option>
-                    <option value="corp_member">법인/단체 사용자 (일반)</option>
+                    <option value="corp_rep">법인/단체 - 대표사용자</option>
+                    <option value="corp_admin">법인/단체 - 업무관리자</option>
+                    <option value="corp_member">법인/단체 - 부서(일반) 사용자</option>
                   </select>
                   <input
                     type="text"

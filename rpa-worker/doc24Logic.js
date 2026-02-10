@@ -52,7 +52,7 @@ async function loginToDoc24(page, loginId, password, log, accountType = 'persona
   await saveScreenshot(page, 'doc24_01_login_page');
 
   // 계정 유형에 따른 탭 선택
-  if (accountType === 'corp_rep' || accountType === 'corp_member') {
+  if (accountType === 'corp_rep' || accountType === 'corp_admin' || accountType === 'corp_member') {
     // 법인/단체 탭 클릭
     const corpTab = page.locator('#entrprsHref, a[href="#entrprs"]').first();
     if (await corpTab.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -67,32 +67,25 @@ async function loginToDoc24(page, loginId, password, log, accountType = 'persona
       });
 
       // 법인 내 역할 구분 (CR: 대표, CA: 업무관리자, CC: 부서사용자)
-      if (accountType === 'corp_rep') {
-        // 대표 사용자 라디오 선택
-        const repRadio = page.locator('input[value="CR"], #mberSeEntrprs[value="CR"]').first();
-        if (await repRadio.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await repRadio.check();
-          log('login', '대표 사용자 선택 (CR)');
-        } else {
-          // radio가 아닌 경우 직접 값 설정
-          await page.evaluate(() => {
-            const el = document.getElementById('mberSeEntrprs');
-            if (el) el.value = 'CR';
-            // 라디오 버튼이면 클릭
-            const radios = document.querySelectorAll('input[name="mberSeEntrprs"]');
-            radios.forEach(r => { if (r.value === 'CR') r.checked = true; });
-          });
-          log('login', '대표 사용자 값 직접 설정 (CR)');
-        }
+      // 법인 내 역할 매핑: corp_rep→CR, corp_admin→CA, corp_member→CC
+      const roleMap = { corp_rep: 'CR', corp_admin: 'CA', corp_member: 'CC' };
+      const roleLabel = { corp_rep: '대표사용자', corp_admin: '업무관리자', corp_member: '부서사용자' };
+      const roleCode = roleMap[accountType] || 'CR';
+
+      // 라디오 버튼 클릭 시도
+      const roleRadio = page.locator(`input[value="${roleCode}"]`).first();
+      if (await roleRadio.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await roleRadio.check();
+        log('login', `${roleLabel[accountType]} 라디오 선택 (${roleCode})`);
       } else {
-        // 일반(부서) 사용자
-        await page.evaluate(() => {
+        // 직접 값 설정
+        await page.evaluate((code) => {
           const el = document.getElementById('mberSeEntrprs');
-          if (el) el.value = 'CC';
+          if (el) el.value = code;
           const radios = document.querySelectorAll('input[name="mberSeEntrprs"]');
-          radios.forEach(r => { if (r.value === 'CC') r.checked = true; });
-        });
-        log('login', '부서 사용자 값 설정 (CC)');
+          radios.forEach(r => { if (r.value === code) r.checked = true; });
+        }, roleCode);
+        log('login', `${roleLabel[accountType]} 값 직접 설정 (${roleCode})`);
       }
       await humanDelay(300, 500);
     } else {
