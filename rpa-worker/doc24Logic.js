@@ -1087,7 +1087,7 @@ async function dumpPageStructure(page, log) {
       }
     });
     result.elements = elements;
-    result.bodyPreview = document.body?.innerText?.substring(0, 500);
+    result.bodyPreview = document.body?.innerText?.substring(0, 2000);
     return result;
   }).catch(() => ({ error: 'evaluate failed' }));
 
@@ -1253,7 +1253,7 @@ async function submitDoc24Document(params, onProgress = () => {}) {
 /**
  * 디버그 전용: 문서24 로그인 후 작성 페이지 구조 덤프
  */
-async function debugDoc24Compose(loginId, password) {
+async function debugDoc24Compose(loginId, password, accountType = 'personal') {
   const logs = [];
   const log = (step, msg) => {
     logs.push({ step, msg, ts: new Date().toISOString() });
@@ -1268,7 +1268,7 @@ async function debugDoc24Compose(loginId, password) {
     browser = stealth.browser;
     const page = stealth.page;
 
-    const loginResult = await loginToDoc24(page, loginId, password, log);
+    const loginResult = await loginToDoc24(page, loginId, password, log, accountType);
     if (!loginResult.success) {
       return { success: false, error: loginResult.error, logs };
     }

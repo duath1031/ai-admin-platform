@@ -565,14 +565,14 @@ app.post('/doc24/submit', validateApiKey, async (req, res) => {
  * POST /doc24/debug-compose
  */
 app.post('/doc24/debug-compose', validateApiKey, async (req, res) => {
-  const { loginId, password } = req.body;
+  const { loginId, password, accountType } = req.body;
 
   if (!loginId || !password) {
     return res.status(400).json({ success: false, error: '로그인 정보가 필요합니다.' });
   }
 
   try {
-    const result = await debugDoc24Compose(loginId, password);
+    const result = await debugDoc24Compose(loginId, password, accountType || 'personal');
     res.json(result);
   } catch (error) {
     console.error('[Doc24 Debug] Error:', error);
