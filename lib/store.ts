@@ -25,6 +25,18 @@ interface RpaState {
   screenshot?: string | null;
 }
 
+/** 문서24 발송 상태 */
+type Doc24Status = 'idle' | 'submitting' | 'sent' | 'error';
+
+interface Doc24State {
+  status: Doc24Status;
+  message: string;
+  submissionId: string | null;
+  screenshot?: string | null;
+  receiptNumber?: string | null;
+  documentUrl?: string | null;
+}
+
 interface ChatState {
   messages: Message[];
   isLoading: boolean;
@@ -33,6 +45,8 @@ interface ChatState {
   uploadedFileData: Record<string, string>;
   /** RPA 실시간 상태 */
   rpaState: RpaState;
+  /** 문서24 발송 상태 */
+  doc24State: Doc24State;
   addMessage: (message: Omit<Message, "createdAt" | "id"> & { id?: string }) => void;
   updateMessage: (id: string, content: string) => void;
   setMessages: (messages: Message[]) => void;
@@ -42,9 +56,12 @@ interface ChatState {
   setUploadedFileData: (path: string, base64: string) => void;
   setRpaState: (state: Partial<RpaState>) => void;
   resetRpaState: () => void;
+  setDoc24State: (state: Partial<Doc24State>) => void;
+  resetDoc24State: () => void;
 }
 
 const DEFAULT_RPA_STATE: RpaState = { status: 'idle', message: '', submissionId: null };
+const DEFAULT_DOC24_STATE: Doc24State = { status: 'idle', message: '', submissionId: null };
 
 export const useChatStore = create<ChatState>((set) => ({
   messages: [],
@@ -52,6 +69,7 @@ export const useChatStore = create<ChatState>((set) => ({
   currentChatId: null,
   uploadedFileData: {},
   rpaState: { ...DEFAULT_RPA_STATE },
+  doc24State: { ...DEFAULT_DOC24_STATE },
   addMessage: (message) =>
     set((state) => ({
       messages: [
@@ -72,7 +90,7 @@ export const useChatStore = create<ChatState>((set) => ({
   setMessages: (messages) => set({ messages }),
   setLoading: (isLoading) => set({ isLoading }),
   setCurrentChatId: (currentChatId) => set({ currentChatId }),
-  clearMessages: () => set({ messages: [], uploadedFileData: {}, rpaState: { ...DEFAULT_RPA_STATE } }),
+  clearMessages: () => set({ messages: [], uploadedFileData: {}, rpaState: { ...DEFAULT_RPA_STATE }, doc24State: { ...DEFAULT_DOC24_STATE } }),
   setUploadedFileData: (path, base64) =>
     set((state) => ({
       uploadedFileData: { ...state.uploadedFileData, [path]: base64 },
@@ -82,6 +100,11 @@ export const useChatStore = create<ChatState>((set) => ({
       rpaState: { ...state.rpaState, ...partial },
     })),
   resetRpaState: () => set({ rpaState: { ...DEFAULT_RPA_STATE } }),
+  setDoc24State: (partial) =>
+    set((state) => ({
+      doc24State: { ...state.doc24State, ...partial },
+    })),
+  resetDoc24State: () => set({ doc24State: { ...DEFAULT_DOC24_STATE } }),
 }));
 
 interface Document {

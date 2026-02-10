@@ -9,6 +9,7 @@ const {
   confirmGov24Auth,
   submitGov24Service,
 } = require('../gov24Logic');
+const { submitDoc24Document } = require('../doc24Logic');
 
 let workerInterval = null;
 const POLL_INTERVAL = 1000; // 1초마다 큐 확인
@@ -37,6 +38,11 @@ async function processJob(job) {
       case 'gov24_submit':
         updateJob(jobId, { progress: 20 });
         result = await submitGov24Service(data, (progress) => updateJob(jobId, { progress }));
+        break;
+
+      case 'doc24_submit':
+        updateJob(jobId, { progress: 20 });
+        result = await submitDoc24Document(data, (progress) => updateJob(jobId, { progress }));
         break;
 
       case 'generic_rpa':

@@ -73,6 +73,8 @@ model User {
   rpaTasks                RpaTask[]
   sessions                Session[]
   subscriptions           Subscription[]
+  doc24Account            Doc24Account?
+  doc24Submissions        Doc24Submission[]
 }
 
 // 기업 마스터 프로필 (AI 비서의 기억 저장소)
@@ -636,6 +638,54 @@ model Procurement {
   @@index([announceDt])
   @@index([openingDt])
   @@index([winner])
+}
+
+// ─────────────────────────────────────────
+// 문서24 자동접수 (Phase 27)
+// ─────────────────────────────────────────
+
+model Doc24Account {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  doc24LoginId      String
+  encryptedPassword String
+  encryptionIv      String
+  encryptionTag     String
+  displayName       String?
+  isActive          Boolean  @default(true)
+  lastUsedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Doc24Submission {
+  id              String    @id @default(cuid())
+  userId          String
+  recipient       String
+  recipientCode   String?
+  title           String
+  content         String?
+  attachmentNames String?
+  attachmentCount Int       @default(0)
+  status          String    @default("pending")
+  receiptNumber   String?
+  receiptPdfUrl   String?
+  screenshotUrl   String?
+  errorMessage    String?
+  workerJobId     String?
+  creditsUsed     Int       @default(0)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // 사용자별 관심 키워드 알림 설정

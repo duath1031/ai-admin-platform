@@ -20,6 +20,11 @@ const {
   submitGov24Service,
 } = require('./gov24Logic');
 
+const {
+  submitDoc24Document,
+  debugDoc24Compose,
+} = require('./doc24Logic');
+
 // BullMQ 큐 시스템
 const { addJob, getJobStatus, isQueueAvailable, jobs: jobsMap } = require('./src/queue');
 const { startWorker, stopWorker } = require('./src/queueWorker');
@@ -84,8 +89,8 @@ app.get('/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: '1.8.0-real-submit',
-    features: ['gov24-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
+    version: '2.0.0-doc24',
+    features: ['gov24-rpa', 'doc24-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
     queue: 'in-memory',
   });
 });
@@ -521,6 +526,63 @@ app.get('/screenshots/:filename', validateApiKey, (req, res) => {
       });
     }
   });
+});
+
+// =============================================================================
+// 문서24 엔드포인트
+// =============================================================================
+
+/**
+ * 문서24 문서 발송
+ * POST /doc24/submit
+ */
+app.post('/doc24/submit', validateApiKey, async (req, res) => {
+  const { loginId, password, recipient, title, content, files } = req.body;
+
+  if (!loginId || !password) {
+    return res.status(400).json({ success: false, error: '문서24 로그인 정보가 필요합니다.' });
+  }
+  if (!recipient || !title) {
+    return res.status(400).json({ success: false, error: '수신기관과 제목은 필수입니다.' });
+  }
+
+  console.log(`[Doc24 Submit] 요청: recipient=${recipient}, title=${title}, files=${(files || []).length}개`);
+
+  try {
+    const result = await submitDoc24Document({
+      loginId, password, recipient, title, content: content || '', files: files || [],
+    });
+
+    // screenshot이 너무 크면 잘라서 로그
+    if (result.screenshot) {
+      console.log(`[Doc24 Submit] 스크린샷 크기: ${result.screenshot.length} chars`);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('[Doc24 Submit] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 문서24 디버그: 작성 페이지 구조 덤프
+ * POST /doc24/debug-compose
+ */
+app.post('/doc24/debug-compose', validateApiKey, async (req, res) => {
+  const { loginId, password } = req.body;
+
+  if (!loginId || !password) {
+    return res.status(400).json({ success: false, error: '로그인 정보가 필요합니다.' });
+  }
+
+  try {
+    const result = await debugDoc24Compose(loginId, password);
+    res.json(result);
+  } catch (error) {
+    console.error('[Doc24 Debug] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /**

@@ -24,9 +24,15 @@ export default function MyPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [activities, setActivities] = useState<RecentActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // 문서24 계정 연동
+  const [doc24Account, setDoc24Account] = useState<{ isLinked: boolean; maskedId?: string; displayName?: string } | null>(null);
+  const [doc24Id, setDoc24Id] = useState('');
+  const [doc24Password, setDoc24Password] = useState('');
+  const [doc24Linking, setDoc24Linking] = useState(false);
 
   useEffect(() => {
     fetchUserData();
+    fetchDoc24Account();
   }, []);
 
   const fetchUserData = async () => {
@@ -54,6 +60,54 @@ export default function MyPage() {
 
   const handleLogout = () => {
     signOut({ callbackUrl: "/login" });
+  };
+
+  const fetchDoc24Account = async () => {
+    try {
+      const res = await fetch('/api/user/doc24-account');
+      if (res.ok) {
+        const data = await res.json();
+        setDoc24Account(data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch doc24 account:', error);
+    }
+  };
+
+  const handleLinkDoc24 = async () => {
+    if (!doc24Id || !doc24Password) return;
+    setDoc24Linking(true);
+    try {
+      const res = await fetch('/api/user/doc24-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc24Id, doc24Password }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDoc24Account({ isLinked: true, maskedId: data.maskedId });
+        setDoc24Id('');
+        setDoc24Password('');
+      } else {
+        alert(data.error || '연동 실패');
+      }
+    } catch {
+      alert('연동 중 오류가 발생했습니다.');
+    } finally {
+      setDoc24Linking(false);
+    }
+  };
+
+  const handleUnlinkDoc24 = async () => {
+    if (!confirm('문서24 계정 연동을 해제하시겠습니까?')) return;
+    try {
+      const res = await fetch('/api/user/doc24-account', { method: 'DELETE' });
+      if (res.ok) {
+        setDoc24Account({ isLinked: false });
+      }
+    } catch {
+      alert('해제 중 오류가 발생했습니다.');
+    }
   };
 
   return (
@@ -210,6 +264,63 @@ export default function MyPage() {
                   </div>
                 </div>
               </Link>
+            </CardContent>
+          </Card>
+
+          {/* 문서24 계정 연동 */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-900">문서24 계정</h3>
+                <span className="text-xs text-gray-400">docu.gdoc.go.kr</span>
+              </div>
+              {doc24Account?.isLinked ? (
+                <div className="flex items-center gap-4 p-4 bg-green-50 rounded-lg">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900">{doc24Account.maskedId}</p>
+                    <p className="text-sm text-green-600">연동됨</p>
+                  </div>
+                  <button
+                    onClick={handleUnlinkDoc24}
+                    className="text-sm text-red-500 hover:text-red-700 font-medium"
+                  >
+                    해제
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-500">
+                    문서24 계정을 연동하면 AI 채팅에서 민원을 자동 발송할 수 있습니다.
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="문서24 아이디"
+                    value={doc24Id}
+                    onChange={(e) => setDoc24Id(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <input
+                    type="password"
+                    placeholder="비밀번호"
+                    value={doc24Password}
+                    onChange={(e) => setDoc24Password(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <Button
+                    onClick={handleLinkDoc24}
+                    disabled={doc24Linking || !doc24Id || !doc24Password}
+                    size="sm"
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {doc24Linking ? '연동 중...' : '계정 연동'}
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 

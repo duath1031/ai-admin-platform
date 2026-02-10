@@ -24,9 +24,13 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { messages, isLoading, addMessage, setLoading, setUploadedFileData, rpaState, setRpaState, resetRpaState } = useChatStore();
+  const { messages, isLoading, addMessage, setLoading, setUploadedFileData, rpaState, setRpaState, resetRpaState, doc24State, setDoc24State, resetDoc24State } = useChatStore();
   const [showHumanModal, setShowHumanModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  // 문서24 관련 상태
+  const [showDoc24Modal, setShowDoc24Modal] = useState(false);
+  const [doc24Data, setDoc24Data] = useState({ recipient: '', title: '', content: '' });
+  const [doc24AccountLinked, setDoc24AccountLinked] = useState<boolean | null>(null);
   const [authData, setAuthData] = useState({
     name: '',
     rrn1: '', // 주민번호 앞자리 (6자리)
@@ -232,6 +236,100 @@ export default function ChatPage() {
 
     // 인증 수단 선택 모달 열기
     setShowAuthModal(true);
+  };
+
+  // 문서24 발송 핸들러
+  const handleDoc24Submit = async () => {
+    // 문서24 계정 연동 여부 확인
+    if (doc24AccountLinked === null) {
+      try {
+        const res = await fetch('/api/user/doc24-account');
+        const data = await res.json();
+        setDoc24AccountLinked(data.isLinked);
+        if (!data.isLinked) {
+          alert('문서24 계정을 먼저 연동해주세요.\n마이페이지 > 문서24 계정에서 연동할 수 있습니다.');
+          return;
+        }
+      } catch {
+        alert('계정 정보를 확인할 수 없습니다.');
+        return;
+      }
+    } else if (!doc24AccountLinked) {
+      alert('문서24 계정을 먼저 연동해주세요.\n마이페이지 > 문서24 계정에서 연동할 수 있습니다.');
+      return;
+    }
+
+    // 첨부파일명으로 제목 프리필
+    const defaultTitle = uploadedFile
+      ? `[민원신청] ${uploadedFile.originalName.replace(/\.(pdf|hwpx|jpg|png)$/i, '')}`
+      : '';
+    setDoc24Data(prev => ({ ...prev, title: prev.title || defaultTitle }));
+    setShowDoc24Modal(true);
+  };
+
+  // 문서24 실제 발송 실행
+  const executeDoc24Submit = async () => {
+    setShowDoc24Modal(false);
+    setDoc24State({ status: 'submitting', message: '문서24에 문서 발송 중... (1~2분 소요)' });
+
+    try {
+      // 첨부파일 준비
+      const files: { fileName: string; fileBase64: string; mimeType: string }[] = [];
+      if (uploadedFile) {
+        const { uploadedFileData: fileDataStore } = useChatStore.getState();
+        const base64 = fileDataStore[uploadedFile.savedPath];
+        if (base64) {
+          files.push({
+            fileName: uploadedFile.originalName,
+            fileBase64: base64,
+            mimeType: uploadedFile.fileType === 'pdf' ? 'application/pdf' : 'application/octet-stream',
+          });
+        }
+      }
+
+      const res = await fetch('/api/rpa/doc24-submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: doc24Data.recipient,
+          title: doc24Data.title,
+          content: doc24Data.content,
+          files,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (result.requiresAccountLink) {
+        setDoc24State({ status: 'error', message: '문서24 계정을 먼저 연동해주세요.' });
+        setDoc24AccountLinked(false);
+        return;
+      }
+
+      if (result.success) {
+        setDoc24State({
+          status: 'sent',
+          message: result.message || '문서24를 통해 문서가 발송되었습니다.',
+          submissionId: result.submissionId,
+          screenshot: result.screenshot,
+          receiptNumber: result.receiptNumber,
+          documentUrl: result.documentUrl,
+        });
+        // 5초 후 자동 닫기
+        setTimeout(() => resetDoc24State(), 10000);
+      } else {
+        setDoc24State({
+          status: 'error',
+          message: result.error || '발송에 실패했습니다.',
+          screenshot: result.screenshot,
+        });
+      }
+    } catch (err: any) {
+      setDoc24State({
+        status: 'error',
+        message: `오류: ${err.message || '알 수 없는 오류'}`,
+      });
+    }
   };
 
   // 실제 RPA 접수 실행 (인증 정보 포함)
@@ -690,14 +788,14 @@ export default function ChatPage() {
       <div className="mt-2 md:mt-3 space-y-2">
         {/* 메인 3분할 버튼 */}
         <div className="grid grid-cols-3 gap-2">
-          {/* 🚀 로봇 자동접수 */}
+          {/* 📨 문서24 발송 */}
           <button
-            onClick={handleRobotSubmit}
-            disabled={rpaState.status !== 'idle' && rpaState.status !== 'error'}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+            onClick={handleDoc24Submit}
+            disabled={doc24State.status === 'submitting'}
+            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            <span className="text-xl">🚀</span>
-            <span>로봇 자동접수</span>
+            <span className="text-xl">📨</span>
+            <span>문서24 발송</span>
           </button>
           {/* 📋 행정사 접수대행 */}
           <button
@@ -740,6 +838,147 @@ export default function ChatPage() {
           </a>
         </div>
       </div>
+
+      {/* 문서24 상태 토스트 */}
+      {doc24State.status !== 'idle' && (
+        <div className={`mt-3 p-4 rounded-xl border shadow-sm ${
+          doc24State.status === 'submitting' ? 'bg-blue-50 border-blue-200' :
+          doc24State.status === 'sent' ? 'bg-green-50 border-green-200' :
+          'bg-red-50 border-red-200'
+        }`}>
+          <div className="flex items-start gap-3">
+            {doc24State.status === 'submitting' && (
+              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mt-0.5" />
+            )}
+            {doc24State.status === 'sent' && <span className="text-xl">✅</span>}
+            {doc24State.status === 'error' && <span className="text-xl">❌</span>}
+            <div className="flex-1">
+              <p className={`text-sm font-medium ${
+                doc24State.status === 'submitting' ? 'text-blue-800' :
+                doc24State.status === 'sent' ? 'text-green-800' :
+                'text-red-800'
+              }`}>
+                {doc24State.message}
+              </p>
+              {doc24State.receiptNumber && (
+                <p className="text-sm text-green-700 mt-1 font-medium">
+                  접수번호: {doc24State.receiptNumber}
+                </p>
+              )}
+              {doc24State.documentUrl && (
+                <a
+                  href={doc24State.documentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline mt-1 inline-block"
+                >
+                  문서24에서 확인
+                </a>
+              )}
+              {doc24State.screenshot && (
+                <img
+                  src={doc24State.screenshot}
+                  alt="발송 결과"
+                  className="mt-2 rounded-lg border max-h-48 cursor-pointer hover:opacity-90"
+                  onClick={() => {
+                    const w = window.open('', '_blank', 'width=1200,height=800');
+                    if (w) {
+                      w.document.write(`<img src="${doc24State.screenshot}" style="max-width:100%"/>`);
+                    }
+                  }}
+                />
+              )}
+            </div>
+            {(doc24State.status === 'sent' || doc24State.status === 'error') && (
+              <button onClick={resetDoc24State} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 문서24 발송 모달 */}
+      {showDoc24Modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowDoc24Modal(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">문서24 자동 발송</h3>
+            <p className="text-sm text-gray-500 mb-4">수신기관과 제목을 입력하면 문서24를 통해 자동으로 발송합니다.</p>
+
+            <div className="space-y-3">
+              {/* 수신기관 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">수신기관 *</label>
+                <input
+                  type="text"
+                  placeholder="예: 강남구청 위생과"
+                  value={doc24Data.recipient}
+                  onChange={(e) => setDoc24Data(prev => ({ ...prev, recipient: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 제목 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">문서 제목 *</label>
+                <input
+                  type="text"
+                  placeholder="예: [민원신청] 통신판매업 신고"
+                  value={doc24Data.title}
+                  onChange={(e) => setDoc24Data(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 내용 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">본문 (선택)</label>
+                <textarea
+                  placeholder="민원 내용을 입력하세요"
+                  value={doc24Data.content}
+                  onChange={(e) => setDoc24Data(prev => ({ ...prev, content: e.target.value }))}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+
+              {/* 첨부파일 표시 */}
+              {uploadedFile && (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-500 mb-1">첨부파일</p>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                    <span className="text-sm text-gray-700">{uploadedFile.originalName}</span>
+                    <span className="text-xs text-gray-400">({Math.round(uploadedFile.size / 1024)}KB)</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 버튼 */}
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setShowDoc24Modal(false)}
+                className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={executeDoc24Submit}
+                disabled={!doc24Data.recipient || !doc24Data.title}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                발송하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 행정사 대행 의뢰 모달 */}
       {showHumanModal && (
