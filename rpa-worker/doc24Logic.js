@@ -37,6 +37,40 @@ async function saveScreenshot(page, prefix = 'doc24') {
 }
 
 /**
+ * jconfirm 팝업(doc24_alert 등) 자동 닫기
+ * 문서24는 다양한 단계에서 jconfirm 경고 팝업을 띄움
+ * 모든 주요 동작 전에 호출하여 팝업을 해제
+ */
+async function dismissJconfirmAlerts(page, log) {
+  const dismissed = await page.evaluate(() => {
+    const alerts = document.querySelectorAll('.jconfirm.jconfirm-open');
+    let count = 0;
+    alerts.forEach(alert => {
+      // 팝업 내부의 버튼 찾기 (확인, 예, 닫기 등)
+      const btns = alert.querySelectorAll('.jconfirm-buttons button, .jconfirm-closeIcon');
+      for (const btn of btns) {
+        btn.click();
+        count++;
+        break; // 첫 번째 버튼만 클릭
+      }
+      // 버튼이 없으면 팝업 자체를 강제 닫기
+      if (btns.length === 0) {
+        alert.style.display = 'none';
+        alert.remove();
+        count++;
+      }
+    });
+    return count;
+  }).catch(() => 0);
+
+  if (dismissed > 0) {
+    if (log) log('alert', `jconfirm 팝업 ${dismissed}개 닫음`);
+    await humanDelay(500, 800);
+  }
+  return dismissed;
+}
+
+/**
  * 문서24 로그인
  */
 async function loginToDoc24(page, loginId, password, log, accountType = 'personal') {
@@ -323,6 +357,9 @@ async function navigateToCompose(page, log) {
   }).catch(() => {});
   log('compose', '오버레이 요소 제거 완료');
 
+  // jconfirm 팝업 닫기 (doc24_alert 등)
+  await dismissJconfirmAlerts(page, log);
+
   await saveScreenshot(page, 'doc24_05_compose_ready');
   log('compose', '문서작성 페이지 준비 완료');
   return { success: true };
@@ -333,6 +370,7 @@ async function navigateToCompose(page, log) {
  */
 async function selectRecipient(page, recipient, log) {
   log('recipient', `수신기관 선택: ${recipient}`);
+  await dismissJconfirmAlerts(page, log);
 
   // 수신기관 입력 필드(#receiptinfoTmp)는 readonly → 클릭하면 검색 팝업이 열림
   // 먼저 JS click으로 수신기관 검색 팝업 열기 시도
@@ -540,6 +578,7 @@ async function selectRecipient(page, recipient, log) {
  */
 async function fillContent(page, title, content, log) {
   log('content', `제목 입력: ${title.substring(0, 50)}`);
+  await dismissJconfirmAlerts(page, log);
 
   // 제목 입력
   const titleSelectors = [
@@ -558,8 +597,8 @@ async function fillContent(page, title, content, log) {
   for (const sel of titleSelectors) {
     const input = page.locator(sel).first();
     if (await input.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await input.click();
-      await humanDelay(200, 400);
+      await input.click({ force: true });
+      await humanDelay(200, 300);
       await input.fill(title);
       log('content', `제목 입력 완료: ${sel}`);
       titleFilled = true;
@@ -567,8 +606,15 @@ async function fillContent(page, title, content, log) {
     }
   }
 
+  // force fill 실패 시 JS로 직접 입력
   if (!titleFilled) {
-    log('content', '제목 필드를 찾지 못함', 'warning');
+    titleFilled = await page.evaluate((t) => {
+      const el = document.getElementById('docTitle');
+      if (el) { el.value = t; el.dispatchEvent(new Event('input', { bubbles: true })); return true; }
+      return false;
+    }, title).catch(() => false);
+    if (titleFilled) log('content', '제목 JS 직접 입력 완료');
+    else log('content', '제목 필드를 찾지 못함', 'warning');
   }
 
   // 내용 입력 (textarea 또는 에디터)
@@ -663,6 +709,7 @@ async function fillContent(page, title, content, log) {
  * 첨부파일 업로드
  */
 async function uploadAttachments(page, files, log) {
+  await dismissJconfirmAlerts(page, log);
   if (!files || files.length === 0) {
     log('upload', '첨부파일 없음');
     return { success: true };
@@ -761,6 +808,7 @@ async function uploadAttachments(page, files, log) {
  */
 async function sendDocument(page, log) {
   log('send', '발송 버튼 탐색');
+  await dismissJconfirmAlerts(page, log);
 
   // 발송 버튼 클릭
   const sendSelectors = [
