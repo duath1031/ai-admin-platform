@@ -21,7 +21,7 @@ const {
 } = require('./gov24Logic');
 
 // BullMQ 큐 시스템
-const { addJob, getJobStatus, isQueueAvailable } = require('./src/queue');
+const { addJob, getJobStatus, isQueueAvailable, jobs: jobsMap } = require('./src/queue');
 const { startWorker, stopWorker } = require('./src/queueWorker');
 
 // RAG 라우터
@@ -521,6 +521,36 @@ app.get('/screenshots/:filename', validateApiKey, (req, res) => {
       });
     }
   });
+});
+
+/**
+ * 전체 작업 목록 조회 (디버그)
+ * GET /tasks
+ */
+app.get('/tasks', validateApiKey, async (req, res) => {
+  const allJobs = [];
+  for (const [jobId, job] of jobsMap.entries()) {
+    // result에서 screenshot 제거 (너무 큼)
+    const safeResult = job.result ? { ...job.result } : null;
+    if (safeResult && safeResult.screenshot) {
+      safeResult.screenshot = `[base64 ${safeResult.screenshot.length} chars]`;
+    }
+    // logs만 마지막 20개
+    if (safeResult && safeResult.logs) {
+      safeResult.logs = safeResult.logs.slice(-20);
+    }
+    allJobs.push({
+      jobId: job.id,
+      type: job.type,
+      status: job.status,
+      progress: job.progress,
+      result: safeResult,
+      error: job.error,
+      createdAt: job.createdAt,
+      updatedAt: job.updatedAt,
+    });
+  }
+  res.json({ success: true, totalJobs: allJobs.length, jobs: allJobs });
 });
 
 /**
