@@ -269,10 +269,10 @@ export default function ChatPage() {
     setShowDoc24Modal(true);
   };
 
-  // 문서24 실제 발송 실행
+  // 문서24 실제 발송 실행 (비동기 폴링)
   const executeDoc24Submit = async () => {
     setShowDoc24Modal(false);
-    setDoc24State({ status: 'submitting', message: '문서24에 문서 발송 중... (1~2분 소요)' });
+    setDoc24State({ status: 'submitting', message: '문서접수봇 작업을 등록 중...' });
 
     try {
       // 첨부파일 준비
@@ -304,6 +304,7 @@ export default function ChatPage() {
       }
       setDoc24Files([]);
 
+      // 1단계: 작업 등록
       const res = await fetch('/api/rpa/doc24-submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -323,24 +324,74 @@ export default function ChatPage() {
         return;
       }
 
-      if (result.success) {
-        setDoc24State({
-          status: 'sent',
-          message: result.message || '문서24를 통해 문서가 발송되었습니다.',
-          submissionId: result.submissionId,
-          screenshot: result.screenshot,
-          receiptNumber: result.receiptNumber,
-          documentUrl: result.documentUrl,
-        });
-        // 5초 후 자동 닫기
-        setTimeout(() => resetDoc24State(), 10000);
-      } else {
-        setDoc24State({
-          status: 'error',
-          message: result.error || '발송에 실패했습니다.',
-          screenshot: result.screenshot,
-        });
+      if (!result.success || !result.jobId) {
+        setDoc24State({ status: 'error', message: result.error || '작업 등록 실패' });
+        return;
       }
+
+      // 2단계: 폴링으로 진행상황 확인
+      setDoc24State({ status: 'submitting', message: '🤖 문서접수봇이 문서24에 접속 중... (1~2분 소요)' });
+      const { jobId, submissionId } = result;
+      const progressMessages: Record<string, string> = {
+        '10': '🔐 문서24 로그인 중...',
+        '30': '📝 문서 작성 페이지 이동 중...',
+        '40': '🏢 수신기관 검색 중...',
+        '50': '✍️ 제목/내용 입력 중...',
+        '60': '📎 첨부파일 업로드 중...',
+        '70': '📤 발송 처리 중...',
+        '80': '✅ 발송 확인 중...',
+        '90': '📋 보낸문서함 확인 중...',
+      };
+
+      let pollCount = 0;
+      const maxPolls = 60; // 최대 3분 (3초 간격)
+      const pollInterval = setInterval(async () => {
+        pollCount++;
+        if (pollCount > maxPolls) {
+          clearInterval(pollInterval);
+          setDoc24State({ status: 'error', message: '작업 시간이 초과되었습니다. 문서24에서 직접 확인해주세요.' });
+          return;
+        }
+
+        try {
+          const pollRes = await fetch(`/api/rpa/doc24-submit?jobId=${jobId}&submissionId=${submissionId}`);
+          const poll = await pollRes.json();
+
+          if (poll.state === 'completed') {
+            clearInterval(pollInterval);
+            if (poll.success) {
+              setDoc24State({
+                status: 'sent',
+                message: poll.message || '문서24를 통해 공문이 발송되었습니다.',
+                submissionId,
+                screenshot: poll.screenshot,
+                receiptNumber: poll.receiptNumber,
+                documentUrl: poll.documentUrl,
+              });
+              setTimeout(() => resetDoc24State(), 15000);
+            } else {
+              setDoc24State({
+                status: 'error',
+                message: poll.error || '발송에 실패했습니다.',
+                screenshot: poll.screenshot,
+              });
+            }
+          } else if (poll.state === 'failed') {
+            clearInterval(pollInterval);
+            setDoc24State({ status: 'error', message: poll.error || '작업이 실패했습니다.' });
+          } else {
+            // 진행 중 - 프로그레스 메시지 업데이트
+            const progress = poll.progress || 0;
+            const closest = Object.keys(progressMessages)
+              .map(Number).filter(p => p <= progress).sort((a, b) => b - a)[0];
+            const msg = closest ? progressMessages[String(closest)] : '🤖 문서접수봇 작업 진행 중...';
+            setDoc24State({ status: 'submitting', message: `${msg} (${progress}%)` });
+          }
+        } catch {
+          // 폴링 실패는 무시하고 계속 시도
+        }
+      }, 3000);
+
     } catch (err: any) {
       setDoc24State({
         status: 'error',

@@ -533,8 +533,8 @@ app.get('/screenshots/:filename', validateApiKey, (req, res) => {
 // =============================================================================
 
 /**
- * 문서24 문서 발송
- * POST /doc24/submit
+ * 문서24 문서 발송 (비동기 큐 방식)
+ * POST /doc24/submit → jobId 즉시 반환, 결과는 GET /jobs/:id 로 폴링
  */
 app.post('/doc24/submit', validateApiKey, async (req, res) => {
   const { loginId, password, recipient, title, content, files } = req.body;
@@ -546,21 +546,16 @@ app.post('/doc24/submit', validateApiKey, async (req, res) => {
     return res.status(400).json({ success: false, error: '수신기관과 제목은 필수입니다.' });
   }
 
-  console.log(`[Doc24 Submit] 요청: recipient=${recipient}, title=${title}, files=${(files || []).length}개`);
+  console.log(`[Doc24 Submit] 큐 등록: recipient=${recipient}, title=${title}, files=${(files || []).length}개`);
 
   try {
-    const result = await submitDoc24Document({
+    const jobInfo = await addJob('doc24_submit', {
       loginId, password, recipient, title, content: content || '', files: files || [],
     });
 
-    // screenshot이 너무 크면 잘라서 로그
-    if (result.screenshot) {
-      console.log(`[Doc24 Submit] 스크린샷 크기: ${result.screenshot.length} chars`);
-    }
-
-    res.json(result);
+    res.json({ success: true, async: true, jobId: jobInfo.jobId, message: '문서24 발송 작업이 등록되었습니다.' });
   } catch (error) {
-    console.error('[Doc24 Submit] Error:', error);
+    console.error('[Doc24 Submit] Queue Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -616,24 +611,25 @@ app.get('/tasks', validateApiKey, async (req, res) => {
 });
 
 /**
- * 작업 상태 조회 (향후 확장용)
- * GET /tasks/:taskId
+ * 작업 상태 조회
+ * GET /tasks/:taskId  또는  GET /jobs/:jobId
  */
 app.get('/tasks/:taskId', validateApiKey, async (req, res) => {
   const { taskId } = req.params;
-
-  // BullMQ 큐에서 작업 상태 조회
   const jobStatus = await getJobStatus(taskId);
   if (jobStatus) {
     return res.json({ success: true, ...jobStatus });
   }
+  res.json({ success: true, taskId, status: 'unknown', message: 'Task not found in queue' });
+});
 
-  res.json({
-    success: true,
-    taskId,
-    status: 'unknown',
-    message: 'Task not found in queue',
-  });
+app.get('/jobs/:jobId', validateApiKey, async (req, res) => {
+  const { jobId } = req.params;
+  const jobStatus = await getJobStatus(jobId);
+  if (jobStatus) {
+    return res.json(jobStatus);
+  }
+  res.json({ error: 'Job not found', state: 'unknown' });
 });
 
 /**
