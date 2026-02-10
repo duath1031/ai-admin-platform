@@ -23,6 +23,8 @@ const {
 const {
   submitDoc24Document,
   debugDoc24Compose,
+  crawlDoc24OrgList,
+  searchDoc24Orgs,
 } = require('./doc24Logic');
 
 // BullMQ 큐 시스템
@@ -576,6 +578,117 @@ app.post('/doc24/debug-compose', validateApiKey, async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('[Doc24 Debug] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// 문서24 수신기관 목록 (캐시 + 크롤링)
+// =============================================================================
+
+// 인메모리 캐시 + 파일 캐시
+let orgListCache = [];
+let orgListCacheTime = null;
+const ORG_CACHE_FILE = '/tmp/doc24-org-list.json';
+
+// 서버 시작 시 파일 캐시 로드
+try {
+  const fs = require('fs');
+  if (fs.existsSync(ORG_CACHE_FILE)) {
+    const data = JSON.parse(fs.readFileSync(ORG_CACHE_FILE, 'utf-8'));
+    orgListCache = data.orgList || [];
+    orgListCacheTime = data.cachedAt || null;
+    console.log(`[OrgCache] 파일에서 ${orgListCache.length}개 기관 로드 (${orgListCacheTime})`);
+  }
+} catch (e) {
+  console.log(`[OrgCache] 파일 캐시 로드 실패: ${e.message}`);
+}
+
+/**
+ * 수신기관 목록 조회 (캐시)
+ * GET /doc24/org-list
+ */
+app.get('/doc24/org-list', validateApiKey, (req, res) => {
+  const keyword = req.query.keyword;
+  let results = orgListCache;
+
+  if (keyword) {
+    const kw = keyword.toLowerCase();
+    results = orgListCache.filter(org =>
+      org.name.toLowerCase().includes(kw) ||
+      (org.category && org.category.toLowerCase().includes(kw))
+    );
+  }
+
+  res.json({
+    success: true,
+    total: results.length,
+    cachedAt: orgListCacheTime,
+    orgList: results,
+  });
+});
+
+/**
+ * 수신기관 목록 크롤링 (새로 가져오기)
+ * POST /doc24/org-crawl
+ * body: { loginId, password, accountType }
+ */
+app.post('/doc24/org-crawl', validateApiKey, async (req, res) => {
+  const { loginId, password, accountType } = req.body;
+  if (!loginId || !password) {
+    return res.status(400).json({ success: false, error: '로그인 정보 필요' });
+  }
+
+  console.log(`[Doc24 OrgCrawl] 크롤링 시작`);
+  try {
+    const result = await crawlDoc24OrgList(loginId, password, accountType || 'personal');
+    if (result.success && result.orgList.length > 0) {
+      orgListCache = result.orgList;
+      orgListCacheTime = new Date().toISOString();
+      // 파일 캐시 저장
+      try {
+        const fs = require('fs');
+        fs.writeFileSync(ORG_CACHE_FILE, JSON.stringify({
+          orgList: orgListCache,
+          cachedAt: orgListCacheTime,
+        }));
+        console.log(`[OrgCache] ${orgListCache.length}개 기관 파일 저장`);
+      } catch (e) {
+        console.log(`[OrgCache] 파일 저장 실패: ${e.message}`);
+      }
+    }
+    res.json({
+      success: result.success,
+      total: result.orgList?.length || 0,
+      cachedAt: orgListCacheTime,
+      error: result.error,
+      logs: result.logs?.slice(-30),
+    });
+  } catch (error) {
+    console.error('[Doc24 OrgCrawl] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 수신기관 실시간 검색 (캐시에 없는 기관 찾기)
+ * POST /doc24/org-search
+ * body: { loginId, password, accountType, keyword }
+ */
+app.post('/doc24/org-search', validateApiKey, async (req, res) => {
+  const { loginId, password, accountType, keyword } = req.body;
+  if (!loginId || !password || !keyword) {
+    return res.status(400).json({ success: false, error: '로그인 정보와 검색어 필요' });
+  }
+
+  try {
+    const result = await searchDoc24Orgs(loginId, password, keyword, accountType || 'personal');
+    res.json({
+      success: result.success,
+      results: result.results || [],
+      error: result.error,
+    });
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });

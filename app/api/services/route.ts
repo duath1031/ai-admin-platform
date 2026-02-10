@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
       services = services.filter(s => s.document.hasTemplate);
     }
 
-    // 결과 정리
+    // 결과 정리: gov24Url은 항상 제공 (cappBizCD → 직접링크, 없으면 검색URL 폴백)
     const results = services.map(service => ({
       code: service.code,
       name: service.name,
@@ -67,7 +67,8 @@ export async function GET(request: NextRequest) {
         ? service.gov24.directUrl
         : service.gov24.cappBizCD
           ? `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${service.gov24.cappBizCD}`
-          : null,
+          : `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(service.gov24.searchKeyword)}`,
+      hasDirectUrl: !!(service.gov24.directUrl || service.gov24.cappBizCD),
     }));
 
     return NextResponse.json({

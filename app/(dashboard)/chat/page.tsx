@@ -29,9 +29,15 @@ export default function ChatPage() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   // 문서24 관련 상태
   const [showDoc24Modal, setShowDoc24Modal] = useState(false);
-  const [doc24Data, setDoc24Data] = useState({ recipient: '', title: '', content: '' });
+  const [doc24Data, setDoc24Data] = useState({ recipient: '', recipientCode: '', title: '', content: '' });
   const [doc24Files, setDoc24Files] = useState<File[]>([]);
   const doc24FileRef = useRef<HTMLInputElement>(null);
+  // 수신기관 선택 상태
+  const [showOrgSearchModal, setShowOrgSearchModal] = useState(false);
+  const [orgList, setOrgList] = useState<Array<{ name: string; code: string; category: string }>>([]);
+  const [orgSearchKeyword, setOrgSearchKeyword] = useState('');
+  const [orgListLoading, setOrgListLoading] = useState(false);
+  const [orgListCrawling, setOrgListCrawling] = useState(false);
   const [doc24AccountLinked, setDoc24AccountLinked] = useState<boolean | null>(null);
   const [authData, setAuthData] = useState({
     name: '',
@@ -58,6 +64,59 @@ export default function ChatPage() {
       handleSubmit(new Event("submit") as unknown as React.FormEvent);
     }
   }, [initialQuestion]);
+
+  // 수신기관 목록 로드
+  const loadOrgList = async () => {
+    setOrgListLoading(true);
+    try {
+      const res = await fetch('/api/doc24/org-list');
+      const data = await res.json();
+      if (data.success && data.orgList) {
+        setOrgList(data.orgList);
+      }
+    } catch {}
+    setOrgListLoading(false);
+  };
+
+  // 수신기관 목록 크롤링 트리거
+  const crawlOrgList = async () => {
+    setOrgListCrawling(true);
+    try {
+      const res = await fetch('/api/doc24/org-list', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        await loadOrgList(); // 크롤링 후 새로 로드
+      } else {
+        alert(data.error || '기관 목록 크롤링 실패');
+      }
+    } catch (e: any) {
+      alert(`크롤링 오류: ${e.message}`);
+    }
+    setOrgListCrawling(false);
+  };
+
+  // 기관 검색 모달 열 때 목록 로드
+  const openOrgSearchModal = () => {
+    setShowOrgSearchModal(true);
+    setOrgSearchKeyword('');
+    if (orgList.length === 0) {
+      loadOrgList();
+    }
+  };
+
+  // 기관 선택
+  const selectOrg = (org: { name: string; code: string }) => {
+    setDoc24Data(prev => ({ ...prev, recipient: org.name, recipientCode: org.code }));
+    setShowOrgSearchModal(false);
+  };
+
+  // 기관 목록 필터링
+  const filteredOrgList = orgSearchKeyword
+    ? orgList.filter(org =>
+        org.name.includes(orgSearchKeyword) ||
+        (org.category && org.category.includes(orgSearchKeyword))
+      )
+    : orgList;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -987,16 +1046,36 @@ export default function ChatPage() {
             </div>
 
             <div className="space-y-3">
-              {/* 수신기관 */}
+              {/* 수신기관 선택 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">수신기관 *</label>
-                <input
-                  type="text"
-                  placeholder="예: 강남구청 위생과"
-                  value={doc24Data.recipient}
-                  onChange={(e) => setDoc24Data(prev => ({ ...prev, recipient: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                {doc24Data.recipient ? (
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 font-medium">
+                      {doc24Data.recipient}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDoc24Data(prev => ({ ...prev, recipient: '', recipientCode: '' }))}
+                      className="px-2 py-2 text-gray-400 hover:text-red-500"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={openOrgSearchModal}
+                    className="w-full px-3 py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    수신기관 검색/선택
+                  </button>
+                )}
               </div>
 
               {/* 제목 */}
@@ -1097,6 +1176,154 @@ export default function ChatPage() {
               >
                 발송하기
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 수신기관 검색/선택 모달 */}
+      {showOrgSearchModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShowOrgSearchModal(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col">
+            {/* 헤더 */}
+            <div className="p-4 border-b">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-bold text-gray-900">수신기관 선택</h3>
+                <button onClick={() => setShowOrgSearchModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {/* 검색 입력 */}
+              <div className="relative">
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="기관명 검색 (예: 강남구, 보건소, 세무서)"
+                  value={orgSearchKeyword}
+                  onChange={(e) => setOrgSearchKeyword(e.target.value)}
+                  autoFocus
+                  className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {/* 직접 입력 옵션 */}
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-gray-400">
+                  {orgList.length > 0 ? `${orgList.length}개 기관` : ''}
+                  {orgSearchKeyword && filteredOrgList.length !== orgList.length ? ` / ${filteredOrgList.length}개 검색결과` : ''}
+                </span>
+                <div className="flex-1" />
+                {orgList.length === 0 && !orgListLoading && (
+                  <button
+                    onClick={crawlOrgList}
+                    disabled={orgListCrawling}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
+                  >
+                    {orgListCrawling ? '크롤링 중... (1~2분)' : '기관 목록 가져오기'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 기관 목록 */}
+            <div className="flex-1 overflow-y-auto p-2 min-h-[200px] max-h-[50vh]">
+              {orgListLoading ? (
+                <div className="flex items-center justify-center py-10 text-sm text-gray-500">
+                  <svg className="animate-spin w-5 h-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  기관 목록 로딩 중...
+                </div>
+              ) : orgListCrawling ? (
+                <div className="flex flex-col items-center justify-center py-10 text-sm text-gray-500">
+                  <svg className="animate-spin w-6 h-6 mb-2 text-blue-500" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  <span>문서24에서 기관 목록을 가져오는 중...</span>
+                  <span className="text-xs text-gray-400 mt-1">1~2분 소요될 수 있습니다</span>
+                </div>
+              ) : filteredOrgList.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="text-sm text-gray-500 mb-3">
+                    {orgList.length === 0
+                      ? '기관 목록이 비어있습니다.'
+                      : `"${orgSearchKeyword}" 검색 결과가 없습니다.`}
+                  </p>
+                  {orgList.length === 0 && (
+                    <button
+                      onClick={crawlOrgList}
+                      disabled={orgListCrawling}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      문서24에서 기관 목록 가져오기
+                    </button>
+                  )}
+                  {/* 직접 입력 fallback */}
+                  {orgSearchKeyword && (
+                    <button
+                      onClick={() => selectOrg({ name: orgSearchKeyword, code: '' })}
+                      className="mt-2 block mx-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      &quot;{orgSearchKeyword}&quot; 직접 입력으로 사용
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {filteredOrgList.slice(0, 100).map((org, idx) => (
+                    <button
+                      key={`${org.name}-${idx}`}
+                      onClick={() => selectOrg(org)}
+                      className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors group"
+                    >
+                      <span className="text-sm font-medium">{org.name}</span>
+                      {org.category && (
+                        <span className="ml-2 text-xs text-gray-400 group-hover:text-blue-400">{org.category}</span>
+                      )}
+                    </button>
+                  ))}
+                  {filteredOrgList.length > 100 && (
+                    <p className="text-center text-xs text-gray-400 py-2">
+                      + {filteredOrgList.length - 100}개 더... 검색어를 입력하여 좁혀주세요
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 하단: 직접 입력 */}
+            <div className="p-3 border-t bg-gray-50 rounded-b-xl">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="목록에 없으면 직접 입력"
+                  value={orgSearchKeyword}
+                  onChange={(e) => setOrgSearchKeyword(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && orgSearchKeyword.trim()) {
+                      selectOrg({ name: orgSearchKeyword.trim(), code: '' });
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={() => {
+                    if (orgSearchKeyword.trim()) {
+                      selectOrg({ name: orgSearchKeyword.trim(), code: '' });
+                    }
+                  }}
+                  disabled={!orgSearchKeyword.trim()}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-50"
+                >
+                  직접 입력
+                </button>
+              </div>
             </div>
           </div>
         </div>
