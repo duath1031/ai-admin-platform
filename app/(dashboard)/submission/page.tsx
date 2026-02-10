@@ -316,8 +316,8 @@ export default function SubmissionPage() {
                 <span className="text-xl">🚀</span>
               </div>
               <div>
-                <h4 className="font-bold text-sm">정부24 자동접수</h4>
-                <p className="text-xs text-blue-100">로봇이 자동 접수</p>
+                <h4 className="font-bold text-sm">문서접수봇</h4>
+                <p className="text-xs text-blue-100">문서24 공문 자동접수</p>
               </div>
             </a>
             <button
@@ -483,7 +483,7 @@ export default function SubmissionPage() {
                     href="/chat"
                     className="px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 flex items-center gap-1"
                   >
-                    🚀 로봇 자동접수
+                    🤖 문서접수봇
                   </a>
                   <button
                     onClick={() => { setActiveTab("proxy"); setForm({ ...form, type: "proxy" }); }}

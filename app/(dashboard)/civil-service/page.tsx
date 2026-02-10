@@ -175,8 +175,8 @@ export default function CivilServiceListPage() {
             href="/chat"
             className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-medium hover:from-blue-700 hover:to-indigo-700 flex items-center gap-2 text-sm shadow-md"
           >
-            <span>🚀</span>
-            로봇 자동접수
+            <span>🤖</span>
+            문서접수봇
           </Link>
           <Link
             href="/civil-service/new"
@@ -318,7 +318,7 @@ export default function CivilServiceListPage() {
                           onClick={() => router.push(`/chat?service=${encodeURIComponent(svc.name)}`)}
                           className="px-2 py-1 text-xs bg-teal-50 text-teal-700 rounded hover:bg-teal-100 whitespace-nowrap"
                         >
-                          자동접수
+                          문서접수
                         </button>
                       </div>
                     </div>

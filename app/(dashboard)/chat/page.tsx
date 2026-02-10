@@ -30,6 +30,8 @@ export default function ChatPage() {
   // 문서24 관련 상태
   const [showDoc24Modal, setShowDoc24Modal] = useState(false);
   const [doc24Data, setDoc24Data] = useState({ recipient: '', title: '', content: '' });
+  const [doc24Files, setDoc24Files] = useState<File[]>([]);
+  const doc24FileRef = useRef<HTMLInputElement>(null);
   const [doc24AccountLinked, setDoc24AccountLinked] = useState<boolean | null>(null);
   const [authData, setAuthData] = useState({
     name: '',
@@ -275,6 +277,7 @@ export default function ChatPage() {
     try {
       // 첨부파일 준비
       const files: { fileName: string; fileBase64: string; mimeType: string }[] = [];
+      // 채팅에서 업로드한 파일
       if (uploadedFile) {
         const { uploadedFileData: fileDataStore } = useChatStore.getState();
         const base64 = fileDataStore[uploadedFile.savedPath];
@@ -286,6 +289,20 @@ export default function ChatPage() {
           });
         }
       }
+      // 모달에서 직접 업로드한 파일
+      for (const file of doc24Files) {
+        const base64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(file);
+        });
+        files.push({
+          fileName: file.name,
+          fileBase64: base64,
+          mimeType: file.type || 'application/octet-stream',
+        });
+      }
+      setDoc24Files([]);
 
       const res = await fetch('/api/rpa/doc24-submit', {
         method: 'POST',
@@ -788,14 +805,14 @@ export default function ChatPage() {
       <div className="mt-2 md:mt-3 space-y-2">
         {/* 메인 3분할 버튼 */}
         <div className="grid grid-cols-3 gap-2">
-          {/* 📨 문서24 발송 */}
+          {/* 🤖 문서접수봇 */}
           <button
             onClick={handleDoc24Submit}
             disabled={doc24State.status === 'submitting'}
             className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            <span className="text-xl">📨</span>
-            <span>문서24 발송</span>
+            <span className="text-xl">🤖</span>
+            <span>문서접수봇</span>
           </button>
           {/* 📋 행정사 접수대행 */}
           <button
@@ -900,13 +917,15 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 문서24 발송 모달 */}
+      {/* 문서접수봇 모달 */}
       {showDoc24Modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowDoc24Modal(false)} />
           <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">문서24 자동 발송</h3>
-            <p className="text-sm text-gray-500 mb-4">수신기관과 제목을 입력하면 문서24를 통해 자동으로 발송합니다.</p>
+            <h3 className="text-lg font-bold text-gray-900 mb-1">🤖 문서접수봇</h3>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg mb-4">
+              <p className="text-xs text-blue-700">문서24(docu.gdoc.go.kr)를 통한 공문 자동접수 시스템입니다. 수신기관과 제목을 입력하고 첨부파일을 업로드하면 자동으로 발송됩니다.</p>
+            </div>
 
             <div className="space-y-3">
               {/* 수신기관 */}
@@ -937,7 +956,7 @@ export default function ChatPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">본문 (선택)</label>
                 <textarea
-                  placeholder="민원 내용을 입력하세요"
+                  placeholder="공문 내용을 입력하세요"
                   value={doc24Data.content}
                   onChange={(e) => setDoc24Data(prev => ({ ...prev, content: e.target.value }))}
                   rows={3}
@@ -945,25 +964,69 @@ export default function ChatPage() {
                 />
               </div>
 
-              {/* 첨부파일 표시 */}
-              {uploadedFile && (
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-xs text-gray-500 mb-1">첨부파일</p>
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* 첨부파일 업로드 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">첨부파일</label>
+                <input
+                  ref={doc24FileRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.hwp,.hwpx,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files) {
+                      setDoc24Files(prev => [...prev, ...Array.from(e.target.files!)]);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => doc24FileRef.current?.click()}
+                  className="w-full px-3 py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                  파일 선택 (PDF, HWP, 이미지 등)
+                </button>
+
+                {/* 채팅에서 업로드한 파일 */}
+                {uploadedFile && (
+                  <div className="mt-2 flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                    <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                     </svg>
-                    <span className="text-sm text-gray-700">{uploadedFile.originalName}</span>
-                    <span className="text-xs text-gray-400">({Math.round(uploadedFile.size / 1024)}KB)</span>
+                    <span className="text-sm text-gray-700 truncate flex-1">{uploadedFile.originalName}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">({Math.round(uploadedFile.size / 1024)}KB)</span>
+                    <span className="text-xs text-green-600 flex-shrink-0">채팅 첨부</span>
                   </div>
-                </div>
-              )}
+                )}
+
+                {/* 모달에서 추가한 파일 목록 */}
+                {doc24Files.map((file, idx) => (
+                  <div key={idx} className="mt-2 flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                    <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                    </svg>
+                    <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">({Math.round(file.size / 1024)}KB)</span>
+                    <button
+                      onClick={() => setDoc24Files(prev => prev.filter((_, i) => i !== idx))}
+                      className="text-red-400 hover:text-red-600 flex-shrink-0"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* 버튼 */}
             <div className="flex gap-2 mt-5">
               <button
-                onClick={() => setShowDoc24Modal(false)}
+                onClick={() => { setShowDoc24Modal(false); setDoc24Files([]); }}
                 className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
               >
                 취소
