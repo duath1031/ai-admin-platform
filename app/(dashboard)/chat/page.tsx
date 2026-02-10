@@ -909,8 +909,8 @@ export default function ChatPage() {
                       placeholder="민원명 검색 (예: 통신판매업, 음식점, 사업자등록)"
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                     />
-                    {showServiceDropdown && serviceResults.length > 0 && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {showServiceDropdown && (serviceResults.length > 0 || serviceSearch.length >= 1) && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
                         {serviceResults.map((svc) => (
                           <button
                             key={svc.code}
@@ -924,50 +924,44 @@ export default function ChatPage() {
                               setShowServiceDropdown(false);
                               setServiceSearch('');
                             }}
-                            className="w-full text-left px-3 py-2 border-b border-gray-100 last:border-0 hover:bg-teal-50"
+                            className="w-full text-left px-3 py-2 border-b border-gray-100 hover:bg-teal-50"
                           >
                             <div className="text-sm font-medium text-gray-900">{svc.name}</div>
                             <div className="text-xs text-gray-500">{svc.category} | {svc.fee}</div>
                           </button>
                         ))}
+                        {/* 항상 맨 아래에 정부24 검색 링크 */}
+                        {serviceSearch && serviceSearch.length >= 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const keyword = serviceSearch.trim();
+                              setAuthData({
+                                ...authData,
+                                serviceUrl: `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(keyword)}`,
+                                serviceName: keyword,
+                              });
+                              setShowServiceDropdown(false);
+                              setServiceSearch('');
+                            }}
+                            className="w-full text-left px-3 py-2 bg-blue-50 hover:bg-blue-100 border-t border-blue-200"
+                          >
+                            <div className="text-sm font-medium text-blue-700">
+                              &quot;{serviceSearch}&quot; 정부24에서 검색하여 접수
+                            </div>
+                            <div className="text-xs text-blue-500">목록에 없는 민원도 정부24 검색으로 접수 가능</div>
+                          </button>
+                        )}
                       </div>
                     )}
-                    {/* 목록에 없는 민원: URL 직접 입력 안내 */}
+                    {/* 드롭다운이 안 보일 때: 검색어가 있으면 URL 직접 입력 안내 */}
                     {serviceSearch && serviceSearch.length >= 2 && !showServiceDropdown && (
-                      <div className="mt-1 space-y-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const keyword = serviceSearch.trim();
-                            setAuthData({
-                              ...authData,
-                              serviceUrl: `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(keyword)}`,
-                              serviceName: keyword,
-                            });
-                            setShowServiceDropdown(false);
-                          }}
-                          className="w-full text-left px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-teal-50 text-sm"
-                        >
-                          <span className="font-medium text-teal-700">&quot;{serviceSearch}&quot;</span>
-                          <span className="text-gray-500"> (으)로 정부24 검색하여 접수</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setServiceInputMode('url')}
-                          className="w-full text-left px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 text-sm"
-                        >
-                          <span className="text-amber-700">정부24 URL을 알고 있다면 직접 입력 &rarr;</span>
-                        </button>
-                      </div>
-                    )}
-                    {showServiceDropdown && serviceResults.length > 0 && serviceSearch && (
                       <button
                         type="button"
                         onClick={() => setServiceInputMode('url')}
-                        className="absolute z-50 w-full mt-1 text-left px-3 py-2 bg-amber-50 border border-amber-200 rounded-b-lg text-sm"
-                        style={{ top: showServiceDropdown ? 'auto' : undefined }}
+                        className="mt-1 w-full text-left px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 text-sm"
                       >
-                        <span className="text-amber-700">목록에 없으면 정부24 URL 직접 입력 &rarr;</span>
+                        <span className="text-amber-700">정부24 URL을 알고 있다면 직접 입력 &rarr;</span>
                       </button>
                     )}
                   </>

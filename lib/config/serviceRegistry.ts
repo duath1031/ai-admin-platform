@@ -358,6 +358,82 @@ export const SERVICE_REGISTRY: Record<string, ServiceDefinition> = {
   },
 
   // =========================================================================
+  // 토지/지적 관련
+  // =========================================================================
+
+  LAND_SPLIT: {
+    code: 'LAND_SPLIT',
+    name: '지적(토지) 분할 신청',
+    category: '부동산',
+    gov24: {
+      searchKeyword: '토지분할 신청',
+    },
+    document: {
+      hasTemplate: false,
+    },
+    info: {
+      processingDays: '7일',
+      fee: '유료 (지적측량 수수료)',
+      requiredDocs: ['분할신청서', '지적측량성과도', '토지대장'],
+      tips: [
+        '한국국토정보공사(LX)에서 지적측량을 먼저 받아야 합니다',
+        '분할 사유에 따라 추가 서류가 필요할 수 있습니다',
+      ],
+    },
+    metadata: {
+      keywords: ['지적분할', '토지분할', '필지분할', '토지나누기', '분필'],
+      aliases: ['지적분할신청', '토지분할신청', '분할신청'],
+    },
+  },
+
+  LAND_MERGE: {
+    code: 'LAND_MERGE',
+    name: '지적(토지) 합병 신청',
+    category: '부동산',
+    gov24: {
+      searchKeyword: '토지합병 신청',
+    },
+    document: {
+      hasTemplate: false,
+    },
+    info: {
+      processingDays: '7일',
+      fee: '무료',
+      requiredDocs: ['합병신청서', '토지대장'],
+      tips: ['합병하려는 토지의 지목과 소유자가 동일해야 합니다'],
+    },
+    metadata: {
+      keywords: ['지적합병', '토지합병', '필지합병', '토지합치기', '합필'],
+      aliases: ['지적합병신청', '토지합병신청', '합병신청'],
+    },
+  },
+
+  LAND_CATEGORY_CHANGE: {
+    code: 'LAND_CATEGORY_CHANGE',
+    name: '지목변경 신청',
+    category: '부동산',
+    gov24: {
+      searchKeyword: '지목변경 신청',
+    },
+    document: {
+      hasTemplate: false,
+    },
+    info: {
+      processingDays: '7일',
+      fee: '무료',
+      requiredDocs: ['지목변경신청서', '토지대장', '관련 허가서'],
+      tips: [
+        '실제 토지의 이용 현황이 변경된 경우 신청합니다',
+        '건축허가 등 관련 허가를 먼저 받아야 할 수 있습니다',
+      ],
+    },
+    metadata: {
+      keywords: ['지목변경', '토지지목', '용도변경'],
+      aliases: ['지목변경신청'],
+    },
+  },
+
+  // =========================================================================
   // 증명서 발급
   // =========================================================================
 

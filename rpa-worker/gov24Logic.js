@@ -1071,13 +1071,32 @@ async function submitGov24Service(params, onProgress = () => {}) {
     // serviceUrl에서 CappBizCD 추출 → AA040_apply.do로 직접 이동
     onProgress(40);
     const cappBizCDMatch = (serviceUrl || '').match(/CappBizCD=([^&]+)/);
-    const cappBizCD = cappBizCDMatch ? cappBizCDMatch[1] : serviceCode;
+    const cappBizCD = cappBizCDMatch ? cappBizCDMatch[1] : null;
 
-    // 방법 1: 직접 신청 URL (쿠키가 있으면 로그인 건너뛰고 바로 폼)
-    const directApplyUrl = `https://www.gov.kr/mw/AA040_apply.do?CappBizCD=${cappBizCD}`;
-    log('navigate', `직접 신청 URL 이동: ${directApplyUrl}`);
+    // CappBizCD가 있으면 직접 신청 URL, 없으면 serviceUrl 자체로 이동
+    let targetUrl;
+    if (cappBizCD) {
+      targetUrl = `https://www.gov.kr/mw/AA040_apply.do?CappBizCD=${cappBizCD}`;
+      log('navigate', `직접 신청 URL 이동 (CappBizCD: ${cappBizCD}): ${targetUrl}`);
+    } else if (serviceUrl && serviceUrl.includes('gov.kr')) {
+      targetUrl = serviceUrl;
+      log('navigate', `서비스 URL로 직접 이동: ${targetUrl}`);
+    } else {
+      log('navigate', 'CappBizCD도 serviceUrl도 없음', 'error');
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
+      return {
+        success: false,
+        taskId,
+        phase: 'error',
+        errorCode: 'INVALID_URL',
+        error: '유효한 정부24 서비스 URL이 없습니다. 서비스 URL을 직접 입력해주세요.',
+        logs,
+        screenshot: screenshotB64,
+      };
+    }
 
-    await page.goto(directApplyUrl, {
+    await page.goto(targetUrl, {
       waitUntil: 'domcontentloaded',
       timeout: TIMEOUTS.navigation,
     });
@@ -1145,7 +1164,17 @@ async function submitGov24Service(params, onProgress = () => {}) {
       log('navigate', '로그인 페이지 리디렉트 → 정보 페이지 경유 방식으로 전환', 'warning');
 
       // 방법 2: 정보 페이지 → 신청 버튼 클릭 (fallback)
-      const infoUrl = serviceUrl || `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${cappBizCD}`;
+      const infoUrl = serviceUrl || (cappBizCD ? `https://www.gov.kr/mw/AA020InfoCappView.do?HighCtgCD=A09002&CappBizCD=${cappBizCD}` : null);
+      if (!infoUrl) {
+        log('navigate', 'fallback URL도 없음 - 제출 불가', 'error');
+        const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+        const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
+        return {
+          success: false, taskId, phase: 'error', errorCode: 'INVALID_URL',
+          error: '인증 세션이 만료되었고 유효한 서비스 URL이 없습니다. 다시 인증하고 서비스 URL을 직접 입력해주세요.',
+          logs, screenshot: screenshotB64,
+        };
+      }
       await page.goto(infoUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.navigation });
       await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
       await humanDelay(1000, 2000);
