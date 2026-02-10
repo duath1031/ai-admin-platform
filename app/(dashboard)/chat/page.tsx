@@ -40,6 +40,8 @@ export default function ChatPage() {
   const [serviceSearch, setServiceSearch] = useState('');
   const [serviceResults, setServiceResults] = useState<Array<{code: string; name: string; category: string; gov24Url: string | null; hasTemplate: boolean; fee: string}>>([]);
   const [showServiceDropdown, setShowServiceDropdown] = useState(false);
+  const [serviceInputMode, setServiceInputMode] = useState<'list' | 'url'>('list');
+  const [directUrl, setDirectUrl] = useState('');
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -540,11 +542,20 @@ export default function ChatPage() {
               </button>
             )}
           </div>
-          {/* 스크린샷 표시 (성공/실패 시) */}
+          {/* 스크린샷 표시 (성공/실패 시) - 클릭으로 확대 */}
           {rpaState.screenshot && (rpaState.status === 'submitted' || rpaState.status === 'error') && (
             <div className="mt-2">
-              <p className="text-xs mb-1 opacity-70">{rpaState.status === 'submitted' ? '접수 완료 화면:' : '실패 시점 화면:'}</p>
-              <img src={rpaState.screenshot} alt="정부24 결과 화면" className="w-full rounded border max-h-64 object-contain" />
+              <p className="text-xs mb-1 opacity-70">{rpaState.status === 'submitted' ? '접수 완료 화면:' : '실패 시점 화면 (클릭하여 확대):'}</p>
+              <img
+                src={rpaState.screenshot}
+                alt="정부24 결과 화면"
+                className="w-full rounded border max-h-64 object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={() => {
+                  if (rpaState.screenshot) {
+                    window.open(rpaState.screenshot, '_blank', 'width=1200,height=800');
+                  }
+                }}
+              />
             </div>
           )}
           {/* auth_required 상태: 인증 완료 버튼 표시 */}
@@ -631,7 +642,18 @@ export default function ChatPage() {
                         return;
                       }
                       if (statusData.status === 'failed') {
-                        setRpaState({ status: 'error', message: statusData.error || '민원 제출 실패', screenshot: statusData.screenshot || null });
+                        // 에러코드별 안내 메시지 매핑
+                        const errorGuidance: Record<string, string> = {
+                          'PAGE_NOT_FOUND': '\n\n💡 해결 방법: 정부24에서 해당 서비스 페이지의 URL을 직접 확인하여 "URL 직접 입력" 모드로 다시 시도해주세요.',
+                          'SEARCH_PAGE': '\n\n💡 해결 방법: 정부24(gov.kr)에서 원하는 민원을 검색한 후, 해당 페이지 URL을 복사하여 "URL 직접 입력"으로 접수해주세요.',
+                          'INVALID_PAGE': '\n\n💡 해결 방법: 정부24에서 해당 민원의 정확한 신청 페이지를 찾아 URL을 직접 입력해주세요.',
+                          'SESSION_EXPIRED': '\n\n💡 해결 방법: 인증이 만료되었습니다. 다시 인증을 진행해주세요.',
+                          'FORM_VALIDATION_FAILED': '\n\n💡 해결 방법: 민원 신청 폼에 필수 입력 항목이 있습니다. 스크린샷을 확인하고 필요한 정보를 준비한 후 다시 시도해주세요.',
+                        };
+                        const code = statusData.errorCode || '';
+                        const guidance = errorGuidance[code] || '';
+                        const errorMsg = (statusData.error || '민원 제출 실패') + guidance;
+                        setRpaState({ status: 'error', message: errorMsg, screenshot: statusData.screenshot || null });
                         return;
                       }
 
@@ -782,17 +804,79 @@ export default function ChatPage() {
 
               {/* 정부24 민원 서비스 선택 */}
               <div className="mb-4 relative">
-                <label className="block text-sm font-medium text-gray-700 mb-1">신청할 민원 서비스 *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">신청할 민원 서비스 *</label>
+                  {!authData.serviceName && (
+                    <div className="flex bg-gray-100 rounded-md p-0.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setServiceInputMode('list')}
+                        className={`px-2 py-1 rounded transition-colors ${serviceInputMode === 'list' ? 'bg-white shadow text-teal-700 font-medium' : 'text-gray-500'}`}
+                      >목록 검색</button>
+                      <button
+                        type="button"
+                        onClick={() => setServiceInputMode('url')}
+                        className={`px-2 py-1 rounded transition-colors ${serviceInputMode === 'url' ? 'bg-white shadow text-teal-700 font-medium' : 'text-gray-500'}`}
+                      >URL 직접 입력</button>
+                    </div>
+                  )}
+                </div>
                 {authData.serviceName ? (
                   <div className="flex items-center gap-2 px-3 py-2 bg-teal-50 border border-teal-300 rounded-lg">
-                    <span className="text-sm font-medium text-teal-800 flex-1">{authData.serviceName}</span>
+                    <span className="text-sm font-medium text-teal-800 flex-1">
+                      {authData.serviceName}
+                      {authData.serviceUrl && !authData.serviceUrl.includes('/search?') && (
+                        <span className="text-xs text-teal-600 ml-1">(직접 URL)</span>
+                      )}
+                    </span>
                     <button
                       type="button"
-                      onClick={() => { setAuthData({ ...authData, serviceUrl: '', serviceName: '' }); setServiceSearch(''); }}
+                      onClick={() => { setAuthData({ ...authData, serviceUrl: '', serviceName: '' }); setServiceSearch(''); setDirectUrl(''); }}
                       className="text-teal-600 hover:text-teal-800 text-xs"
                     >변경</button>
                   </div>
+                ) : serviceInputMode === 'url' ? (
+                  /* URL 직접 입력 모드 */
+                  <>
+                    <input
+                      type="url"
+                      value={directUrl}
+                      onChange={(e) => setDirectUrl(e.target.value)}
+                      placeholder="https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=..."
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={serviceSearch}
+                      onChange={(e) => setServiceSearch(e.target.value)}
+                      placeholder="민원 서비스명 (예: 통신판매업 신고)"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mt-2 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                    />
+                    <button
+                      type="button"
+                      disabled={!directUrl.includes('gov.kr') || !serviceSearch.trim()}
+                      onClick={() => {
+                        const url = directUrl.trim();
+                        if (!url.includes('gov.kr')) {
+                          alert('정부24 URL (gov.kr)만 입력 가능합니다.');
+                          return;
+                        }
+                        setAuthData({
+                          ...authData,
+                          serviceUrl: url,
+                          serviceName: serviceSearch.trim(),
+                        });
+                      }}
+                      className="mt-2 w-full py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      URL 확인 및 적용
+                    </button>
+                    <p className="mt-1 text-xs text-gray-500">
+                      정부24에서 원하는 민원 서비스 페이지를 열고, 주소창의 URL을 복사하여 붙여넣으세요.
+                    </p>
+                  </>
                 ) : (
+                  /* 목록 검색 모드 */
                   <>
                     <input
                       type="text"
@@ -832,30 +916,68 @@ export default function ChatPage() {
                             key={svc.code}
                             type="button"
                             onClick={() => {
-                              if (!svc.gov24Url) {
-                                alert(`"${svc.name}"은(는) 온라인 자동접수가 지원되지 않습니다. 온라인 신청 가능한 서비스를 선택해주세요.`);
-                                return;
-                              }
                               setAuthData({
                                 ...authData,
-                                serviceUrl: svc.gov24Url,
+                                serviceUrl: svc.gov24Url || `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(svc.name)}`,
                                 serviceName: svc.name,
                               });
                               setShowServiceDropdown(false);
                               setServiceSearch('');
                             }}
-                            className={`w-full text-left px-3 py-2 border-b border-gray-100 last:border-0 ${svc.gov24Url ? 'hover:bg-teal-50' : 'opacity-50 cursor-not-allowed'}`}
+                            className="w-full text-left px-3 py-2 border-b border-gray-100 last:border-0 hover:bg-teal-50"
                           >
                             <div className="text-sm font-medium text-gray-900">{svc.name}</div>
-                            <div className="text-xs text-gray-500">{svc.category} | {svc.fee} | {svc.gov24Url ? '✅ 온라인 신청' : '❌ 온라인 미지원'}</div>
+                            <div className="text-xs text-gray-500">{svc.category} | {svc.fee}</div>
                           </button>
                         ))}
                       </div>
                     )}
+                    {/* 목록에 없는 민원: URL 직접 입력 안내 */}
+                    {serviceSearch && serviceSearch.length >= 2 && !showServiceDropdown && (
+                      <div className="mt-1 space-y-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const keyword = serviceSearch.trim();
+                            setAuthData({
+                              ...authData,
+                              serviceUrl: `https://www.gov.kr/search?svcType=&srhWrd=${encodeURIComponent(keyword)}`,
+                              serviceName: keyword,
+                            });
+                            setShowServiceDropdown(false);
+                          }}
+                          className="w-full text-left px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-teal-50 text-sm"
+                        >
+                          <span className="font-medium text-teal-700">&quot;{serviceSearch}&quot;</span>
+                          <span className="text-gray-500"> (으)로 정부24 검색하여 접수</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setServiceInputMode('url')}
+                          className="w-full text-left px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 text-sm"
+                        >
+                          <span className="text-amber-700">정부24 URL을 알고 있다면 직접 입력 &rarr;</span>
+                        </button>
+                      </div>
+                    )}
+                    {showServiceDropdown && serviceResults.length > 0 && serviceSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setServiceInputMode('url')}
+                        className="absolute z-50 w-full mt-1 text-left px-3 py-2 bg-amber-50 border border-amber-200 rounded-b-lg text-sm"
+                        style={{ top: showServiceDropdown ? 'auto' : undefined }}
+                      >
+                        <span className="text-amber-700">목록에 없으면 정부24 URL 직접 입력 &rarr;</span>
+                      </button>
+                    )}
                   </>
                 )}
                 <p className={`mt-1 text-xs ${authData.serviceUrl ? 'text-gray-500' : 'text-red-500 font-medium'}`}>
-                  {authData.serviceUrl ? '정부24에서 신청할 민원이 선택되었습니다.' : '⚠️ 민원 서비스를 반드시 선택해야 자동접수가 가능합니다.'}
+                  {authData.serviceUrl
+                    ? authData.serviceUrl.includes('/search?')
+                      ? '정부24에서 검색하여 해당 민원을 접수합니다.'
+                      : '정부24에서 신청할 민원이 선택되었습니다.'
+                    : '민원 서비스를 반드시 선택해야 자동접수가 가능합니다.'}
                 </p>
               </div>
 

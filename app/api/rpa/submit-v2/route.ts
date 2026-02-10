@@ -1001,6 +1001,7 @@ async function handleSubmitStatusAction(request: NextRequest, userId: string) {
     } else {
       // Worker 함수는 완료했지만 제출 실패
       const errorMsg = result.error || '정부24 제출 중 오류가 발생했습니다.';
+      const errorCode = result.errorCode || null;
 
       await prisma.civilServiceSubmission.update({
         where: { id: submissionId },
@@ -1010,7 +1011,7 @@ async function handleSubmitStatusAction(request: NextRequest, userId: string) {
           resultData: JSON.stringify({
             ...resultData,
             fileBase64: undefined,
-            failedResult: { error: errorMsg, phase: result.phase, finalUrl: result.finalUrl },
+            failedResult: { error: errorMsg, errorCode, phase: result.phase, finalUrl: result.finalUrl },
             screenshot: result.screenshot || null,
             failedAt: new Date().toISOString(),
           }),
@@ -1018,14 +1019,15 @@ async function handleSubmitStatusAction(request: NextRequest, userId: string) {
       });
 
       await prisma.submissionTrackingLog.create({
-        data: { submissionId, step: 'submit', stepOrder: 6, status: 'failed', message: errorMsg, startedAt: new Date(), completedAt: new Date() },
+        data: { submissionId, step: 'submit', stepOrder: 6, status: 'failed', message: `[${errorCode || 'UNKNOWN'}] ${errorMsg}`, startedAt: new Date(), completedAt: new Date() },
       });
 
-      console.log(`[Submit-V2] 제출 실패 (Worker completed but success=false): ${errorMsg}`);
+      console.log(`[Submit-V2] 제출 실패 (Worker completed but success=false): [${errorCode}] ${errorMsg}`);
 
       return NextResponse.json({
         success: false, submissionId, step: 'failed', status: 'failed',
         error: errorMsg,
+        errorCode,
         screenshot: result.screenshot || null,
       });
     }

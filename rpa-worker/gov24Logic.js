@@ -1089,6 +1089,57 @@ async function submitGov24Service(params, onProgress = () => {}) {
     log('navigate', `현재 페이지: ${pageTitle} (${currentUrl})`);
     await saveScreenshot(page, `${taskId}_01_direct_apply`);
 
+    // =========================================================================
+    // 404 / 검색 페이지 / 유효하지 않은 페이지 감지
+    // =========================================================================
+    const pageContent = await page.textContent('body').catch(() => '');
+    const is404Page = (
+      pageTitle.includes('페이지를 찾을 수 없습니다') ||
+      pageTitle.includes('404') ||
+      pageTitle.includes('Not Found') ||
+      pageContent.includes('요청하신 페이지를 찾을 수 없습니다') ||
+      pageContent.includes('페이지가 존재하지 않') ||
+      pageContent.includes('서비스를 찾을 수 없습니다')
+    );
+    const isSearchPage = currentUrl.includes('/search?') || currentUrl.includes('srhWrd=');
+    const isErrorPage = (
+      pageContent.includes('시스템 오류가 발생') ||
+      pageContent.includes('서비스 일시 중단') ||
+      pageContent.includes('점검 중')
+    );
+
+    if (is404Page || isErrorPage) {
+      log('navigate', '404/에러 페이지 감지', 'error');
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
+      return {
+        success: false,
+        taskId,
+        phase: 'error',
+        errorCode: 'PAGE_NOT_FOUND',
+        error: `정부24에서 해당 민원 서비스 페이지를 찾을 수 없습니다. CappBizCD가 올바른지 확인하거나, 정부24에서 직접 검색해주세요. (URL: ${currentUrl})`,
+        finalUrl: currentUrl,
+        logs,
+        screenshot: screenshotB64,
+      };
+    }
+
+    if (isSearchPage) {
+      log('navigate', '검색 페이지로 이동됨 - 직접 서비스 페이지가 아님', 'warning');
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
+      return {
+        success: false,
+        taskId,
+        phase: 'error',
+        errorCode: 'SEARCH_PAGE',
+        error: '정부24 검색 페이지로 이동되었습니다. 이 서비스는 직접 URL이 등록되지 않아 자동 접수가 불가합니다. 정부24에서 해당 서비스의 정확한 URL을 입력해주세요.',
+        finalUrl: currentUrl,
+        logs,
+        screenshot: screenshotB64,
+      };
+    }
+
     // 로그인 페이지로 리디렉트된 경우 → 쿠키가 만료됨
     if (currentUrl.includes('/login') || currentUrl.includes('nlogin') || currentUrl.includes('plus.gov.kr/login')) {
       log('navigate', '로그인 페이지 리디렉트 → 정보 페이지 경유 방식으로 전환', 'warning');
@@ -1128,7 +1179,30 @@ async function submitGov24Service(params, onProgress = () => {}) {
     pageTitle = await page.title();
     log('apply', `신청 폼 페이지: ${pageTitle} (${currentUrl})`);
     await saveScreenshot(page, `${taskId}_02_apply_page`);
-    await saveScreenshot(page, `${taskId}_02_apply_page`);
+
+    // 신청 페이지 유효성 검증 (fallback 경유 후에도 404 체크)
+    const applyPageContent = await page.textContent('body').catch(() => '');
+    const applyIs404 = (
+      pageTitle.includes('페이지를 찾을 수 없습니다') ||
+      pageTitle.includes('404') ||
+      applyPageContent.includes('요청하신 페이지를 찾을 수 없습니다') ||
+      applyPageContent.includes('페이지가 존재하지 않')
+    );
+    if (applyIs404) {
+      log('apply', '신청 페이지 404 감지', 'error');
+      const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
+      const screenshotB64 = screenshotBuf ? `data:image/png;base64,${screenshotBuf.toString('base64')}` : null;
+      return {
+        success: false,
+        taskId,
+        phase: 'error',
+        errorCode: 'PAGE_NOT_FOUND',
+        error: `정부24 민원 신청 페이지를 찾을 수 없습니다. 서비스 URL을 확인해주세요. (URL: ${currentUrl})`,
+        finalUrl: currentUrl,
+        logs,
+        screenshot: screenshotB64,
+      };
+    }
 
     // 신청 버튼 클릭 후 새 페이지 URL/제목 기록
     const afterApplyUrl = page.url();
