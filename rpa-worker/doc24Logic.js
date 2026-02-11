@@ -2593,113 +2593,38 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
       return { success: false, error: `수신기관 검색 버튼(#ldapSearch) 없음. URL: ${pageUrl}`, results: [], logs };
     }
 
-    // 팝업 열기: 3가지 방법 시도
-    let popup = null;
+    // #ldapSearch는 팝업이 아닌 jconfirm 모달(페이지 내 레이어)을 엶
+    await ldapBtn.click({ force: true });
+    log('search', '#ldapSearch 클릭 완료');
+    await humanDelay(1500, 2500);
 
-    // 방법 1: Promise.all([waitForEvent('popup'), click])
-    try {
-      log('search', '팝업 열기 시도 (방법1: waitForEvent + click)...');
-      [popup] = await Promise.all([
-        page.waitForEvent('popup', { timeout: 15000 }),
-        page.evaluate(() => document.querySelector('#ldapSearch')?.click()),
-      ]);
-    } catch {
-      log('search', '방법1 실패');
+    // jconfirm 모달 확인
+    const modalExists = await page.evaluate(() => {
+      const modal = document.querySelector('.jconfirm-box, [role="dialog"], .layer_popup, .layerPopup');
+      return modal && modal.offsetParent !== null;
+    }).catch(() => false);
+
+    if (!modalExists) {
+      log('search', 'jconfirm 모달이 열리지 않음');
+      await saveScreenshot(page, 'doc24_search_no_modal');
+      // 모달 대신 페이지 상태 덤프
+      const pageState = await page.evaluate(() => ({
+        url: location.href,
+        dialogs: document.querySelectorAll('.jconfirm, [role="dialog"], .modal, .layer_popup').length,
+        bodyText: document.body?.innerText?.slice(0, 500) || '',
+      })).catch(() => ({}));
+      log('search', `페이지 상태: ${JSON.stringify(pageState)}`);
+      return { success: false, error: '수신기관 검색 모달이 열리지 않았습니다.', results: [], logs };
     }
+    log('search', 'jconfirm 모달 열림 확인');
+    await saveScreenshot(page, 'doc24_search_modal_opened');
 
-    // 방법 2: context().waitForEvent('page')
-    if (!popup) {
-      try {
-        log('search', '팝업 열기 시도 (방법2: context.page + JS click)...');
-        const ctx = page.context();
-        const [newPage] = await Promise.all([
-          ctx.waitForEvent('page', { timeout: 15000 }),
-          page.evaluate(() => {
-            const btn = document.querySelector('#ldapSearch');
-            if (btn) {
-              const href = btn.getAttribute('href') || btn.getAttribute('onclick') || '';
-              if (href.includes('javascript:')) {
-                eval(href.replace('javascript:', ''));
-              } else {
-                btn.click();
-              }
-            }
-          }),
-        ]);
-        popup = newPage;
-      } catch {
-        log('search', '방법2 실패');
-      }
-    }
-
-    // 방법 3: onclick 속성에서 window.open URL 추출 후 직접 열기
-    if (!popup) {
-      try {
-        log('search', '팝업 열기 시도 (방법3: onclick URL 추출)...');
-        const onclickUrl = await page.evaluate(() => {
-          const btn = document.querySelector('#ldapSearch');
-          if (!btn) return null;
-          const onclick = btn.getAttribute('onclick') || '';
-          const href = btn.getAttribute('href') || '';
-          const combined = onclick + ' ' + href;
-          const match = combined.match(/window\.open\s*\(\s*['"]([^'"]+)['"]/);
-          if (match) return match[1];
-          const urlMatch = combined.match(/(\/[a-zA-Z0-9\/._]+\.do[^'"]*)/);
-          return urlMatch ? urlMatch[1] : null;
-        });
-        if (onclickUrl) {
-          const fullUrl = onclickUrl.startsWith('http') ? onclickUrl : `https://docu.gdoc.go.kr${onclickUrl}`;
-          log('search', `onclick URL 발견: ${fullUrl}`);
-          const newPage = await page.context().newPage();
-          await newPage.goto(fullUrl, { timeout: 30000, waitUntil: 'domcontentloaded' });
-          popup = newPage;
-        }
-      } catch (e) {
-        log('search', `방법3 실패: ${e.message?.slice(0, 100)}`);
-      }
-    }
-
-    if (!popup) {
-      // ldapSearch의 HTML 구조를 덤프하여 디버깅
-      const btnDump = await page.evaluate(() => {
-        const btn = document.querySelector('#ldapSearch');
-        if (!btn) return 'NOT FOUND';
-        return {
-          tag: btn.tagName, id: btn.id, href: btn.getAttribute('href'),
-          onclick: btn.getAttribute('onclick'), className: btn.className,
-          outerHTML: btn.outerHTML.slice(0, 300),
-        };
-      }).catch(() => 'ERROR');
-      log('search', `ldapSearch 구조: ${JSON.stringify(btnDump)}`);
-      await saveScreenshot(page, 'doc24_search_popup_fail');
-      return { success: false, error: '수신기관 검색 팝업을 열 수 없습니다.', results: [], logs };
-    }
-
-    log('search', `팝업 열기 성공! URL: ${popup.url()}`);
-    await popup.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
-    await popup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-    await humanDelay(1500, 2000);
-
-    // 팝업 내 iframe 확인 (HWP 에디터 iframe 제외)
-    let ctx = popup;
-    const popupFrames = popup.frames();
-    log('popup', `팝업 프레임 수: ${popupFrames.length}`);
-    if (popupFrames.length > 1) {
-      for (const f of popupFrames) {
-        if (f === popup.mainFrame()) continue;
-        const fUrl = f.url();
-        // HWP 에디터 iframe 제외
-        if (fUrl.includes('hwpctrl') || fUrl.includes('chrome-error')) continue;
-        ctx = f;
-        log('popup', `iframe 감지 → 전환: ${fUrl}`);
-        break;
-      }
-    }
-
-    // 팝업 구조 덤프 (디버깅용)
-    const popupDump = await ctx.evaluate(() => {
+    // 모달 구조 덤프 (디버깅용)
+    const popupDump = await page.evaluate(() => {
+      const modal = document.querySelector('.jconfirm-box, [role="dialog"]');
+      if (!modal) return { inputs: [], buttons: [], bodyText: 'MODAL NOT FOUND' };
       const inputs = [];
-      document.querySelectorAll('input').forEach(el => {
+      modal.querySelectorAll('input').forEach(el => {
         inputs.push({
           id: el.id, name: el.name, type: el.type,
           placeholder: el.placeholder, readonly: el.readOnly, disabled: el.disabled,
@@ -2707,63 +2632,61 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
         });
       });
       const buttons = [];
-      document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a[onclick]').forEach(el => {
+      modal.querySelectorAll('button, input[type="button"], a').forEach(el => {
         buttons.push({
           tag: el.tagName, id: el.id, text: el.textContent?.trim().slice(0, 30),
           className: el.className?.slice?.(0, 50) || '',
           onclick: el.getAttribute('onclick')?.slice(0, 80) || '',
         });
       });
-      const tables = document.querySelectorAll('table').length;
-      const treeNodes = document.querySelectorAll('.tree, .jstree, [class*="tree"], [id*="tree"]').length;
-      return { inputs, buttons, tables, treeNodes, bodyText: document.body?.innerText?.slice(0, 500) || '' };
-    }).catch(() => ({ inputs: [], buttons: [], tables: 0, treeNodes: 0, bodyText: '' }));
-    log('popup-dump', JSON.stringify(popupDump, null, 2));
+      return { inputs, buttons, bodyText: modal.innerText?.slice(0, 500) || '' };
+    }).catch(() => ({ inputs: [], buttons: [], bodyText: '' }));
+    log('modal-dump', JSON.stringify(popupDump, null, 2));
 
-    // 검색 입력란 찾기
-    const inputSels = [
-      '#searchWrd', '#searchKeyword', '#orgNm', '#insttNm', '#keyword',
-      '#srchWrd', '#srchKeyword', '#searchWord', '#search_word',
-      'input[name="searchWrd"]', 'input[name="searchKeyword"]', 'input[name="insttNm"]',
-      'input[type="text"]:not([readonly]):not([disabled])',
+    // 모달 내 검색 입력 필드 찾기
+    const searchInputSels = [
+      '.jconfirm-box input[type="text"]',
+      '.jconfirm-content input[type="text"]',
+      '[role="dialog"] input[type="text"]',
+      'input[placeholder*="기관"]',
+      'input[placeholder*="검색"]',
     ];
-    let inputFound = false;
-    let foundSel = '';
-    for (const sel of inputSels) {
-      const el = ctx.locator(sel).first();
-      if (await el.count().catch(() => 0) > 0) {
-        const isVisible = await el.isVisible().catch(() => false);
-        if (!isVisible) continue;
-        await el.click().catch(() => {});
-        await el.fill('');
-        await el.fill(keyword);
-        inputFound = true;
-        foundSel = sel;
-        log('search', `입력란 발견: ${sel} → "${keyword}" 입력`);
+    let searchInput = null;
+    for (const sel of searchInputSels) {
+      const el = page.locator(sel).first();
+      if (await el.count().catch(() => 0) > 0 && await el.isVisible().catch(() => false)) {
+        searchInput = el;
+        log('search', `모달 검색 입력 필드: ${sel}`);
         break;
       }
     }
 
-    if (!inputFound) {
-      log('search', '입력란을 찾지 못함 - 팝업 구조 확인 필요');
-      if (popup && !popup.isClosed()) await popup.close().catch(() => {});
-      return { success: false, error: '검색 입력란을 찾지 못했습니다. 팝업 구조가 변경되었을 수 있습니다.', results: [], logs, popupDump };
+    if (!searchInput) {
+      log('search', '모달 내 검색 입력 필드 없음');
+      return { success: false, error: '수신기관 검색 모달에서 입력 필드를 찾지 못했습니다.', results: [], logs, popupDump };
     }
 
-    // 검색 버튼 클릭 시도 (Enter만으로 안 될 수 있음)
+    // 검색어 입력
+    await searchInput.click();
+    await humanDelay(200, 400);
+    await searchInput.fill(keyword);
+    log('search', `검색어 입력: "${keyword}"`);
+    await humanDelay(300, 500);
+
+    // 검색 버튼 클릭
     const searchBtnSels = [
-      '#searchBtn', '#btnSearch', '#btn_search', 'button[type="submit"]',
-      'input[type="submit"]', 'input[type="button"][value*="검색"]',
-      'a[onclick*="search"]', 'a[onclick*="Search"]', 'button:has-text("검색")',
-      'a:has-text("검색")', 'img[alt*="검색"]',
+      '.jconfirm-box button:has-text("검색")',
+      '.jconfirm-content button:has-text("검색")',
+      '[role="dialog"] button:has-text("검색")',
+      '.jconfirm-box input[type="button"][value*="검색"]',
+      '.jconfirm-box a:has-text("검색")',
+      'button:has-text("검색")',
     ];
     let searchBtnClicked = false;
     for (const sel of searchBtnSels) {
-      const btn = ctx.locator(sel).first();
-      if (await btn.count().catch(() => 0) > 0) {
-        const isVisible = await btn.isVisible().catch(() => false);
-        if (!isVisible) continue;
-        await btn.click({ force: true }).catch(() => {});
+      const btn = page.locator(sel).first();
+      if (await btn.count().catch(() => 0) > 0 && await btn.isVisible().catch(() => false)) {
+        await btn.click({ force: true });
         searchBtnClicked = true;
         log('search', `검색 버튼 클릭: ${sel}`);
         break;
@@ -2771,57 +2694,52 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
     }
 
     if (!searchBtnClicked) {
-      // 검색 버튼 못 찾으면 Enter 키로 시도
-      const inputEl = ctx.locator(foundSel).first();
-      await inputEl.press('Enter').catch(() => {});
+      await searchInput.press('Enter');
       log('search', '검색 버튼 없음 → Enter 키로 검색');
     }
 
-    await humanDelay(1500, 2500);
-    if (ctx.waitForLoadState) {
-      await ctx.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-    }
+    await humanDelay(2000, 3000);
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await humanDelay(500, 1000);
+    await saveScreenshot(page, 'doc24_search_results');
 
-    // 결과 추출 (다양한 구조 대응)
-    const results = await ctx.evaluate(() => {
+    // 결과 추출 (jconfirm 모달 내)
+    const results = await page.evaluate(() => {
       const orgs = [];
+      const modal = document.querySelector('.jconfirm-box, [role="dialog"]');
+      const scope = modal || document;
 
       // 1차: table tbody tr
-      document.querySelectorAll('table tbody tr').forEach(tr => {
+      scope.querySelectorAll('table tbody tr').forEach(tr => {
         const link = tr.querySelector('a');
         const tds = tr.querySelectorAll('td');
         const name = link ? link.textContent?.trim() : (tds[1]?.textContent?.trim() || tds[0]?.textContent?.trim());
-        const code = link?.getAttribute('data-code') || link?.getAttribute('data-id') || link?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1] || '';
-        const category = tds.length >= 3 ? (tds[2].textContent?.trim() || '') : '';
-        if (name && name.length > 1 && !name.includes('검색결과')) orgs.push({ name, code, category });
+        const code = link?.getAttribute('data-code') || link?.getAttribute('data-id') || '';
+        const onclick = (link?.getAttribute('onclick') || tr.getAttribute('onclick') || '');
+        const extractedCode = onclick.match(/'([^']+)'/)?.[1] || code;
+        if (name && name.length > 1 && !name.includes('검색결과') && !name.includes('조회조건')) {
+          orgs.push({ name, code: extractedCode, category: '' });
+        }
       });
 
       // 2차: jstree 노드
       if (orgs.length === 0) {
-        document.querySelectorAll('.jstree-node a, [class*="tree"] a').forEach(a => {
+        scope.querySelectorAll('.jstree-node a, [class*="tree"] a, li a').forEach(a => {
           const name = a.textContent?.trim();
           const id = a.id || a.parentElement?.id || '';
-          if (name && name.length > 1) orgs.push({ name, code: id, category: 'tree' });
-        });
-      }
-
-      // 3차: li a 또는 result_list
-      if (orgs.length === 0) {
-        document.querySelectorAll('li a, .result_list a, .list_area a, .searchList a, [class*="result"] a').forEach(a => {
-          const name = a.textContent?.trim();
           const onclick = a.getAttribute('onclick') || '';
-          const code = onclick.match(/'([^']+)'/)?.[1] || '';
-          if (name && name.length > 1 && !name.includes('페이지')) orgs.push({ name, code, category: '' });
+          if (name && name.length > 1 && !name.includes('닫기') && !name.includes('검색')) {
+            orgs.push({ name, code: onclick.match(/'([^']+)'/)?.[1] || id, category: 'tree' });
+          }
         });
       }
 
-      // 4차: 모든 클릭 가능한 요소
+      // 3차: onclick이 있는 모든 요소
       if (orgs.length === 0) {
-        document.querySelectorAll('[onclick], a[href*="javascript"]').forEach(el => {
+        scope.querySelectorAll('[onclick]').forEach(el => {
           const name = el.textContent?.trim();
           const onclick = el.getAttribute('onclick') || '';
-          if (name && name.length > 1 && name.length < 50 && !name.includes('검색') && !name.includes('닫기')) {
+          if (name && name.length > 1 && name.length < 50 && !name.includes('검색') && !name.includes('닫기') && !name.includes('취소')) {
             orgs.push({ name, code: onclick.match(/'([^']+)'/)?.[1] || '', category: 'onclick' });
           }
         });
@@ -2830,14 +2748,16 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
       return orgs;
     }).catch(() => []);
 
-    // 결과가 없으면 검색 후 페이지 텍스트도 덤프
+    // 결과가 없으면 모달 텍스트 덤프
     let afterSearchText = '';
     if (results.length === 0) {
-      afterSearchText = await ctx.evaluate(() => document.body?.innerText?.slice(0, 1000) || '').catch(() => '');
-      log('search', `결과 0건 - 검색 후 페이지 텍스트: ${afterSearchText.slice(0, 300)}`);
+      afterSearchText = await page.evaluate(() => {
+        const modal = document.querySelector('.jconfirm-box, [role="dialog"]');
+        return modal?.innerText?.slice(0, 1000) || document.body?.innerText?.slice(0, 1000) || '';
+      }).catch(() => '');
+      log('search', `결과 0건 - 모달 텍스트: ${afterSearchText.slice(0, 300)}`);
     }
 
-    if (popup && !popup.isClosed()) await popup.close().catch(() => {});
     log('search', `"${keyword}" → ${results.length}개 결과`);
 
     return { success: true, results, logs, popupDump, afterSearchText };
