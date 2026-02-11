@@ -2580,18 +2580,41 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
     const composeResult = await navigateToCompose(page, log);
     if (!composeResult.success) return { success: false, error: composeResult.error, results: [], logs };
 
-    let popup = null;
-    try {
-      [popup] = await Promise.all([
-        page.waitForEvent('popup', { timeout: 15000 }),
-        page.locator('#ldapSearch').click({ force: true }),
-      ]);
-    } catch {
-      return { success: false, error: '팝업 열기 실패', results: [], logs };
+    // 작성 페이지에서 #ldapSearch 버튼 확인
+    const ldapBtn = page.locator('#ldapSearch');
+    const ldapVisible = await ldapBtn.isVisible({ timeout: 10000 }).catch(() => false);
+    log('search', `#ldapSearch 버튼 존재: ${ldapVisible}`);
+    if (!ldapVisible) {
+      // 페이지 상태 확인
+      const pageUrl = page.url();
+      const pageTitle = await page.title().catch(() => '');
+      log('search', `현재 URL: ${pageUrl}, 타이틀: ${pageTitle}`);
+      await saveScreenshot(page, 'doc24_search_no_ldap');
+      return { success: false, error: `수신기관 검색 버튼(#ldapSearch)을 찾을 수 없습니다. URL: ${pageUrl}`, results: [], logs };
     }
 
-    await popup.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
-    await popup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    // 팝업 열기 (30초 타임아웃, 최대 2회 시도)
+    let popup = null;
+    for (let popupAttempt = 1; popupAttempt <= 2; popupAttempt++) {
+      try {
+        log('search', `팝업 열기 시도 ${popupAttempt}/2...`);
+        [popup] = await Promise.all([
+          page.waitForEvent('popup', { timeout: 30000 }),
+          ldapBtn.click({ force: true }),
+        ]);
+        if (popup) break;
+      } catch (popupErr) {
+        log('search', `팝업 열기 시도 ${popupAttempt}/2 실패: ${popupErr.message?.slice(0, 100)}`);
+        if (popupAttempt < 2) await humanDelay(2000, 3000);
+      }
+    }
+    if (!popup) {
+      await saveScreenshot(page, 'doc24_search_popup_fail');
+      return { success: false, error: '수신기관 검색 팝업을 열 수 없습니다. 문서24 페이지 구조가 변경되었을 수 있습니다.', results: [], logs };
+    }
+
+    await popup.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
+    await popup.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
     await humanDelay(1500, 2000);
 
     let ctx = popup;

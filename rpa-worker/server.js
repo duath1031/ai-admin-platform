@@ -687,6 +687,9 @@ app.post('/doc24/org-search', validateApiKey, async (req, res) => {
       success: result.success,
       results: result.results || [],
       error: result.error,
+      logs: result.logs?.slice(-50),
+      popupDump: result.popupDump,
+      afterSearchText: result.afterSearchText,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
