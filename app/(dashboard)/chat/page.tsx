@@ -38,6 +38,9 @@ export default function ChatPage() {
   const [orgSearchKeyword, setOrgSearchKeyword] = useState('');
   const [orgListLoading, setOrgListLoading] = useState(false);
   const [orgListCrawling, setOrgListCrawling] = useState(false);
+  const [orgSearching, setOrgSearching] = useState(false);
+  const [orgSearchResults, setOrgSearchResults] = useState<Array<{ name: string; code: string; category?: string }>>([]);
+  const orgSearchTimer = useRef<NodeJS.Timeout | null>(null);
   const [doc24AccountLinked, setDoc24AccountLinked] = useState<boolean | null>(null);
   const [authData, setAuthData] = useState({
     name: '',
@@ -65,7 +68,7 @@ export default function ChatPage() {
     }
   }, [initialQuestion]);
 
-  // 수신기관 목록 로드
+  // 수신기관 목록 로드 (캐시)
   const loadOrgList = async () => {
     setOrgListLoading(true);
     try {
@@ -78,27 +81,54 @@ export default function ChatPage() {
     setOrgListLoading(false);
   };
 
-  // 수신기관 목록 크롤링 트리거
-  const crawlOrgList = async () => {
-    setOrgListCrawling(true);
-    try {
-      const res = await fetch('/api/doc24/org-list', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        await loadOrgList(); // 크롤링 후 새로 로드
-      } else {
-        alert(data.error || '기관 목록 크롤링 실패');
-      }
-    } catch (e: any) {
-      alert(`크롤링 오류: ${e.message}`);
+  // 수신기관 실시간 검색 (debounce)
+  const searchOrgs = async (keyword: string) => {
+    if (keyword.length < 2) {
+      setOrgSearchResults([]);
+      return;
     }
-    setOrgListCrawling(false);
+    setOrgSearching(true);
+    try {
+      const res = await fetch('/api/doc24/org-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keyword }),
+      });
+      const data = await res.json();
+      if (data.success && data.results) {
+        setOrgSearchResults(data.results);
+      } else if (data.error) {
+        console.error('기관 검색 오류:', data.error);
+        setOrgSearchResults([]);
+      }
+    } catch (e) {
+      console.error('기관 검색 오류:', e);
+    }
+    setOrgSearching(false);
+  };
+
+  // 검색어 입력 핸들러 (debounce 적용)
+  const handleOrgSearchChange = (value: string) => {
+    setOrgSearchKeyword(value);
+    // 캐시에서 먼저 필터링
+    if (orgSearchTimer.current) {
+      clearTimeout(orgSearchTimer.current);
+    }
+    // 500ms debounce 후 실시간 검색
+    if (value.length >= 2) {
+      orgSearchTimer.current = setTimeout(() => {
+        searchOrgs(value);
+      }, 500);
+    } else {
+      setOrgSearchResults([]);
+    }
   };
 
   // 기관 검색 모달 열 때 목록 로드
   const openOrgSearchModal = () => {
     setShowOrgSearchModal(true);
     setOrgSearchKeyword('');
+    setOrgSearchResults([]);
     if (orgList.length === 0) {
       loadOrgList();
     }
@@ -1203,95 +1233,107 @@ export default function ChatPage() {
                 </svg>
                 <input
                   type="text"
-                  placeholder="기관명 검색 (예: 강남구, 보건소, 세무서)"
+                  placeholder="기관명 검색 (예: 강남구청, 서초세무서) - 2자 이상 입력"
                   value={orgSearchKeyword}
-                  onChange={(e) => setOrgSearchKeyword(e.target.value)}
+                  onChange={(e) => handleOrgSearchChange(e.target.value)}
                   autoFocus
                   className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+                {orgSearching && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg className="animate-spin w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  </div>
+                )}
               </div>
-              {/* 직접 입력 옵션 */}
+              {/* 검색 안내 */}
               <div className="mt-2 flex items-center gap-2">
                 <span className="text-xs text-gray-400">
-                  {orgList.length > 0 ? `${orgList.length}개 기관` : ''}
-                  {orgSearchKeyword && filteredOrgList.length !== orgList.length ? ` / ${filteredOrgList.length}개 검색결과` : ''}
+                  {orgSearchKeyword.length >= 2
+                    ? (orgSearching ? '검색 중...' : `${orgSearchResults.length}개 검색결과`)
+                    : '2자 이상 입력하면 문서24에서 실시간 검색합니다'}
                 </span>
-                <div className="flex-1" />
-                {orgList.length === 0 && !orgListLoading && (
-                  <button
-                    onClick={crawlOrgList}
-                    disabled={orgListCrawling}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
-                  >
-                    {orgListCrawling ? '크롤링 중... (1~2분)' : '기관 목록 가져오기'}
-                  </button>
-                )}
               </div>
             </div>
 
             {/* 기관 목록 */}
             <div className="flex-1 overflow-y-auto p-2 min-h-[200px] max-h-[50vh]">
-              {orgListLoading ? (
+              {orgSearchKeyword.length < 2 ? (
+                <div className="text-center py-10">
+                  <p className="text-sm text-gray-500 mb-2">
+                    수신기관명을 입력해주세요
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    예: 강남구청, 서초세무서, 국민건강보험공단
+                  </p>
+                </div>
+              ) : orgSearching ? (
                 <div className="flex items-center justify-center py-10 text-sm text-gray-500">
                   <svg className="animate-spin w-5 h-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  기관 목록 로딩 중...
+                  문서24에서 기관 검색 중...
                 </div>
-              ) : orgListCrawling ? (
-                <div className="flex flex-col items-center justify-center py-10 text-sm text-gray-500">
-                  <svg className="animate-spin w-6 h-6 mb-2 text-blue-500" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  <span>문서24에서 기관 목록을 가져오는 중...</span>
-                  <span className="text-xs text-gray-400 mt-1">1~2분 소요될 수 있습니다</span>
-                </div>
-              ) : filteredOrgList.length === 0 ? (
+              ) : orgSearchResults.length === 0 && filteredOrgList.length === 0 ? (
                 <div className="text-center py-10">
                   <p className="text-sm text-gray-500 mb-3">
-                    {orgList.length === 0
-                      ? '기관 목록이 비어있습니다.'
-                      : `"${orgSearchKeyword}" 검색 결과가 없습니다.`}
+                    &quot;{orgSearchKeyword}&quot; 검색 결과가 없습니다.
                   </p>
-                  {orgList.length === 0 && (
-                    <button
-                      onClick={crawlOrgList}
-                      disabled={orgListCrawling}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      문서24에서 기관 목록 가져오기
-                    </button>
-                  )}
-                  {/* 직접 입력 fallback */}
-                  {orgSearchKeyword && (
-                    <button
-                      onClick={() => selectOrg({ name: orgSearchKeyword, code: '' })}
-                      className="mt-2 block mx-auto px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      &quot;{orgSearchKeyword}&quot; 직접 입력으로 사용
-                    </button>
-                  )}
+                  <button
+                    onClick={() => selectOrg({ name: orgSearchKeyword, code: '' })}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    &quot;{orgSearchKeyword}&quot; 직접 입력으로 사용
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  {filteredOrgList.slice(0, 100).map((org, idx) => (
+                  {/* 실시간 검색 결과 우선 표시 */}
+                  {orgSearchResults.length > 0 && (
+                    <>
+                      <div className="text-xs text-blue-600 font-medium px-2 py-1">실시간 검색 결과</div>
+                      {orgSearchResults.slice(0, 50).map((org, idx) => (
+                        <button
+                          key={`search-${org.name}-${idx}`}
+                          onClick={() => selectOrg(org)}
+                          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors group"
+                        >
+                          <span className="text-sm font-medium">{org.name}</span>
+                          {org.category && (
+                            <span className="ml-2 text-xs text-gray-400 group-hover:text-blue-400">{org.category}</span>
+                          )}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {/* 캐시된 목록에서 필터링 결과 */}
+                  {filteredOrgList.length > 0 && orgSearchResults.length === 0 && (
+                    <>
+                      {filteredOrgList.slice(0, 50).map((org, idx) => (
+                        <button
+                          key={`cache-${org.name}-${idx}`}
+                          onClick={() => selectOrg(org)}
+                          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors group"
+                        >
+                          <span className="text-sm font-medium">{org.name}</span>
+                          {org.category && (
+                            <span className="ml-2 text-xs text-gray-400 group-hover:text-blue-400">{org.category}</span>
+                          )}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {/* 직접 입력 옵션 */}
+                  {orgSearchKeyword && (
                     <button
-                      key={`${org.name}-${idx}`}
-                      onClick={() => selectOrg(org)}
-                      className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 hover:text-blue-700 transition-colors group"
+                      onClick={() => selectOrg({ name: orgSearchKeyword, code: '' })}
+                      className="w-full text-left px-3 py-2.5 mt-2 rounded-lg border border-dashed border-gray-300 hover:bg-gray-50 text-gray-600"
                     >
-                      <span className="text-sm font-medium">{org.name}</span>
-                      {org.category && (
-                        <span className="ml-2 text-xs text-gray-400 group-hover:text-blue-400">{org.category}</span>
-                      )}
+                      <span className="text-sm">&quot;{orgSearchKeyword}&quot; 직접 입력으로 사용</span>
                     </button>
-                  ))}
-                  {filteredOrgList.length > 100 && (
-                    <p className="text-center text-xs text-gray-400 py-2">
-                      + {filteredOrgList.length - 100}개 더... 검색어를 입력하여 좁혀주세요
-                    </p>
                   )}
                 </div>
               )}
@@ -1304,7 +1346,7 @@ export default function ChatPage() {
                   type="text"
                   placeholder="목록에 없으면 직접 입력"
                   value={orgSearchKeyword}
-                  onChange={(e) => setOrgSearchKeyword(e.target.value)}
+                  onChange={(e) => handleOrgSearchChange(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && orgSearchKeyword.trim()) {
                       selectOrg({ name: orgSearchKeyword.trim(), code: '' });
