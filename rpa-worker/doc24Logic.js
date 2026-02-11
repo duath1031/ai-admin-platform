@@ -2584,50 +2584,104 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
     const ldapBtn = page.locator('#ldapSearch');
     const ldapVisible = await ldapBtn.isVisible({ timeout: 10000 }).catch(() => false);
     log('search', `#ldapSearch 버튼 존재: ${ldapVisible}`);
+
     if (!ldapVisible) {
-      // 페이지 상태 확인
       const pageUrl = page.url();
       const pageTitle = await page.title().catch(() => '');
       log('search', `현재 URL: ${pageUrl}, 타이틀: ${pageTitle}`);
       await saveScreenshot(page, 'doc24_search_no_ldap');
-      return { success: false, error: `수신기관 검색 버튼(#ldapSearch)을 찾을 수 없습니다. URL: ${pageUrl}`, results: [], logs };
+      return { success: false, error: `수신기관 검색 버튼(#ldapSearch) 없음. URL: ${pageUrl}`, results: [], logs };
     }
 
-    // 팝업 열기 (30초 타임아웃, 최대 2회 시도)
+    // 팝업 열기 시도 (20초 타임아웃)
     let popup = null;
-    for (let popupAttempt = 1; popupAttempt <= 2; popupAttempt++) {
-      try {
-        log('search', `팝업 열기 시도 ${popupAttempt}/2...`);
-        [popup] = await Promise.all([
-          page.waitForEvent('popup', { timeout: 30000 }),
-          ldapBtn.click({ force: true }),
-        ]);
-        if (popup) break;
-      } catch (popupErr) {
-        log('search', `팝업 열기 시도 ${popupAttempt}/2 실패: ${popupErr.message?.slice(0, 100)}`);
-        if (popupAttempt < 2) await humanDelay(2000, 3000);
-      }
+    try {
+      log('search', '팝업 열기 시도...');
+      [popup] = await Promise.all([
+        page.waitForEvent('popup', { timeout: 20000 }),
+        ldapBtn.click({ force: true }),
+      ]);
+    } catch (popupErr) {
+      log('search', `팝업 열기 실패: ${popupErr.message?.slice(0, 150)}`);
+      await saveScreenshot(page, 'doc24_search_after_ldap_click');
     }
+
+    // 팝업이 안 열렸으면 인라인 모달/iframe 확인
     if (!popup) {
-      await saveScreenshot(page, 'doc24_search_popup_fail');
-      return { success: false, error: '수신기관 검색 팝업을 열 수 없습니다. 문서24 페이지 구조가 변경되었을 수 있습니다.', results: [], logs };
-    }
+      log('search', '팝업 없음 → 인라인 모달/iframe 확인...');
+      await humanDelay(2000, 3000);
 
-    await popup.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
-    await popup.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-    await humanDelay(1500, 2000);
+      // 새로 나타난 iframe이나 모달 찾기
+      const frames = page.frames();
+      log('search', `현재 프레임 수: ${frames.length}`);
 
-    let ctx = popup;
-    const frames = popup.frames();
-    log('popup', `팝업 프레임 수: ${frames.length}`);
-    if (frames.length > 1) {
+      // iframe 내 검색창이 있는지 확인
+      let inlineCtx = null;
       for (const f of frames) {
-        if (f !== popup.mainFrame()) {
-          ctx = f;
-          log('popup', `iframe 감지 → iframe 컨텍스트로 전환: ${f.url()}`);
+        if (f === page.mainFrame()) continue;
+        const fUrl = f.url();
+        log('search', `iframe URL: ${fUrl}`);
+        const hasInput = await f.locator('input[type="text"]').count().catch(() => 0);
+        if (hasInput > 0) {
+          inlineCtx = f;
+          log('search', `검색 입력란이 있는 iframe 발견: ${fUrl}`);
           break;
         }
       }
+
+      // 인라인 모달 확인
+      if (!inlineCtx) {
+        const modalSels = ['.modal.show', '.popup', '#orgSearchPop', '#recvOrgPop', '[class*="layer"]', '[class*="popup"]'];
+        for (const sel of modalSels) {
+          const modal = page.locator(sel).first();
+          if (await modal.isVisible().catch(() => false)) {
+            inlineCtx = page; // 메인 페이지 컨텍스트 사용
+            log('search', `인라인 모달 발견: ${sel}`);
+            break;
+          }
+        }
+      }
+
+      if (!inlineCtx) {
+        // 마지막으로 페이지 전체 텍스트 덤프
+        const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 800) || '').catch(() => '');
+        log('search', `팝업/모달 모두 없음. 페이지 텍스트: ${bodyText.slice(0, 300)}`);
+        await saveScreenshot(page, 'doc24_search_no_popup_no_modal');
+        return { success: false, error: '수신기관 검색 팝업/모달을 찾을 수 없습니다.', results: [], logs };
+      }
+
+      // inlineCtx를 팝업 대신 사용하여 검색 진행 (아래 코드로 이어짐)
+      // popup 변수 대신 inlineCtx 사용하도록 아래에서 ctx = inlineCtx 할당
+    }
+
+    let ctx;
+    if (popup) {
+      await popup.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
+      await popup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      await humanDelay(1500, 2000);
+
+      ctx = popup;
+      const frames = popup.frames();
+      log('popup', `팝업 프레임 수: ${frames.length}`);
+      if (frames.length > 1) {
+        for (const f of frames) {
+          if (f !== popup.mainFrame()) {
+            ctx = f;
+            log('popup', `iframe 감지 → 전환: ${f.url()}`);
+            break;
+          }
+        }
+      }
+    } else {
+      // 인라인 컨텍스트 사용
+      ctx = page; // 위에서 inlineCtx가 설정되었으면 여기로 옴
+      const frames = page.frames();
+      for (const f of frames) {
+        if (f === page.mainFrame()) continue;
+        const hasInput = await f.locator('input[type="text"]').count().catch(() => 0);
+        if (hasInput > 0) { ctx = f; break; }
+      }
+      log('search', `인라인 모드로 검색 진행, ctx=${ctx === page ? 'mainPage' : 'iframe'}`);
     }
 
     // 팝업 구조 덤프 (디버깅용)
@@ -2680,7 +2734,7 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
 
     if (!inputFound) {
       log('search', '입력란을 찾지 못함 - 팝업 구조 확인 필요');
-      if (!popup.isClosed()) await popup.close().catch(() => {});
+      if (popup && !popup.isClosed()) await popup.close().catch(() => {});
       return { success: false, error: '검색 입력란을 찾지 못했습니다. 팝업 구조가 변경되었을 수 있습니다.', results: [], logs, popupDump };
     }
 
@@ -2771,7 +2825,7 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
       log('search', `결과 0건 - 검색 후 페이지 텍스트: ${afterSearchText.slice(0, 300)}`);
     }
 
-    if (!popup.isClosed()) await popup.close().catch(() => {});
+    if (popup && !popup.isClosed()) await popup.close().catch(() => {});
     log('search', `"${keyword}" → ${results.length}개 결과`);
 
     return { success: true, results, logs, popupDump, afterSearchText };
