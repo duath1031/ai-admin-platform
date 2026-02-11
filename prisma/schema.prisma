@@ -75,6 +75,9 @@ model User {
   subscriptions           Subscription[]
   doc24Account            Doc24Account?
   doc24Submissions        Doc24Submission[]
+  billingKeys             BillingKey[]
+  subsidyMatches          SubsidyMatch[]
+  deadlineAlerts          DeadlineAlert[]
 }
 
 // 기업 마스터 프로필 (AI 비서의 기억 저장소)
@@ -86,6 +89,7 @@ model CompanyProfile {
   // Section 1: 필수 식별 정보 (서류 자동완성용)
   companyName   String?   // 상호
   ownerName     String?   // 대표자명
+  ceoGender     String?   // 대표자 성별 (male/female)
   bizRegNo      String?   // 사업자등록번호 (10자리)
   corpRegNo     String?   // 법인등록번호 (선택)
   address       String?   // 주소
@@ -476,9 +480,13 @@ model SubmissionTrackingLog {
 model SubscriptionPlan {
   id                    String         @id @default(cuid())
   name                  String         @unique
+  planCode              String         @unique  // starter, standard, pro, enterprise
   displayName           String
   price                 Int
   credits               Int
+  tokenQuota            Int            @default(0)  // 월간 토큰 한도
+  trialDays             Int            @default(0)  // 무료 체험 일수
+  maxFeatures           String?        // 플랜별 기능 제한 (JSON)
   features              String
   isActive              Boolean        @default(true)
   sortOrder             Int            @default(0)
@@ -490,20 +498,28 @@ model SubscriptionPlan {
 }
 
 model Subscription {
-  id              String           @id @default(cuid())
-  userId          String
-  planId          String
-  status          String           @default("active")
-  startDate       DateTime         @default(now())
-  endDate         DateTime?
-  cancelledAt     DateTime?
-  billingCycle    String           @default("monthly")
-  nextBillingDate DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  payments        Payment[]
-  plan            SubscriptionPlan @relation(fields: [planId], references: [id])
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                String             @id @default(cuid())
+  userId            String
+  planId            String
+  billingKeyId      String?
+  status            String             @default("active") // trial, active, past_due, grace, cancelled, expired
+  startDate         DateTime           @default(now())
+  endDate           DateTime?
+  cancelledAt       DateTime?
+  billingCycle      String             @default("monthly")
+  nextBillingDate   DateTime?
+  trialEndsAt       DateTime?
+  gracePeriodEndsAt DateTime?
+  retryCount        Int                @default(0)
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  payments          Payment[]
+  scheduledPayments ScheduledPayment[]
+  plan              SubscriptionPlan   @relation(fields: [planId], references: [id])
+  billingKey        BillingKey?        @relation(fields: [billingKeyId], references: [id])
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
@@ -878,4 +894,127 @@ model BidAlertKeyword {
   @@index([userId])
   @@index([isActive])
   @@unique([userId, keyword, type, region])
+}
+
+// ─────────────────────────────────────────
+// 빌링키 (PortOne V2 구독 결제)
+// ─────────────────────────────────────────
+
+model BillingKey {
+  id            String         @id @default(cuid())
+  userId        String
+  billingKey    String         @unique  // PortOne 빌링키
+  cardName      String?        // 카드사명 (삼성카드, 현대카드 등)
+  cardNumber    String?        // 마스킹된 카드번호 (****-****-****-1234)
+  isDefault     Boolean        @default(false)
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────
+// 자동결제 스케줄
+// ─────────────────────────────────────────
+
+model ScheduledPayment {
+  id              String       @id @default(cuid())
+  subscriptionId  String
+  scheduledDate   DateTime
+  amount          Int
+  status          String       @default("pending") // pending, processing, paid, failed, cancelled
+  retryCount      Int          @default(0)
+  lastRetryAt     DateTime?
+  paidAt          DateTime?
+  failReason      String?
+  paymentId       String?      // 성공 시 Payment 연결
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@index([scheduledDate])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────
+// 보조금 프로그램 캐시
+// ─────────────────────────────────────────
+
+model SubsidyProgram {
+  id              String         @id @default(cuid())
+  source          String         @default("manual") // manual, bizinfo, subsidy24
+  externalId      String?        // 외부 API ID
+  title           String
+  agency          String         // 지원기관
+  description     String?
+  targetIndustry  String?        // 대상업종 (JSON)
+  targetScale     String?        // 대상규모 (소기업/중기업/중견기업 등)
+  targetRegion    String?        // 대상지역
+  targetBizAge    String?        // 대상업력 (예: 3년 이상)
+  supportAmount   String?        // 지원금액 설명
+  supportType     String?        // 지원유형 (보조금/융자/출연 등)
+  applicationStart DateTime?
+  applicationEnd   DateTime?
+  detailUrl       String?
+  requiredDocs    String?        // 필요서류 (JSON)
+  eligibility     String?        // 자격요건 상세 (JSON)
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  matches         SubsidyMatch[]
+
+  @@index([source])
+  @@index([isActive])
+  @@index([applicationEnd])
+}
+
+// ─────────────────────────────────────────
+// 사용자별 보조금 매칭 결과
+// ─────────────────────────────────────────
+
+model SubsidyMatch {
+  id                String         @id @default(cuid())
+  userId            String
+  subsidyProgramId  String
+  matchScore        Int            @default(0) // 0~100
+  matchedCriteria   String?        // 충족 기준 (JSON)
+  unmatchedCriteria String?        // 미충족 기준 (JSON)
+  isBookmarked      Boolean        @default(false)
+  isApplied         Boolean        @default(false)
+  appliedAt         DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subsidyProgram    SubsidyProgram @relation(fields: [subsidyProgramId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subsidyProgramId])
+  @@index([userId])
+  @@index([matchScore])
+}
+
+// ─────────────────────────────────────────
+// 기한 알림
+// ─────────────────────────────────────────
+
+model DeadlineAlert {
+  id            String   @id @default(cuid())
+  userId        String
+  referenceType String   // subscription, subsidy, certification, license, bid
+  referenceId   String?
+  title         String
+  deadline      DateTime
+  alertType     String   // d-30, d-7, d-3, d-1, d-day
+  isSent        Boolean  @default(false)
+  sentAt        DateTime?
+  channel       String   @default("in_app") // in_app, email, kakao
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deadline])
+  @@index([isSent])
 }

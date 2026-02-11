@@ -2581,54 +2581,162 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
 
     let ctx = popup;
     const frames = popup.frames();
+    log('popup', `팝업 프레임 수: ${frames.length}`);
     if (frames.length > 1) {
       for (const f of frames) {
-        if (f !== popup.mainFrame()) { ctx = f; break; }
+        if (f !== popup.mainFrame()) {
+          ctx = f;
+          log('popup', `iframe 감지 → iframe 컨텍스트로 전환: ${f.url()}`);
+          break;
+        }
       }
     }
 
-    // 검색
+    // 팝업 구조 덤프 (디버깅용)
+    const popupDump = await ctx.evaluate(() => {
+      const inputs = [];
+      document.querySelectorAll('input').forEach(el => {
+        inputs.push({
+          id: el.id, name: el.name, type: el.type,
+          placeholder: el.placeholder, readonly: el.readOnly, disabled: el.disabled,
+          visible: el.offsetParent !== null,
+        });
+      });
+      const buttons = [];
+      document.querySelectorAll('button, input[type="button"], input[type="submit"], a.btn, a[onclick]').forEach(el => {
+        buttons.push({
+          tag: el.tagName, id: el.id, text: el.textContent?.trim().slice(0, 30),
+          className: el.className?.slice?.(0, 50) || '',
+          onclick: el.getAttribute('onclick')?.slice(0, 80) || '',
+        });
+      });
+      const tables = document.querySelectorAll('table').length;
+      const treeNodes = document.querySelectorAll('.tree, .jstree, [class*="tree"], [id*="tree"]').length;
+      return { inputs, buttons, tables, treeNodes, bodyText: document.body?.innerText?.slice(0, 500) || '' };
+    }).catch(() => ({ inputs: [], buttons: [], tables: 0, treeNodes: 0, bodyText: '' }));
+    log('popup-dump', JSON.stringify(popupDump, null, 2));
+
+    // 검색 입력란 찾기
     const inputSels = [
       '#searchWrd', '#searchKeyword', '#orgNm', '#insttNm', '#keyword',
+      '#srchWrd', '#srchKeyword', '#searchWord', '#search_word',
+      'input[name="searchWrd"]', 'input[name="searchKeyword"]', 'input[name="insttNm"]',
       'input[type="text"]:not([readonly]):not([disabled])',
     ];
+    let inputFound = false;
+    let foundSel = '';
     for (const sel of inputSels) {
       const el = ctx.locator(sel).first();
       if (await el.count().catch(() => 0) > 0) {
+        const isVisible = await el.isVisible().catch(() => false);
+        if (!isVisible) continue;
+        await el.click().catch(() => {});
+        await el.fill('');
         await el.fill(keyword);
-        await el.press('Enter').catch(() => {});
+        inputFound = true;
+        foundSel = sel;
+        log('search', `입력란 발견: ${sel} → "${keyword}" 입력`);
         break;
       }
     }
 
-    await humanDelay(1000, 1500);
-    if (ctx.waitForLoadState) {
-      await ctx.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    if (!inputFound) {
+      log('search', '입력란을 찾지 못함 - 팝업 구조 확인 필요');
+      if (!popup.isClosed()) await popup.close().catch(() => {});
+      return { success: false, error: '검색 입력란을 찾지 못했습니다. 팝업 구조가 변경되었을 수 있습니다.', results: [], logs, popupDump };
     }
 
+    // 검색 버튼 클릭 시도 (Enter만으로 안 될 수 있음)
+    const searchBtnSels = [
+      '#searchBtn', '#btnSearch', '#btn_search', 'button[type="submit"]',
+      'input[type="submit"]', 'input[type="button"][value*="검색"]',
+      'a[onclick*="search"]', 'a[onclick*="Search"]', 'button:has-text("검색")',
+      'a:has-text("검색")', 'img[alt*="검색"]',
+    ];
+    let searchBtnClicked = false;
+    for (const sel of searchBtnSels) {
+      const btn = ctx.locator(sel).first();
+      if (await btn.count().catch(() => 0) > 0) {
+        const isVisible = await btn.isVisible().catch(() => false);
+        if (!isVisible) continue;
+        await btn.click({ force: true }).catch(() => {});
+        searchBtnClicked = true;
+        log('search', `검색 버튼 클릭: ${sel}`);
+        break;
+      }
+    }
+
+    if (!searchBtnClicked) {
+      // 검색 버튼 못 찾으면 Enter 키로 시도
+      const inputEl = ctx.locator(foundSel).first();
+      await inputEl.press('Enter').catch(() => {});
+      log('search', '검색 버튼 없음 → Enter 키로 검색');
+    }
+
+    await humanDelay(1500, 2500);
+    if (ctx.waitForLoadState) {
+      await ctx.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    }
+    await humanDelay(500, 1000);
+
+    // 결과 추출 (다양한 구조 대응)
     const results = await ctx.evaluate(() => {
       const orgs = [];
+
+      // 1차: table tbody tr
       document.querySelectorAll('table tbody tr').forEach(tr => {
         const link = tr.querySelector('a');
         const tds = tr.querySelectorAll('td');
         const name = link ? link.textContent?.trim() : (tds[1]?.textContent?.trim() || tds[0]?.textContent?.trim());
-        const code = link?.getAttribute('data-code') || link?.getAttribute('data-id') || '';
+        const code = link?.getAttribute('data-code') || link?.getAttribute('data-id') || link?.getAttribute('onclick')?.match(/'([^']+)'/)?.[1] || '';
         const category = tds.length >= 3 ? (tds[2].textContent?.trim() || '') : '';
-        if (name && name.length > 1) orgs.push({ name, code, category });
+        if (name && name.length > 1 && !name.includes('검색결과')) orgs.push({ name, code, category });
       });
+
+      // 2차: jstree 노드
       if (orgs.length === 0) {
-        document.querySelectorAll('li a, .result_list a').forEach(a => {
+        document.querySelectorAll('.jstree-node a, [class*="tree"] a').forEach(a => {
           const name = a.textContent?.trim();
-          if (name && name.length > 1) orgs.push({ name, code: '', category: '' });
+          const id = a.id || a.parentElement?.id || '';
+          if (name && name.length > 1) orgs.push({ name, code: id, category: 'tree' });
         });
       }
+
+      // 3차: li a 또는 result_list
+      if (orgs.length === 0) {
+        document.querySelectorAll('li a, .result_list a, .list_area a, .searchList a, [class*="result"] a').forEach(a => {
+          const name = a.textContent?.trim();
+          const onclick = a.getAttribute('onclick') || '';
+          const code = onclick.match(/'([^']+)'/)?.[1] || '';
+          if (name && name.length > 1 && !name.includes('페이지')) orgs.push({ name, code, category: '' });
+        });
+      }
+
+      // 4차: 모든 클릭 가능한 요소
+      if (orgs.length === 0) {
+        document.querySelectorAll('[onclick], a[href*="javascript"]').forEach(el => {
+          const name = el.textContent?.trim();
+          const onclick = el.getAttribute('onclick') || '';
+          if (name && name.length > 1 && name.length < 50 && !name.includes('검색') && !name.includes('닫기')) {
+            orgs.push({ name, code: onclick.match(/'([^']+)'/)?.[1] || '', category: 'onclick' });
+          }
+        });
+      }
+
       return orgs;
     }).catch(() => []);
+
+    // 결과가 없으면 검색 후 페이지 텍스트도 덤프
+    let afterSearchText = '';
+    if (results.length === 0) {
+      afterSearchText = await ctx.evaluate(() => document.body?.innerText?.slice(0, 1000) || '').catch(() => '');
+      log('search', `결과 0건 - 검색 후 페이지 텍스트: ${afterSearchText.slice(0, 300)}`);
+    }
 
     if (!popup.isClosed()) await popup.close().catch(() => {});
     log('search', `"${keyword}" → ${results.length}개 결과`);
 
-    return { success: true, results, logs };
+    return { success: true, results, logs, popupDump, afterSearchText };
   } catch (error) {
     return { success: false, error: error.message, results: [], logs };
   } finally {

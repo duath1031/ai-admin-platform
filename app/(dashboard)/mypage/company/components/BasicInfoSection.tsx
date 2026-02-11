@@ -52,6 +52,19 @@ export default function BasicInfoSection({ form, onChange, errors }: Props) {
             </div>
             <FormField label="업태/종목" value={form.bizType || ""} onChange={(v) => onChange("bizType", v)} placeholder="예: 서비스업/행정사" error={errors.bizType} />
             <FormField label="설립일" value={form.foundedDate || ""} onChange={(v) => onChange("foundedDate", v)} type="date" error={errors.foundedDate} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">대표자 성별</label>
+              <select
+                value={form.ceoGender || ""}
+                onChange={(e) => onChange("ceoGender", e.target.value || null)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+              >
+                <option value="">선택하세요</option>
+                <option value="male">남성</option>
+                <option value="female">여성</option>
+              </select>
+              <p className="text-xs text-gray-400 mt-1">여성기업 인증 진단에 활용됩니다</p>
+            </div>
           </div>
         </CardContent>
       </Card>

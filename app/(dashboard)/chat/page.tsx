@@ -952,52 +952,52 @@ export default function ChatPage() {
       )}
 
       {/* 접수 방식 선택 (4-Way 하이브리드) + 보조 버튼 */}
-      <div className="mt-2 md:mt-3 space-y-2">
+      <div className="mt-1.5 sm:mt-2 md:mt-3 space-y-1.5 sm:space-y-2">
         {/* 메인 4분할 버튼 */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-1.5 sm:gap-2">
           {/* 📝 정부24 */}
           <button
             onClick={() => {
               window.open('https://www.gov.kr/portal/main', '_blank', 'noopener,noreferrer');
             }}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
+            className="flex flex-col items-center justify-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-2 sm:py-3 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all shadow-sm sm:shadow-md"
           >
-            <span className="text-xl">📝</span>
+            <span className="text-base sm:text-xl">📝</span>
             <span>정부24</span>
           </button>
           {/* 📄 공문접수 */}
           <button
             onClick={handleDoc24Submit}
             disabled={doc24State.status === 'submitting'}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+            className="flex flex-col items-center justify-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-2 sm:py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm sm:shadow-md"
           >
-            <span className="text-xl">📄</span>
+            <span className="text-base sm:text-xl">📄</span>
             <span>공문접수</span>
           </button>
           {/* 👨‍💼 접수대행 → 민원접수 페이지 proxy 탭 */}
           <button
             onClick={() => router.push("/submission?tab=proxy")}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
+            className="flex flex-col items-center justify-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-2 sm:py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all shadow-sm sm:shadow-md"
           >
-            <span className="text-xl">👨‍💼</span>
+            <span className="text-base sm:text-xl">👨‍💼</span>
             <span>접수대행</span>
           </button>
           {/* 📋 대리인선임 → 민원접수 페이지 delegate 탭 */}
           <button
             onClick={() => router.push("/submission?tab=delegate")}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
+            className="flex flex-col items-center justify-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-2 sm:py-3 bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl transition-all shadow-sm sm:shadow-md"
           >
-            <span className="text-xl">📋</span>
+            <span className="text-base sm:text-xl">📋</span>
             <span>대리인선임</span>
           </button>
         </div>
         {/* 보조 버튼 */}
-        <div className="flex justify-center gap-2">
+        <div className="flex justify-center gap-1.5 sm:gap-2">
           <a
             href="tel:070-8657-1888"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] sm:text-xs font-medium rounded-lg transition-colors"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
             </svg>
             상담전화
@@ -1006,9 +1006,9 @@ export default function ChatPage() {
             href="https://www.jungeui.com"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg transition-colors"
+            className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1 sm:py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] sm:text-xs font-medium rounded-lg transition-colors"
           >
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-3 h-3 sm:w-3.5 sm:h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
             공식홈페이지

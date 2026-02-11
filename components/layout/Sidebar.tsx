@@ -292,8 +292,8 @@ export default function Sidebar() {
       />
 
       {/* 사이드바 */}
-      <aside className="fixed left-0 top-16 h-[calc(100vh-4rem)] w-64 bg-white border-r border-gray-200 z-40 overflow-y-auto">
-        <nav className="p-4 space-y-2">
+      <aside className="fixed left-0 top-14 sm:top-16 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] w-56 sm:w-64 bg-white border-r border-gray-200 z-40 overflow-y-auto">
+        <nav className="p-2 sm:p-4 space-y-0.5 sm:space-y-2">
           {menuItems.map((item) => {
             const isActive =
               pathname === item.href ||
@@ -305,7 +305,7 @@ export default function Sidebar() {
                 href={item.href}
                 onClick={handleMenuClick}
                 className={`
-                  flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                  flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition-colors text-sm sm:text-base
                   ${
                     isActive
                       ? "bg-primary-50 text-primary-700 font-medium"
@@ -322,12 +322,12 @@ export default function Sidebar() {
           {/* 관리자 메뉴 - 관리자만 표시 */}
           {isAdmin && (
             <>
-              <div className="border-t border-gray-200 my-2" />
+              <div className="border-t border-gray-200 my-1 sm:my-2" />
               <Link
                 href={adminMenuItem.href}
                 onClick={handleMenuClick}
                 className={`
-                  flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                  flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 rounded-lg transition-colors text-sm sm:text-base
                   ${
                     pathname.startsWith("/admin")
                       ? "bg-purple-50 text-purple-700 font-medium"

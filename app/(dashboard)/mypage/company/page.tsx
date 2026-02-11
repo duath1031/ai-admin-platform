@@ -95,6 +95,7 @@ export default function CompanyProfilePage() {
         "revenueLabel1", "revenueLabel2", "revenueLabel3",
         "g2bRegistrationNumber", "mainProducts", "productClassificationCodes", "masItems",
         "exportCountries", "importItems", "foreignWorkerVisaTypes",
+        "ceoGender",
       ];
       strFields.forEach((k) => { payload[k] = form[k] || null; });
 

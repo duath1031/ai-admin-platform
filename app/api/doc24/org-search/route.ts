@@ -86,7 +86,18 @@ export async function POST(request: NextRequest) {
       password: decryptedPassword,
       accountType: account.accountType || 'personal',
       keyword,
-    });
+    }, 55000);
+
+    // 디버깅 로그 출력
+    if (result.logs) {
+      console.log('[Doc24 OrgSearch] Worker logs:', JSON.stringify(result.logs, null, 2));
+    }
+    if (result.popupDump) {
+      console.log('[Doc24 OrgSearch] Popup dump:', JSON.stringify(result.popupDump, null, 2));
+    }
+    if (result.afterSearchText) {
+      console.log('[Doc24 OrgSearch] After search text:', result.afterSearchText);
+    }
 
     return NextResponse.json(result);
   } catch (error: any) {

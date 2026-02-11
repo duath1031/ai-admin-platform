@@ -123,6 +123,9 @@ const companyProfileSchema = z.object({
   // Section 10: 외국인 관련
   hasForeignWorkers: z.boolean().optional().default(false),
   foreignWorkerVisaTypes: z.string().optional().nullable(),
+
+  // Section 11: 대표자 성별 (여성기업 인증용)
+  ceoGender: z.string().max(10).optional().nullable(),
 });
 
 // BigInt 변환이 필요한 필드 목록

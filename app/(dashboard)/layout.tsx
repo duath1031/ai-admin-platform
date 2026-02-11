@@ -31,11 +31,11 @@ export default function DashboardLayout({
       <Header />
       <Sidebar />
       <main
-        className={`pt-16 transition-all duration-300 ${
+        className={`pt-14 sm:pt-16 transition-all duration-300 ${
           sidebarOpen ? "md:ml-64" : "ml-0"
         }`}
       >
-        <div className="p-4 md:p-6">{children}</div>
+        <div className="p-3 sm:p-4 md:p-6">{children}</div>
       </main>
     </div>
   );

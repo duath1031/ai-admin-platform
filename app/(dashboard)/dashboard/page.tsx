@@ -76,32 +76,34 @@ export default function DashboardPage() {
   return (
     <div className="max-w-6xl mx-auto">
       {/* Welcome Section */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+      <div className="mb-4 sm:mb-8">
+        <h1 className="text-lg sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2">
           안녕하세요, {session?.user?.name || "사용자"}님
         </h1>
-        <p className="text-gray-600">
+        <p className="text-sm sm:text-base text-gray-600">
           AI행정사와 함께 행정 업무를 시작하세요
         </p>
       </div>
 
       {/* Quick Actions */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-8">
         {quickActions.map((action) => (
           <Link key={action.href} href={action.href}>
             <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
-              <CardContent className="p-6">
+              <CardContent className="p-3 sm:p-4 md:p-6">
                 <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
+                  className={`w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl flex items-center justify-center mb-2 sm:mb-4 ${
                     colorClasses[action.color]
                   }`}
                 >
-                  {action.icon}
+                  <div className="[&>svg]:w-4 [&>svg]:h-4 sm:[&>svg]:w-6 sm:[&>svg]:h-6">
+                    {action.icon}
+                  </div>
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                <h3 className="text-sm sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1">
                   {action.title}
                 </h3>
-                <p className="text-gray-600 text-sm">{action.description}</p>
+                <p className="text-gray-600 text-[11px] sm:text-sm leading-tight">{action.description}</p>
               </CardContent>
             </Card>
           </Link>
@@ -110,11 +112,11 @@ export default function DashboardPage() {
 
       {/* Example Questions */}
       <Card>
-        <CardContent className="p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <CardContent className="p-3 sm:p-4 md:p-6">
+          <h2 className="text-sm sm:text-lg font-semibold text-gray-900 mb-2 sm:mb-4">
             이렇게 질문해보세요
           </h2>
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid sm:grid-cols-2 gap-2 sm:gap-4">
             {[
               "일반음식점 영업신고 절차가 어떻게 되나요?",
               "건축허가 신청에 필요한 서류는 무엇인가요?",
@@ -126,14 +128,14 @@ export default function DashboardPage() {
               <Link
                 key={index}
                 href={`/chat?q=${encodeURIComponent(question)}`}
-                className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg hover:bg-gray-50 transition-colors group"
               >
-                <div className="w-8 h-8 rounded-full bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
-                <span className="text-gray-700 group-hover:text-gray-900">
+                <span className="text-xs sm:text-base text-gray-700 group-hover:text-gray-900">
                   {question}
                 </span>
               </Link>
@@ -143,9 +145,9 @@ export default function DashboardPage() {
       </Card>
 
       {/* Info Section */}
-      <div className="mt-8 p-4 bg-blue-50 rounded-xl border border-blue-100">
-        <p className="text-sm text-blue-800">
-          <strong>💡 새로운 기능:</strong> 채팅에서 주소를 입력하면 토지이용계획을 자동으로 조회하고,
+      <div className="mt-4 sm:mt-8 p-3 sm:p-4 bg-blue-50 rounded-xl border border-blue-100">
+        <p className="text-xs sm:text-sm text-blue-800">
+          <strong>새로운 기능:</strong> 채팅에서 주소를 입력하면 토지이용계획을 자동으로 조회하고,
           인허가 관련 질문 시 국가법령정보센터의 서식 다운로드 링크를 제공합니다.
         </p>
       </div>

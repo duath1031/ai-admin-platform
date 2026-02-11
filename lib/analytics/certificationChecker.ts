@@ -30,6 +30,7 @@ export interface CompanyData {
   hasRndDepartment?: boolean;
   exportAmount?: number | null;
   permanentEmployees?: number | null;
+  ceoGender?: string | null;
   certifications?: { certType: string; isActive: boolean }[];
   patents?: { patentType: string; status: string }[];
 }
@@ -197,19 +198,35 @@ function checkWomenBiz(data: CompanyData): CertEligibilityResult {
   if (isSmallBiz(data)) met.push('중소기업 해당');
   else unmet.push('중소기업 기준 초과');
 
-  met.push('대표자 성별 확인 필요 (여성 대표자)');
-  unmet.push('대표자 성별 정보 미입력 (직접 확인 필요)');
+  // 대표자 성별 확인
+  if (data.ceoGender === 'female') {
+    met.push('여성 대표자 확인');
+  } else if (data.ceoGender === 'male') {
+    unmet.push('남성 대표자 (여성 대표자 필수)');
+  } else {
+    unmet.push('대표자 성별 미입력 (기업정보에서 입력해주세요)');
+  }
 
   if ((data.revenueYear1 || 0) > 0) met.push('매출 실적 있음');
 
-  const score = 50; // 성별 확인 불가하므로 기본 50
+  const years = yearsSince(data.foundedDate || data.establishmentDate);
+  if (years > 0) met.push(`업력 ${years}년`);
+
+  const score = data.ceoGender === 'female'
+    ? Math.round((met.length / (met.length + unmet.length)) * 100)
+    : data.ceoGender === 'male' ? 20 : 30;
+
   return {
     certType: 'women_biz',
     certName: '여성기업 확인',
     score,
-    eligible: score >= 50,
+    eligible: data.ceoGender === 'female' && isSmallBiz(data),
     met, unmet,
-    recommendation: '여성 대표자(최대주주)인 경우 여성기업확인서를 발급받을 수 있습니다. 한국여성경제인협회에서 온라인 신청하세요.',
+    recommendation: data.ceoGender === 'female'
+      ? '여성기업 인증 요건을 충족합니다. 한국여성경제인협회에서 온라인으로 신청하세요.'
+      : data.ceoGender === 'male'
+        ? '여성기업 인증은 여성 대표자(최대주주)인 경우에만 가능합니다.'
+        : '대표자 성별 정보를 마이페이지 > 기업정보에서 입력해주세요. 여성 대표자인 경우 인증 가능합니다.',
   };
 }
 
