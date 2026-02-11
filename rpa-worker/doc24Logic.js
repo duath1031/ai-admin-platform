@@ -1581,6 +1581,93 @@ async function sendDocument(page, log) {
     }
   }
 
+  // Step 3.5: "아니요/예" 최종 확인 팝업 처리
+  // "보내기" 버튼 클릭 후 "아니요"/"예" 확인 팝업이 뜸 - "예" 클릭 필요
+  log('send', '최종 확인 팝업(아니요/예) 대기...');
+  await humanDelay(800, 1200);
+
+  for (let yesRetry = 0; yesRetry < 5; yesRetry++) {
+    // "예" 버튼 찾기 - 여러 셀렉터 시도
+    const yesButtonSelectors = [
+      '.jconfirm.jconfirm-open button:has-text("예")',
+      '.jconfirm.jconfirm-open .jconfirm-buttons button:last-child', // 우측 버튼
+      '.jconfirm.jconfirm-open button.btn-primary',
+      '.jconfirm.jconfirm-open button.btnBlue',
+      'button:has-text("예")',
+      'button:has-text("Yes")',
+      'button:has-text("확인")',
+    ];
+
+    let yesClicked = false;
+    for (const sel of yesButtonSelectors) {
+      const yesBtn = page.locator(sel).last();
+      if (await yesBtn.count().catch(() => 0) > 0) {
+        const btnText = await yesBtn.textContent({ timeout: 1000 }).catch(() => '');
+        // "아니요"가 아닌 버튼만 클릭
+        if (!btnText.includes('아니') && !btnText.includes('No') && !btnText.includes('취소')) {
+          try {
+            await yesBtn.click({ force: true, timeout: 3000 });
+            log('send', `최종 확인 "예" 버튼 클릭: ${sel} ("${btnText.trim()}")`);
+            yesClicked = true;
+            break;
+          } catch (e) {
+            // 계속 시도
+          }
+        }
+      }
+    }
+
+    // JS fallback으로 "예" 버튼 클릭
+    if (!yesClicked) {
+      const jsYesClick = await page.evaluate(() => {
+        const popups = document.querySelectorAll('.jconfirm.jconfirm-open');
+        for (const popup of popups) {
+          const buttons = popup.querySelectorAll('.jconfirm-buttons button, button');
+          for (const btn of buttons) {
+            const text = btn.textContent?.trim() || '';
+            // "예", "Yes", "확인" 등 긍정 버튼 찾기 (우측 버튼)
+            if ((text === '예' || text === 'Yes' || text === '확인' || text === 'OK') &&
+                btn.offsetParent !== null) {
+              btn.click();
+              return { success: true, text };
+            }
+          }
+          // 버튼 2개인 경우 마지막(우측) 버튼 클릭
+          const allBtns = popup.querySelectorAll('.jconfirm-buttons button');
+          if (allBtns.length === 2) {
+            const rightBtn = allBtns[1];
+            if (rightBtn && rightBtn.offsetParent !== null) {
+              rightBtn.click();
+              return { success: true, text: rightBtn.textContent?.trim() };
+            }
+          }
+        }
+        return { success: false };
+      }).catch(() => ({ success: false }));
+
+      if (jsYesClick.success) {
+        log('send', `JS로 최종 확인 버튼 클릭: "${jsYesClick.text}"`);
+        yesClicked = true;
+      }
+    }
+
+    if (yesClicked) {
+      await humanDelay(500, 800);
+      break;
+    }
+
+    // 팝업이 없으면 이미 처리된 것으로 간주
+    const popupCount = await page.locator('.jconfirm.jconfirm-open').count().catch(() => 0);
+    if (popupCount === 0) {
+      log('send', '확인 팝업 없음 - 이미 처리됨');
+      break;
+    }
+
+    await humanDelay(500, 800);
+  }
+
+  await saveScreenshot(page, 'doc24_12_after_yes_click');
+
   // Step 4: PDF 변환 및 발송 처리 대기 (~5-6초)
   log('send', 'PDF 변환/발송 처리 대기...');
   await humanDelay(3000, 5000);
