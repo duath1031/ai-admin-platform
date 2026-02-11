@@ -394,8 +394,8 @@ async function navigateToCompose(page, log) {
  * - 팝업 완전 로드 대기 (load + networkidle)
  * - 팝업 내부 iframe 감지 + 구조 덤프
  */
-async function selectRecipient(page, recipient, log) {
-  log('recipient', `수신기관 선택 시작: "${recipient}"`);
+async function selectRecipient(page, recipient, log, recipientCode = '') {
+  log('recipient', `수신기관 선택 시작: "${recipient}" (코드: "${recipientCode || '없음'}")`);
   await dismissJconfirmAlerts(page, log);
 
   // Step 0: 기존에 열린 공지/알림 팝업들 먼저 닫기
@@ -511,44 +511,97 @@ async function selectRecipient(page, recipient, log) {
   await humanDelay(1500, 2000);
   await saveScreenshot(page, 'doc24_07_search_results');
 
-  // Step 5: 검색 결과에서 기관 선택
-  const resultSelectors = [
-    `.jconfirm-box td:has-text("${recipient}")`,
-    `.jconfirm-box tr:has-text("${recipient}") td`,
-    `.jconfirm-content a:has-text("${recipient}")`,
-    '.jconfirm-box table tbody tr:first-child td:nth-child(2)',
-    '.jconfirm-box table tbody tr:first-child td a',
-  ];
+  // Step 5: 검색 결과에서 기관 선택 (정확 매칭 우선)
+  // 먼저 검색 결과 테이블의 모든 행을 파싱하여 정확한 기관을 찾음
+  const matchResult = await page.evaluate(({ targetName, targetCode }) => {
+    const modal = document.querySelector('.jconfirm-box, [role="dialog"]');
+    if (!modal) return { found: false, rows: [] };
+
+    const rows = modal.querySelectorAll('table tbody tr');
+    const parsed = [];
+
+    rows.forEach((tr, idx) => {
+      const tds = tr.querySelectorAll('td');
+      const link = tr.querySelector('a');
+      const radio = tr.querySelector('input[type="radio"], input[type="checkbox"]');
+      const name = link ? link.textContent.trim() : (tds[1]?.textContent?.trim() || tds[0]?.textContent?.trim() || '');
+      const code = link?.getAttribute('data-code') || link?.getAttribute('data-id') || radio?.value || '';
+      parsed.push({ idx, name, code, hasLink: !!link, hasRadio: !!radio });
+    });
+
+    // 1순위: recipientCode가 있으면 코드로 정확 매칭
+    if (targetCode) {
+      const codeMatch = parsed.find(r => r.code === targetCode);
+      if (codeMatch) return { found: true, matchIdx: codeMatch.idx, matchName: codeMatch.name, method: 'code_exact', rows: parsed };
+    }
+
+    // 2순위: 기관명 정확히 일치 (trim 비교)
+    const exactMatch = parsed.find(r => r.name === targetName);
+    if (exactMatch) return { found: true, matchIdx: exactMatch.idx, matchName: exactMatch.name, method: 'name_exact', rows: parsed };
+
+    // 3순위: 기관명이 포함되어 있고 가장 짧은 이름 (가장 가까운 매칭)
+    const containsMatches = parsed.filter(r => r.name.includes(targetName));
+    if (containsMatches.length > 0) {
+      containsMatches.sort((a, b) => a.name.length - b.name.length);
+      return { found: true, matchIdx: containsMatches[0].idx, matchName: containsMatches[0].name, method: 'name_shortest', rows: parsed };
+    }
+
+    return { found: false, rows: parsed };
+  }, { targetName: recipient, targetCode: recipientCode }).catch(() => ({ found: false, rows: [] }));
+
+  log('recipient', `검색 결과 분석: ${JSON.stringify({ found: matchResult.found, method: matchResult.method, matchName: matchResult.matchName, totalRows: matchResult.rows?.length })}`);
 
   let resultClicked = false;
-  for (const sel of resultSelectors) {
-    const results = page.locator(sel);
-    const count = await results.count().catch(() => 0);
-    if (count > 0) {
-      // 클릭 가능한 요소 찾기 (a 또는 input[type=radio] 또는 td)
-      const clickable = results.first().locator('a, input[type="radio"], input[type="checkbox"]').first();
+
+  if (matchResult.found && matchResult.matchIdx !== undefined) {
+    // 정확히 매칭된 행 클릭
+    const rowIdx = matchResult.matchIdx;
+    const rowSelector = `.jconfirm-box table tbody tr:nth-child(${rowIdx + 1})`;
+    const row = page.locator(rowSelector);
+
+    if (await row.count().catch(() => 0) > 0) {
+      // 클릭 가능한 요소 찾기 (a, radio, checkbox)
+      const clickable = row.locator('a, input[type="radio"], input[type="checkbox"]').first();
       if (await clickable.count().catch(() => 0) > 0) {
         await clickable.click({ force: true });
       } else {
-        await results.first().click({ force: true });
+        await row.locator('td').first().click({ force: true });
       }
-      const text = await results.first().textContent().catch(() => '');
-      log('recipient', `기관 선택: "${text.trim()}" (${sel})`);
+      log('recipient', `기관 선택 완료: "${matchResult.matchName}" (방법: ${matchResult.method}, 행: ${rowIdx})`);
       resultClicked = true;
       await humanDelay(500, 800);
-      break;
+    }
+  }
+
+  // 폴백: evaluate 매칭 실패 시 기존 셀렉터 시도 (but 첫 행 자동선택은 제거)
+  if (!resultClicked) {
+    const fallbackSelectors = [
+      `.jconfirm-box td:has-text("${recipient}")`,
+      `.jconfirm-content a:has-text("${recipient}")`,
+    ];
+    for (const sel of fallbackSelectors) {
+      const results = page.locator(sel);
+      const count = await results.count().catch(() => 0);
+      if (count > 0) {
+        const clickable = results.first().locator('a, input[type="radio"], input[type="checkbox"]').first();
+        if (await clickable.count().catch(() => 0) > 0) {
+          await clickable.click({ force: true });
+        } else {
+          await results.first().click({ force: true });
+        }
+        const text = await results.first().textContent().catch(() => '');
+        log('recipient', `폴백 기관 선택: "${text.trim()}" (${sel})`);
+        resultClicked = true;
+        await humanDelay(500, 800);
+        break;
+      }
     }
   }
 
   if (!resultClicked) {
     log('recipient', '검색 결과에서 기관을 선택하지 못함', 'warning');
-    // 검색 결과 덤프
-    const tableContent = await page.evaluate(() => {
-      const table = document.querySelector('.jconfirm-box table tbody');
-      if (!table) return '테이블 없음';
-      return table.innerText.substring(0, 500);
-    }).catch(() => '');
-    log('recipient', `검색 결과: ${tableContent}`);
+    const allRows = (matchResult.rows || []).map(r => r.name).join(', ');
+    log('recipient', `검색 결과 목록: [${allRows}]`);
   }
 
   // Step 6: 선택 확인 버튼 클릭 (모달 내 "선택" 버튼)
@@ -1948,6 +2001,7 @@ async function submitDoc24Document(params, onProgress = () => {}) {
     password,
     accountType = 'personal',
     recipient,
+    recipientCode = '',
     title,
     content,
     files = [],
@@ -2017,7 +2071,7 @@ async function submitDoc24Document(params, onProgress = () => {}) {
     await dumpPageStructure(page, log);
 
     // Step 4: 수신기관 선택
-    const recipientResult = await selectRecipient(page, recipient, log);
+    const recipientResult = await selectRecipient(page, recipient, log, recipientCode);
     if (!recipientResult.success) {
       const screenshotBuf = await page.screenshot({ fullPage: false }).catch(() => null);
       return {

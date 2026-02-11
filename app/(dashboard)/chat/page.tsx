@@ -399,6 +399,7 @@ export default function ChatPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipient: doc24Data.recipient,
+          recipientCode: doc24Data.recipientCode || '',
           title: doc24Data.title,
           content: doc24Data.content,
           files,
@@ -949,40 +950,44 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 접수 방식 선택 (3-Way 하이브리드) + 보조 버튼 */}
+      {/* 접수 방식 선택 (4-Way 하이브리드) + 보조 버튼 */}
       <div className="mt-2 md:mt-3 space-y-2">
-        {/* 메인 3분할 버튼 */}
-        <div className="grid grid-cols-3 gap-2">
-          {/* 📝 직접 접수 (무료) */}
+        {/* 메인 4분할 버튼 */}
+        <div className="grid grid-cols-4 gap-2">
+          {/* 📝 정부24 */}
           <button
             onClick={() => {
-              // 정부24 또는 관련 민원 페이지로 이동
               window.open('https://www.gov.kr/portal/main', '_blank', 'noopener,noreferrer');
             }}
             className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
           >
             <span className="text-xl">📝</span>
-            <span>직접 접수</span>
-            <span className="text-[10px] opacity-80">(무료)</span>
+            <span>정부24</span>
           </button>
-          {/* 🤖 문서24 자동 접수 (구독) */}
+          {/* 📄 공문접수 */}
           <button
             onClick={handleDoc24Submit}
             disabled={doc24State.status === 'submitting'}
             className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
-            <span className="text-xl">🤖</span>
-            <span>문서24 자동</span>
-            <span className="text-[10px] opacity-80">(구독)</span>
+            <span className="text-xl">📄</span>
+            <span>공문접수</span>
           </button>
-          {/* 👨‍💼 전문가 대행 접수 */}
+          {/* 👨‍💼 전문가 대행 */}
           <button
             onClick={() => setShowHumanModal(true)}
             className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
           >
             <span className="text-xl">👨‍💼</span>
             <span>전문가 대행</span>
-            <span className="text-[10px] opacity-80">(50,000원)</span>
+          </button>
+          {/* 📋 대리 접수 */}
+          <button
+            onClick={() => setShowDelegateModal(true)}
+            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
+          >
+            <span className="text-xl">📋</span>
+            <span>대리 접수</span>
           </button>
         </div>
         {/* 보조 버튼 */}
@@ -1246,8 +1251,8 @@ export default function ChatPage() {
                   value={orgSearchKeyword}
                   onChange={(e) => handleOrgSearchChange(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && orgSearchKeyword.trim()) {
-                      selectOrg({ name: orgSearchKeyword.trim(), code: '' });
+                    if (e.key === 'Enter' && orgSearchResults.length > 0) {
+                      selectOrg(orgSearchResults[0]);
                     }
                   }}
                   autoFocus
@@ -1265,6 +1270,9 @@ export default function ChatPage() {
             <div className="flex-1 overflow-y-auto border-t">
               {orgSearchResults.length > 0 ? (
                 <div className="divide-y">
+                  <div className="px-4 py-2 bg-amber-50 border-b border-amber-100">
+                    <p className="text-xs text-amber-700 font-medium">아래 목록에서 정확한 기관을 선택하세요</p>
+                  </div>
                   {orgSearchResults.map((org, idx) => (
                     <button
                       key={idx}
@@ -1276,6 +1284,9 @@ export default function ChatPage() {
                         {org.category && (
                           <p className="text-xs text-gray-500">{org.category}</p>
                         )}
+                        {org.code && (
+                          <p className="text-xs text-gray-400">코드: {org.code}</p>
+                        )}
                       </div>
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1286,7 +1297,7 @@ export default function ChatPage() {
               ) : orgSearchKeyword.length >= 2 && !orgSearching ? (
                 <div className="p-4 text-center text-gray-500">
                   <p className="text-sm">검색 결과가 없습니다.</p>
-                  <p className="text-xs mt-1">직접 입력하거나 다른 검색어를 시도해보세요.</p>
+                  <p className="text-xs mt-1">다른 검색어를 시도해보세요. (예: 강남구청, 서초세무서)</p>
                 </div>
               ) : (
                 <div className="p-4 text-center text-gray-400">
@@ -1301,25 +1312,15 @@ export default function ChatPage() {
 
             {/* 하단 버튼 */}
             <div className="p-4 border-t bg-gray-50 rounded-b-xl flex-shrink-0">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowOrgSearchModal(false)}
-                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
-                >
-                  취소
-                </button>
-                <button
-                  onClick={() => {
-                    if (orgSearchKeyword.trim()) {
-                      selectOrg({ name: orgSearchKeyword.trim(), code: '' });
-                    }
-                  }}
-                  disabled={!orgSearchKeyword.trim()}
-                  className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  직접 입력으로 선택
-                </button>
-              </div>
+              <p className="text-xs text-gray-500 mb-3 text-center">
+                정확한 수신을 위해 반드시 검색 결과에서 기관을 선택하세요.
+              </p>
+              <button
+                onClick={() => setShowOrgSearchModal(false)}
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                취소
+              </button>
             </div>
           </div>
         </div>

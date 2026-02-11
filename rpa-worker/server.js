@@ -539,7 +539,7 @@ app.get('/screenshots/:filename', validateApiKey, (req, res) => {
  * POST /doc24/submit → jobId 즉시 반환, 결과는 GET /jobs/:id 로 폴링
  */
 app.post('/doc24/submit', validateApiKey, async (req, res) => {
-  const { loginId, password, accountType, recipient, title, content, files } = req.body;
+  const { loginId, password, accountType, recipient, recipientCode, title, content, files } = req.body;
 
   if (!loginId || !password) {
     return res.status(400).json({ success: false, error: '문서24 로그인 정보가 필요합니다.' });
@@ -548,11 +548,11 @@ app.post('/doc24/submit', validateApiKey, async (req, res) => {
     return res.status(400).json({ success: false, error: '수신기관과 제목은 필수입니다.' });
   }
 
-  console.log(`[Doc24 Submit] 큐 등록: recipient=${recipient}, title=${title}, accountType=${accountType || 'personal'}, files=${(files || []).length}개`);
+  console.log(`[Doc24 Submit] 큐 등록: recipient=${recipient}, recipientCode=${recipientCode || '없음'}, title=${title}, accountType=${accountType || 'personal'}, files=${(files || []).length}개`);
 
   try {
     const jobInfo = await addJob('doc24_submit', {
-      loginId, password, accountType: accountType || 'personal', recipient, title, content: content || '', files: files || [],
+      loginId, password, accountType: accountType || 'personal', recipient, recipientCode: recipientCode || '', title, content: content || '', files: files || [],
     });
 
     res.json({ success: true, async: true, jobId: jobInfo.jobId, message: '문서24 발송 작업이 등록되었습니다.' });

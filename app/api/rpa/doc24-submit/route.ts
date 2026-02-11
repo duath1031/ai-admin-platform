@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { recipient, title, content, files } = body;
+    const { recipient, recipientCode, title, content, files } = body;
 
     if (!recipient || !title) {
       return NextResponse.json({ error: '수신기관과 제목은 필수입니다.' }, { status: 400 });
@@ -214,6 +214,7 @@ export async function POST(request: NextRequest) {
       password: decryptedPassword,
       accountType: account.accountType || 'personal',
       recipient,
+      recipientCode: recipientCode || '',
       title,
       content: content || '',
       files: files || [],
