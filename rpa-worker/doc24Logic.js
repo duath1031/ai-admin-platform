@@ -1696,16 +1696,89 @@ async function debugDoc24Compose(loginId, password, accountType = 'personal') {
     }
 
     await navigateToCompose(page, log);
-    const structure = await dumpPageStructure(page, log);
 
+    // 기존 팝업들 먼저 닫기
+    const existingPages = page.context().pages();
+    for (const p of existingPages) {
+      if (p !== page && !p.isClosed()) {
+        const title = await p.title().catch(() => '');
+        log('debug', `기존 팝업 닫기: ${title}`);
+        await p.close().catch(() => {});
+      }
+    }
+    await humanDelay(500, 800);
+
+    // #ldapSearch 클릭 테스트
+    log('debug', '#ldapSearch 클릭 테스트 시작');
+    const ldapBtn = page.locator('#ldapSearch');
+    const btnExists = await ldapBtn.count().catch(() => 0) > 0;
+    log('debug', `#ldapSearch 버튼 존재: ${btnExists}`);
+
+    let popupInfo = null;
+    let modalInfo = null;
+
+    if (btnExists) {
+      try {
+        const [popup] = await Promise.all([
+          page.waitForEvent('popup', { timeout: 10000 }),
+          ldapBtn.click({ force: true }),
+        ]);
+        await popup.waitForLoadState('load', { timeout: 10000 }).catch(() => {});
+        popupInfo = {
+          url: popup.url(),
+          title: await popup.title().catch(() => ''),
+        };
+        log('debug', `팝업 열림: ${popupInfo.title} - ${popupInfo.url}`);
+        await popup.close().catch(() => {});
+      } catch (e) {
+        log('debug', `팝업 이벤트 실패: ${e.message}`);
+        // 모달/레이어 팝업 확인
+        await humanDelay(1500, 2000);
+        modalInfo = await page.evaluate(() => {
+          // 모달/레이어 팝업 요소 찾기
+          const modals = [];
+          const selectors = [
+            '.modal', '.popup', '.layer', '.dialog', '[role="dialog"]',
+            '.jconfirm', '.overlay', '.pop_wrap', '.pop_cont', '.popupLayer'
+          ];
+          for (const sel of selectors) {
+            document.querySelectorAll(sel).forEach(el => {
+              if (el.offsetParent !== null) { // visible
+                modals.push({
+                  selector: sel,
+                  id: el.id,
+                  className: el.className.substring(0, 100),
+                  text: (el.innerText || '').substring(0, 500),
+                });
+              }
+            });
+          }
+          // iframe 확인
+          const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
+            id: f.id, src: f.src, visible: f.offsetParent !== null,
+          }));
+          return { modals, iframes, pagesCount: 1 };
+        }).catch(() => null);
+        log('debug', `모달 확인: ${JSON.stringify(modalInfo)?.substring(0, 500)}`);
+      }
+    }
+
+    const structure = await dumpPageStructure(page, log);
     const screenshotBuf = await page.screenshot({ fullPage: true }).catch(() => null);
     const screenshotB64 = screenshotBuf
       ? `data:image/png;base64,${screenshotBuf.toString('base64')}`
       : null;
 
+    // 모든 페이지 정보
+    const allPages = page.context().pages();
+    const pagesInfo = allPages.map(p => ({ url: p.url(), closed: p.isClosed() }));
+
     return {
       success: true,
       structure,
+      popupInfo,
+      modalInfo,
+      pagesInfo,
       screenshot: screenshotB64,
       logs,
     };
