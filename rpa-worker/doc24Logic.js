@@ -1072,25 +1072,19 @@ async function sendDocument(page, log) {
       }).catch(() => []);
       log('send', `팝업 버튼들: ${JSON.stringify(popupButtons).substring(0, 500)}`);
 
-      // 확인/예/수정보내기 버튼 클릭 (button, a 태그 모두 포함)
+      // 확인/보내기 버튼 클릭 (.jconfirm-open으로 열린 팝업만 대상)
       const confirmBtnSelectors = [
-        // 수정보내기 우선
-        '.jconfirm button:has-text("수정보내기")',
-        '.jconfirm a:has-text("수정보내기")',
-        '.jconfirm-box button:has-text("수정보내기")',
-        '.jconfirm-box a:has-text("수정보내기")',
-        // 보내기
-        '.jconfirm button:has-text("보내기")',
-        '.jconfirm a:has-text("보내기")',
+        // "보내기" 버튼 (btnBlue 클래스를 가진 버튼 우선)
+        '.jconfirm.jconfirm-open button.btnBlue:has-text("보내기")',
+        '.jconfirm.jconfirm-open button:has-text("보내기")',
+        '.jconfirm-open button.btnBlue',
         // 일반 확인 버튼
-        '.jconfirm-buttons button:has-text("확인")',
-        '.jconfirm-buttons button:has-text("예")',
-        '.jconfirm-buttons button:has-text("전송")',
-        '.jconfirm-buttons button:has-text("발송")',
-        '.jconfirm button:has-text("확인")',
-        '.jconfirm a:has-text("확인")',
+        '.jconfirm.jconfirm-open button:has-text("확인")',
+        '.jconfirm.jconfirm-open button:has-text("예")',
+        '.jconfirm.jconfirm-open button:has-text("전송")',
+        '.jconfirm.jconfirm-open button:has-text("발송")',
         // 마지막 fallback
-        '.jconfirm-buttons button',
+        '.jconfirm-open .jconfirm-buttons button',
       ];
       for (const sel of confirmBtnSelectors) {
         const btn = page.locator(sel).first();
