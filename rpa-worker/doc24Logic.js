@@ -796,53 +796,142 @@ async function fillContent(page, title, content, log) {
         }
       }
 
-      // 방법 0-B: HWP 에디터 클릭 후 CDP를 통한 클립보드 붙여넣기
+      // 방법 0-B: iframe 기반 HWP 웹에디터 접근
       if (!contentFilled) {
-        const hwpEditorSelectors = [
-          '#Document_HwpCtrl',
-          'object#Document_HwpCtrl',
-          '.hwp_editor',
-          'iframe[name*="hwp"]',
-          'iframe[id*="hwp"]',
-          '#editorFrame',
-        ];
+        try {
+          // Playwright의 frame() 메서드로 HWP 에디터 iframe 접근
+          const hwpFrame = page.frame({ name: 'Document_HwpCtrl' }) ||
+                           page.frameLocator('#Document_HwpCtrl').first();
 
-        let editorClicked = false;
-        for (const sel of hwpEditorSelectors) {
-          const editor = page.locator(sel).first();
-          if (await editor.count().catch(() => 0) > 0) {
-            await editor.click({ force: true }).catch(() => {});
-            log('content', `HWP 에디터 클릭: ${sel}`);
-            editorClicked = true;
-            await humanDelay(300, 500);
-            break;
+          if (hwpFrame) {
+            log('content', 'HWP iframe 프레임 접근 성공');
+
+            // iframe 내부의 HWP API 분석
+            const hwpApiInfo = await page.evaluate(() => {
+              const iframe = document.getElementById('Document_HwpCtrl');
+              if (!iframe || !iframe.contentWindow) return { error: 'no iframe' };
+
+              try {
+                const win = iframe.contentWindow;
+                const apis = [];
+
+                // 전역 HWP 관련 객체 검색
+                ['HwpCtrl', 'hwpCtrl', 'HWP', 'hwp', 'editor', 'Editor', 'hwpEditor', 'HwpEditor'].forEach(name => {
+                  if (win[name]) {
+                    const methods = [];
+                    for (const key in win[name]) {
+                      if (typeof win[name][key] === 'function') methods.push(key);
+                    }
+                    apis.push({ name, methods: methods.slice(0, 20) });
+                  }
+                });
+
+                // postMessage 지원 확인
+                const hasPostMessage = typeof win.postMessage === 'function';
+
+                return { apis, hasPostMessage };
+              } catch (e) {
+                return { error: e.message };
+              }
+            }).catch(() => ({ error: 'eval failed' }));
+
+            log('content', `HWP iframe API 분석: ${JSON.stringify(hwpApiInfo).substring(0, 500)}`);
+
+            // iframe의 HWP API를 통해 텍스트 삽입 시도
+            const apiResult = await page.evaluate((text) => {
+              const iframe = document.getElementById('Document_HwpCtrl');
+              if (!iframe || !iframe.contentWindow) return { error: 'no iframe access' };
+
+              try {
+                const win = iframe.contentWindow;
+
+                // 방법 1: HwpCtrl API
+                if (win.HwpCtrl) {
+                  if (typeof win.HwpCtrl.InsertText === 'function') {
+                    win.HwpCtrl.InsertText(text);
+                    return { success: true, method: 'HwpCtrl.InsertText' };
+                  }
+                  if (typeof win.HwpCtrl.SetText === 'function') {
+                    win.HwpCtrl.SetText(text);
+                    return { success: true, method: 'HwpCtrl.SetText' };
+                  }
+                }
+
+                // 방법 2: hwpCtrl (소문자)
+                if (win.hwpCtrl) {
+                  if (typeof win.hwpCtrl.insertText === 'function') {
+                    win.hwpCtrl.insertText(text);
+                    return { success: true, method: 'hwpCtrl.insertText' };
+                  }
+                }
+
+                // 방법 3: editor 객체
+                if (win.editor) {
+                  if (typeof win.editor.insertText === 'function') {
+                    win.editor.insertText(text);
+                    return { success: true, method: 'editor.insertText' };
+                  }
+                  if (typeof win.editor.setContent === 'function') {
+                    win.editor.setContent(text);
+                    return { success: true, method: 'editor.setContent' };
+                  }
+                }
+
+                // 방법 4: postMessage로 텍스트 전송
+                win.postMessage({ type: 'insertText', text: text }, '*');
+                win.postMessage({ type: 'setText', text: text }, '*');
+                win.postMessage({ action: 'insertText', content: text }, '*');
+
+                return { success: false, message: 'postMessage sent, but no direct API found' };
+              } catch (e) {
+                return { error: e.message };
+              }
+            }, content).catch(e => ({ error: e.message }));
+
+            log('content', `HWP API 호출 결과: ${JSON.stringify(apiResult)}`);
+
+            if (apiResult && apiResult.success) {
+              contentFilled = true;
+            }
           }
-        }
 
-        if (editorClicked) {
-          // CDP를 통한 클립보드 설정 및 붙여넣기 시도
-          try {
-            const cdpSession = await page.context().newCDPSession(page);
+          // HWP 에디터 iframe 내부에 클릭 후 키보드 입력 시도
+          if (!contentFilled) {
+            const hwpEditorSelectors = [
+              '#Document_HwpCtrl',
+              'iframe[name="Document_HwpCtrl"]',
+            ];
 
-            // 클립보드 권한 부여
-            await cdpSession.send('Browser.grantPermissions', {
-              permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
-              origin: page.url(),
-            }).catch(() => {});
+            for (const sel of hwpEditorSelectors) {
+              const editor = page.locator(sel).first();
+              if (await editor.count().catch(() => 0) > 0) {
+                // iframe 클릭하여 포커스
+                await editor.click({ force: true }).catch(() => {});
+                log('content', `HWP 에디터 iframe 클릭: ${sel}`);
+                await humanDelay(500, 800);
 
-            // insertText로 직접 입력 시도 (CDP Input.insertText)
-            await cdpSession.send('Input.insertText', { text: content }).catch(() => {});
-            log('content', 'CDP Input.insertText 시도');
+                // iframe 내부에서 클릭 위치 찾기
+                const iframeBox = await editor.boundingBox().catch(() => null);
+                if (iframeBox) {
+                  // iframe 중앙을 클릭
+                  const centerX = iframeBox.x + iframeBox.width / 2;
+                  const centerY = iframeBox.y + iframeBox.height / 2;
+                  await page.mouse.click(centerX, centerY);
+                  log('content', `HWP iframe 중앙 클릭: (${centerX}, ${centerY})`);
+                  await humanDelay(300, 500);
 
-            await humanDelay(500, 800);
-            await saveScreenshot(page, 'doc24_content_cdp_attempt');
-
-            // 입력이 성공했는지 알 수 없으므로 일단 계속 진행
-            contentFilled = true;
-            log('content', 'CDP 텍스트 삽입 시도 완료');
-          } catch (cdpErr) {
-            log('content', `CDP 입력 실패: ${cdpErr.message}`, 'warning');
+                  // 클릭 후 키보드 타이핑 시도
+                  await page.keyboard.type(content, { delay: 5 });
+                  log('content', `HWP iframe에 키보드 타이핑 완료 (${content.length}자)`);
+                  contentFilled = true;
+                  await humanDelay(300, 500);
+                }
+                break;
+              }
+            }
           }
+        } catch (frameErr) {
+          log('content', `HWP iframe 접근 실패: ${frameErr.message}`, 'warning');
         }
       }
 
