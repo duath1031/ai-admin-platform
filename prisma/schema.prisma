@@ -83,7 +83,7 @@ model CompanyProfile {
   userId        String    @unique
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // 필수 식별 정보 (서류 자동완성용)
+  // Section 1: 필수 식별 정보 (서류 자동완성용)
   companyName   String?   // 상호
   ownerName     String?   // 대표자명
   bizRegNo      String?   // 사업자등록번호 (10자리)
@@ -92,14 +92,177 @@ model CompanyProfile {
   bizType       String?   // 업태/종목
   foundedDate   DateTime? // 설립일
 
-  // 부가 정보 (분석용)
-  employeeCount Int       @default(0)
-  capital       BigInt    @default(0)
+  // Section 2: 업종 상세
+  businessSector    String?   // 업종 대분류 (제조업/서비스업/건설업 등)
+  industryCode      String?   // 한국표준산업분류 코드
+  industryName      String?   // 산업분류명
+  businessSubType   String?   // 세부업종
+  establishmentDate DateTime? // 사업 개시일
+
+  // Section 3: 재무 정보 (최근 3개년)
+  revenueYear1          BigInt?  // 매출액 1차년도
+  revenueYear2          BigInt?  // 매출액 2차년도
+  revenueYear3          BigInt?  // 매출액 3차년도
+  revenueLabel1         String?  // 예: "2024년"
+  revenueLabel2         String?  // 예: "2023년"
+  revenueLabel3         String?  // 예: "2022년"
+  operatingProfitYear1  BigInt?  // 영업이익 1차년도
+  operatingProfitYear2  BigInt?  // 영업이익 2차년도
+  operatingProfitYear3  BigInt?  // 영업이익 3차년도
+  netIncomeYear1        BigInt?  // 당기순이익 1차년도
+  netIncomeYear2        BigInt?  // 당기순이익 2차년도
+  netIncomeYear3        BigInt?  // 당기순이익 3차년도
+  totalAssets           BigInt?  // 총자산
+  totalLiabilities      BigInt?  // 총부채
+  rndExpenditure        BigInt?  // 연구개발비
+  exportAmount          BigInt?  // 수출액
+
+  // Section 4: 고용 정보
+  employeeCount         Int      @default(0) // 상시근로자 수
+  permanentEmployees    Int?     // 정규직 수
+  researcherCount       Int?     // 연구원 수
+  foreignEmployees      Int?     // 외국인 근로자 수
+  capital               BigInt   @default(0) // 자본금
+
+  // Section 7: 연구소/전담부서
+  hasResearchInstitute  Boolean  @default(false) // 기업부설연구소
+  hasRndDepartment      Boolean  @default(false) // 연구개발전담부서
+  researchInstituteDate DateTime? // 연구소 인정일
+
+  // Section 8: 조달 정보
+  isG2bRegistered       Boolean  @default(false) // 나라장터 등록 여부
+  g2bRegistrationNumber String?  // 나라장터 업체등록번호
+  mainProducts          String?  // 주요 생산품목 (JSON)
+  productClassificationCodes String? // 물품분류번호 (JSON)
+  hasDirectProductionCert Boolean @default(false) // 직접생산확인증명
+  hasMasContract        Boolean  @default(false) // 다수공급자계약(MAS) 여부
+  masItems              String?  // MAS 품목 (JSON)
+
+  // Section 9: 수출 정보
+  isExporter            Boolean  @default(false) // 수출 기업 여부
+  exportCountries       String?  // 수출 대상국 (JSON)
+  importItems           String?  // 수입 품목 (JSON)
+
+  // Section 10: 외국인 관련
+  hasForeignWorkers     Boolean  @default(false) // 외국인 고용 여부
+  foreignWorkerVisaTypes String? // 비자 유형 (JSON)
+
+  // 메타
+  profileCompleteness   Int      @default(0) // 프로필 완성도 (0-100)
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  // Relations
+  licenses       ConstructionLicense[]
+  certifications CompanyCertification[]
+  patents        CompanyPatent[]
+  performances   PerformanceRecord[]
+  bidHistory     BidHistoryRecord[]
+
   @@index([userId])
+}
+
+// 건설 면허
+model ConstructionLicense {
+  id              String         @id @default(cuid())
+  companyProfileId String
+  companyProfile  CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+
+  licenseType     String         // 면허 종류 (토목, 건축, 산업환경설비 등)
+  licenseNumber   String?        // 면허 번호
+  grade           String?        // 등급
+  capacity        BigInt?        // 시공능력평가액
+  issueDate       DateTime?      // 취득일
+  expiryDate      DateTime?      // 만료일
+  isActive        Boolean        @default(true)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([companyProfileId])
+}
+
+// 기업 인증 (벤처/이노비즈/메인비즈 등)
+model CompanyCertification {
+  id              String         @id @default(cuid())
+  companyProfileId String
+  companyProfile  CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+
+  certType        String         // 인증 유형 (venture, innobiz, mainbiz, iso9001 등)
+  certName        String         // 인증명
+  certNumber      String?        // 인증번호
+  issuer          String?        // 발급기관
+  issueDate       DateTime?      // 발급일
+  expiryDate      DateTime?      // 만료일
+  isActive        Boolean        @default(true)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([companyProfileId])
+}
+
+// 지식재산권 (특허/실용신안/상표 등)
+model CompanyPatent {
+  id              String         @id @default(cuid())
+  companyProfileId String
+  companyProfile  CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+
+  patentType      String         // 종류 (patent, utility_model, trademark, design)
+  title           String         // 명칭
+  registrationNo  String?        // 등록번호
+  applicationNo   String?        // 출원번호
+  status          String         @default("registered") // registered, pending, expired
+  registrationDate DateTime?     // 등록일
+  expiryDate      DateTime?      // 만료일
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([companyProfileId])
+}
+
+// 수행실적 (전업종)
+model PerformanceRecord {
+  id              String         @id @default(cuid())
+  companyProfileId String
+  companyProfile  CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+
+  projectName     String         // 사업명
+  clientName      String?        // 발주처
+  contractAmount  BigInt?        // 계약금액
+  startDate       DateTime?      // 착수일
+  endDate         DateTime?      // 완료일
+  projectType     String?        // 유형 (service, goods, construction)
+  description     String?        // 비고
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([companyProfileId])
+}
+
+// 과거 입찰 이력
+model BidHistoryRecord {
+  id              String         @id @default(cuid())
+  companyProfileId String
+  companyProfile  CompanyProfile @relation(fields: [companyProfileId], references: [id], onDelete: Cascade)
+
+  bidNo           String?        // 공고번호
+  bidName         String         // 공고명
+  agency          String?        // 발주기관
+  bidAmount       BigInt?        // 투찰금액
+  estimatedPrice  BigInt?        // 예정가격
+  bidDate         DateTime?      // 투찰일
+  result          String?        // 결과 (won, lost, cancelled)
+  bidRate         Float?         // 투찰률 (%)
+  notes           String?        // 비고
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([companyProfileId])
 }
 
 model Document {

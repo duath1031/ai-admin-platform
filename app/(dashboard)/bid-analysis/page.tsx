@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui";
 import { BidCalculator, AgencyBiasAnalyzer, CompetitorProfile } from "@/components/procurement";
+import { filterBids, type SmartFilterResult, type CompanyDataForBid } from "@/lib/analytics/smartBidFilter";
 
 // ─── Types ───
 
@@ -103,6 +104,7 @@ const TABS = [
   { id: "bid", label: "공공 입찰", color: "teal" },
   { id: "prespec", label: "사전 규격", color: "indigo" },
   { id: "winning", label: "낙찰 정보", color: "amber" },
+  { id: "smartfilter", label: "스마트 필터", color: "emerald" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -126,6 +128,12 @@ export default function BidAnalysisPage() {
   const [bidResult, setBidResult] = useState<BidResult | null>(null);
   const [preSpecResult, setPreSpecResult] = useState<PreSpecResult | null>(null);
   const [winningResult, setWinningResult] = useState<WinningBidResult | null>(null);
+
+  // 스마트 필터
+  const [smartFilterResults, setSmartFilterResults] = useState<SmartFilterResult[]>([]);
+  const [companyData, setCompanyData] = useState<CompanyDataForBid | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
 
   const handleSearch = useCallback(async () => {
     setIsLoading(true);
@@ -174,6 +182,44 @@ export default function BidAnalysisPage() {
         const data = await res.json();
         if (!data.success) throw new Error(data.error || "검색 실패");
         setWinningResult(data);
+      } else if (activeTab === "smartfilter") {
+        // 먼저 입찰공고 검색
+        const body: Record<string, unknown> = { bidType };
+        if (keyword.trim()) body.keyword = keyword.trim();
+        if (region) body.region = region;
+        if (minAmount) body.minAmount = Number(minAmount);
+        if (maxAmount) body.maxAmount = Number(maxAmount);
+
+        const res = await fetch("/api/analytics/bid-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const bidData = await res.json();
+        if (!bidData.success) throw new Error(bidData.error || "검색 실패");
+        setBidResult(bidData);
+
+        // 기업 프로필 로드
+        if (!companyData) {
+          setProfileLoading(true);
+          setProfileError("");
+          try {
+            const profileRes = await fetch("/api/user/company-profile");
+            const profileJson = await profileRes.json();
+            if (profileJson.success && profileJson.data) {
+              setCompanyData(profileJson.data);
+              const filtered = filterBids(bidData.items, profileJson.data);
+              setSmartFilterResults(filtered);
+            } else {
+              setProfileError("기업 프로필을 먼저 등록해주세요.");
+            }
+          } finally {
+            setProfileLoading(false);
+          }
+        } else {
+          const filtered = filterBids(bidData.items, companyData);
+          setSmartFilterResults(filtered);
+        }
       }
       setLastUpdated(new Date());
     } catch (e) {
@@ -251,7 +297,9 @@ export default function BidAnalysisPage() {
                   ? "border-teal-600 text-teal-700"
                   : tab.color === "indigo"
                     ? "border-indigo-600 text-indigo-700"
-                    : "border-amber-600 text-amber-700"
+                    : tab.color === "emerald"
+                      ? "border-emerald-600 text-emerald-700"
+                      : "border-amber-600 text-amber-700"
                 : "border-transparent text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -286,7 +334,7 @@ export default function BidAnalysisPage() {
             </div>
 
             {/* 입찰 유형 - 공공입찰, 낙찰정보 탭 */}
-            {(activeTab === "bid" || activeTab === "winning") && (
+            {(activeTab === "bid" || activeTab === "winning" || activeTab === "smartfilter") && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   입찰 유형
@@ -306,7 +354,7 @@ export default function BidAnalysisPage() {
             )}
 
             {/* 지역 - 공공입찰 탭만 */}
-            {activeTab === "bid" && (
+            {(activeTab === "bid" || activeTab === "smartfilter") && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   지역
@@ -327,7 +375,7 @@ export default function BidAnalysisPage() {
             )}
 
             {/* 금액 범위 - 공공입찰 탭만 */}
-            {activeTab === "bid" && (
+            {(activeTab === "bid" || activeTab === "smartfilter") && (
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -366,7 +414,9 @@ export default function BidAnalysisPage() {
                     ? "bg-teal-600 hover:bg-teal-700"
                     : activeTab === "prespec"
                       ? "bg-indigo-600 hover:bg-indigo-700"
-                      : "bg-amber-600 hover:bg-amber-700"
+                      : activeTab === "smartfilter"
+                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        : "bg-amber-600 hover:bg-amber-700"
                 }`}
               >
                 {isLoading ? (
@@ -382,7 +432,9 @@ export default function BidAnalysisPage() {
                     ? "입찰공고 검색"
                     : activeTab === "prespec"
                       ? "사전규격 검색"
-                      : "낙찰정보 검색"
+                      : activeTab === "smartfilter"
+                        ? "스마트 필터 검색"
+                        : "낙찰정보 검색"
                 )}
               </button>
             </div>
@@ -641,8 +693,80 @@ export default function BidAnalysisPage() {
         </div>
       )}
 
+      {/* ─── 스마트 필터 결과 ─── */}
+      {activeTab === "smartfilter" && smartFilterResults.length > 0 && (
+        <div className="mt-6 space-y-4">
+          {profileError && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+              {profileError}
+              <a href="/mypage/company" className="ml-2 text-yellow-700 underline font-medium">기업정보 등록</a>
+            </div>
+          )}
+          {profileLoading && (
+            <div className="p-4 bg-blue-50 rounded-lg text-sm text-blue-700">기업 프로필을 불러오는 중...</div>
+          )}
+          {!profileError && !profileLoading && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <SummaryCard label="총 공고" value={`${smartFilterResults.length}건`} color="teal" />
+                <SummaryCard
+                  label="참여 가능"
+                  value={`${smartFilterResults.filter(r => r.overallStatus === 'eligible').length}건`}
+                  color="emerald"
+                />
+                <SummaryCard
+                  label="조건부"
+                  value={`${smartFilterResults.filter(r => r.overallStatus === 'conditional').length}건`}
+                  color="amber"
+                />
+                <SummaryCard
+                  label="부적격"
+                  value={`${smartFilterResults.filter(r => r.overallStatus === 'ineligible').length}건`}
+                  color="gray"
+                />
+              </div>
+
+              <Card>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b text-left">
+                          <th className="px-3 py-3 font-medium text-gray-600 text-center w-20">판정</th>
+                          <th className="px-3 py-3 font-medium text-gray-600">공고명</th>
+                          <th className="px-3 py-3 font-medium text-gray-600">공고기관</th>
+                          <th className="px-3 py-3 font-medium text-gray-600 text-right">추정가격</th>
+                          <th className="px-3 py-3 font-medium text-gray-600 text-center">체크</th>
+                          <th className="px-2 py-3 font-medium text-gray-600">마감</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {smartFilterResults.map((result, i) => (
+                          <SmartFilterRow key={i} result={result} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 스마트 필터 빈 상태 */}
+      {activeTab === "smartfilter" && smartFilterResults.length === 0 && !isLoading && (
+        <div className="mt-12 text-center text-gray-400">
+          <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          <p className="text-lg font-medium">기업 프로필 기반 입찰 적격성을 분석합니다</p>
+          <p className="text-sm mt-1">입찰공고를 검색하면 자동으로 참여 가능 여부를 판정합니다.</p>
+        </div>
+      )}
+
       {/* 빈 상태 */}
-      {!currentResult && !isLoading && (
+      {!currentResult && !isLoading && activeTab !== "smartfilter" && (
         <div className="mt-12 text-center text-gray-400">
           <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -652,7 +776,9 @@ export default function BidAnalysisPage() {
               ? "입찰공고를 검색하세요"
               : activeTab === "prespec"
                 ? "사전규격을 검색하세요"
-                : "낙찰정보를 검색하세요"}
+                : activeTab === "winning"
+                  ? "낙찰정보를 검색하세요"
+                  : "스마트 필터로 검색하세요"}
           </p>
           <p className="text-sm mt-1">나라장터 공공데이터 API를 통해 실시간 조달 정보를 조회합니다.</p>
         </div>
@@ -670,6 +796,7 @@ function SummaryCard({ label, value, color }: { label: string; value: string; co
     gray: "bg-gray-50 text-gray-700",
     indigo: "bg-indigo-50 text-indigo-700",
     amber: "bg-amber-50 text-amber-700",
+    emerald: "bg-emerald-50 text-emerald-700",
   };
   return (
     <Card>
@@ -700,6 +827,68 @@ function DdayBadge({ days }: { days: number }) {
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="p-8 text-center text-gray-400">{message}</div>
+  );
+}
+
+function SmartFilterRow({ result }: { result: SmartFilterResult }) {
+  const [expanded, setExpanded] = useState(false);
+  const statusConfig = {
+    eligible: { label: "참여가능", bg: "bg-green-100 text-green-700" },
+    conditional: { label: "조건부", bg: "bg-yellow-100 text-yellow-700" },
+    ineligible: { label: "부적격", bg: "bg-red-100 text-red-700" },
+  }[result.overallStatus];
+
+  return (
+    <>
+      <tr
+        className="border-b hover:bg-gray-50 transition-colors cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <td className="px-3 py-3 text-center">
+          <span className={`text-xs font-bold px-2 py-1 rounded-full ${statusConfig.bg}`}>
+            {statusConfig.label}
+          </span>
+        </td>
+        <td className="px-3 py-3 max-w-xs">
+          <p className="font-medium text-gray-800 truncate" title={result.bid.bidNtceNm}>
+            {result.bid.bidNtceNm}
+          </p>
+        </td>
+        <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{result.bid.ntceInsttNm}</td>
+        <td className="px-3 py-3 text-right font-medium text-gray-800 whitespace-nowrap">
+          {formatKRW(result.bid.presmptPrce)}
+        </td>
+        <td className="px-3 py-3 text-center whitespace-nowrap">
+          <span className="text-xs text-green-600">{result.passCount}</span>
+          <span className="text-xs text-gray-400">/</span>
+          <span className="text-xs text-yellow-600">{result.warnCount}</span>
+          <span className="text-xs text-gray-400">/</span>
+          <span className="text-xs text-red-600">{result.failCount}</span>
+        </td>
+        <td className="px-2 py-3 whitespace-nowrap">
+          <DdayBadge days={result.bid.daysRemaining} />
+        </td>
+      </tr>
+      {expanded && (
+        <tr className="border-b bg-gray-50">
+          <td colSpan={6} className="px-4 py-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {result.checks.map((check, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs">
+                  {check.status === 'pass' && <span className="w-2 h-2 rounded-full bg-green-500" />}
+                  {check.status === 'warn' && <span className="w-2 h-2 rounded-full bg-yellow-500" />}
+                  {check.status === 'fail' && <span className="w-2 h-2 rounded-full bg-red-500" />}
+                  {check.status === 'unknown' && <span className="w-2 h-2 rounded-full bg-gray-400" />}
+                  <span className="font-medium text-gray-700">{check.name}:</span>
+                  <span className="text-gray-500 truncate" title={check.detail}>{check.detail}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-gray-600">{result.summary}</p>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

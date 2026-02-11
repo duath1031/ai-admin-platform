@@ -26,6 +26,7 @@ export default function ChatPage() {
 
   const { messages, isLoading, addMessage, setLoading, setUploadedFileData, rpaState, setRpaState, resetRpaState, doc24State, setDoc24State, resetDoc24State } = useChatStore();
   const [showHumanModal, setShowHumanModal] = useState(false);
+  const [showDelegateModal, setShowDelegateModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   // 문서24 관련 상태
   const [showDoc24Modal, setShowDoc24Modal] = useState(false);
@@ -1408,6 +1409,68 @@ export default function ChatPage() {
                 </div>
               </div>
               <button onClick={() => setShowHumanModal(false)} className="mt-3 w-full py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 대리 접수 안내 모달 */}
+      {showDelegateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-900">📋 대리 접수 안내</h3>
+                <button onClick={() => setShowDelegateModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="mb-4 p-4 bg-gradient-to-r from-purple-500 to-violet-600 rounded-xl text-white">
+                <p className="text-sm font-medium">행정사가 위임장을 기반으로 대리 접수합니다</p>
+                <p className="text-xs opacity-80 mt-1">정부24, 각 지자체, 관할 관청 등 모든 기관 대응</p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                  <p className="text-sm text-purple-800 font-medium mb-2">📌 대리 접수 절차</p>
+                  <ol className="text-xs text-purple-700 space-y-1 list-decimal list-inside">
+                    <li>카카오톡/전화로 민원 내용 상담</li>
+                    <li>위임장 작성 및 서명 (전자서명 가능)</li>
+                    <li>필요 서류 전달 (카톡/이메일)</li>
+                    <li>행정사가 관할 기관에 대리 접수</li>
+                    <li>처리 결과 안내 및 서류 전달</li>
+                  </ol>
+                </div>
+
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800 font-medium mb-2">💡 이런 경우 이용하세요</p>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• 직접 방문이 어려운 경우</li>
+                    <li>• 온라인 접수가 불가능한 민원</li>
+                    <li>• 복잡한 서류 준비가 필요한 경우</li>
+                    <li>• 보정/보완 요구에 대응이 필요한 경우</li>
+                  </ul>
+                </div>
+
+                <div className="p-3 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl text-white">
+                  <h4 className="font-bold mb-1 text-sm">행정사합동사무소 정의</h4>
+                  <p className="text-xs text-blue-100 mb-2">염현수 대표 행정사</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <a href="tel:070-8657-1888" className="flex items-center justify-center gap-1 py-2 bg-white text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-50">
+                      📞 070-8657-1888
+                    </a>
+                    <a href="https://pf.kakao.com/_jWfwb" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 py-2 bg-yellow-400 text-yellow-900 rounded-lg text-xs font-medium hover:bg-yellow-300">
+                      💬 카카오 상담
+                    </a>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setShowDelegateModal(false)} className="mt-3 w-full py-2.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">
                 닫기
               </button>
             </div>
