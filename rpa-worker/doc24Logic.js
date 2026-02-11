@@ -1059,12 +1059,18 @@ async function sendDocument(page, log) {
         return { success: false, error: `발송 실패: ${popupContent.trim().substring(0, 200)}` };
       }
 
-      // 확인/예 버튼 클릭
+      // 확인/예/수정보내기 버튼 클릭
       const confirmBtnSelectors = [
         '.jconfirm-buttons button:has-text("확인")',
         '.jconfirm-buttons button:has-text("예")',
         '.jconfirm-buttons button:has-text("전송")',
         '.jconfirm-buttons button:has-text("발송")',
+        '.jconfirm-buttons button:has-text("수정보내기")',
+        '.jconfirm-buttons button:has-text("보내기")',
+        // jconfirm-box 내부에도 버튼이 있을 수 있음
+        '.jconfirm-box button:has-text("수정보내기")',
+        '.jconfirm-box button:has-text("보내기")',
+        '.jconfirm-box button:has-text("확인")',
         '.jconfirm-buttons button',
       ];
       for (const sel of confirmBtnSelectors) {
