@@ -845,7 +845,38 @@ async function fillContent(page, title, content, log) {
               try {
                 const win = iframe.contentWindow;
 
-                // 방법 1: HwpCtrl API
+                // 방법 1: HwpCtrl.CreateAction("InsertText") - 한컴 웹오피스 표준 API
+                if (win.HwpCtrl && typeof win.HwpCtrl.CreateAction === 'function') {
+                  try {
+                    // InsertText 액션 실행
+                    const act = win.HwpCtrl.CreateAction('InsertText');
+                    const set = act.CreateSet();
+                    set.SetItem('Text', text);
+                    act.Execute(set);
+                    return { success: true, method: 'HwpCtrl.CreateAction(InsertText)' };
+                  } catch (e1) {
+                    // Run 명령어 방식 시도
+                    try {
+                      // 먼저 문서 시작으로 이동
+                      win.HwpCtrl.Run('MoveDocBegin');
+                      // InsertText 액션 시도
+                      win.HwpCtrl.HAction.GetDefault('InsertText', win.HwpCtrl.HParameterSet.HInsertText.HSet);
+                      win.HwpCtrl.HParameterSet.HInsertText.Text = text;
+                      win.HwpCtrl.HAction.Execute('InsertText', win.HwpCtrl.HParameterSet.HInsertText.HSet);
+                      return { success: true, method: 'HwpCtrl.HAction(InsertText)' };
+                    } catch (e2) {
+                      // Run("InsertText") 직접 시도
+                      try {
+                        win.HwpCtrl.Run('InsertText', text);
+                        return { success: true, method: 'HwpCtrl.Run(InsertText)' };
+                      } catch (e3) {
+                        // 계속 진행
+                      }
+                    }
+                  }
+                }
+
+                // 방법 2: HwpCtrl.InsertText 직접 호출 (일부 버전)
                 if (win.HwpCtrl) {
                   if (typeof win.HwpCtrl.InsertText === 'function') {
                     win.HwpCtrl.InsertText(text);
@@ -857,7 +888,7 @@ async function fillContent(page, title, content, log) {
                   }
                 }
 
-                // 방법 2: hwpCtrl (소문자)
+                // 방법 3: hwpCtrl (소문자)
                 if (win.hwpCtrl) {
                   if (typeof win.hwpCtrl.insertText === 'function') {
                     win.hwpCtrl.insertText(text);
@@ -865,7 +896,7 @@ async function fillContent(page, title, content, log) {
                   }
                 }
 
-                // 방법 3: editor 객체
+                // 방법 4: editor 객체
                 if (win.editor) {
                   if (typeof win.editor.insertText === 'function') {
                     win.editor.insertText(text);
@@ -877,7 +908,7 @@ async function fillContent(page, title, content, log) {
                   }
                 }
 
-                // 방법 4: postMessage로 텍스트 전송
+                // 방법 5: postMessage로 텍스트 전송
                 win.postMessage({ type: 'insertText', text: text }, '*');
                 win.postMessage({ type: 'setText', text: text }, '*');
                 win.postMessage({ action: 'insertText', content: text }, '*');
