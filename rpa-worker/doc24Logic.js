@@ -1117,7 +1117,46 @@ async function sendDocument(page, log) {
     await humanDelay(1000, 1500);
     const popupStillOpen = await page.locator('.jconfirm.jconfirm-open').count().catch(() => 0);
     if (popupStillOpen > 0) {
-      log('send', '팝업이 여전히 열려있음 - JS로 보내기 버튼 직접 클릭 시도');
+      log('send', '팝업이 여전히 열려있음 - 팝업 내부 구조 분석');
+
+      // 팝업 내부 구조 전체 덤프
+      const popupAnalysis = await page.evaluate(() => {
+        const popup = document.querySelector('.jconfirm.jconfirm-open');
+        if (!popup) return { found: false };
+
+        // 팝업 전체 HTML (첫 2000자)
+        const html = popup.outerHTML?.substring(0, 2000);
+
+        // 모든 텍스트 요소
+        const allText = popup.innerText?.substring(0, 500);
+
+        // iframe 확인
+        const iframes = popup.querySelectorAll('iframe');
+        const iframeInfo = Array.from(iframes).map(f => ({
+          id: f.id, src: f.src?.substring(0, 100),
+        }));
+
+        // hidden input들
+        const hiddens = Array.from(popup.querySelectorAll('input[type="hidden"]')).map(i => ({
+          name: i.name, value: i.value?.substring(0, 50),
+        }));
+
+        // 에러/경고 요소
+        const errorEls = popup.querySelectorAll('.error, .alert, .warning, [class*="err"], [class*="warn"]');
+        const errors = Array.from(errorEls).map(e => e.textContent?.substring(0, 100));
+
+        return {
+          found: true,
+          allText,
+          iframes: iframeInfo,
+          hiddens: hiddens.slice(0, 5),
+          errors,
+          htmlPreview: html?.substring(0, 500),
+        };
+      }).catch(() => ({ found: false, error: 'eval failed' }));
+      log('send', `팝업 분석: ${JSON.stringify(popupAnalysis).substring(0, 1000)}`);
+
+      // JS로 보내기 버튼 직접 클릭 시도
       const jsClick = await page.evaluate(() => {
         const popup = document.querySelector('.jconfirm.jconfirm-open');
         if (!popup) return { success: false, error: 'popup not found' };
