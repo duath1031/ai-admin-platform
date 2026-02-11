@@ -27,8 +27,8 @@ const {
 } = require('./src/stealthBrowser');
 
 const TIMEOUTS = {
-  navigation: 30000,
-  element: 10000,
+  navigation: 60000,
+  element: 15000,
   pdfConversion: 15000, // 문서24 PDF 변환 ~5-6초
 };
 
@@ -76,12 +76,27 @@ async function dismissJconfirmAlerts(page, log) {
 async function loginToDoc24(page, loginId, password, log, accountType = 'personal') {
   log('login', `문서24 로그인 시작 - ID: ${loginId}, accountType: ${accountType}, PW길이: ${password?.length || 0}`);
 
-  // 로그인 페이지 이동
-  await page.goto('https://docu.gdoc.go.kr/cmm/main/loginForm.do', {
-    waitUntil: 'domcontentloaded',
-    timeout: TIMEOUTS.navigation,
-  });
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  // 로그인 페이지 이동 (최대 3회 재시도)
+  const loginUrl = 'https://docu.gdoc.go.kr/cmm/main/loginForm.do';
+  let navSuccess = false;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      log('login', `로그인 페이지 접속 시도 ${attempt}/3...`);
+      await page.goto(loginUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: TIMEOUTS.navigation,
+      });
+      navSuccess = true;
+      break;
+    } catch (navErr) {
+      log('login', `접속 시도 ${attempt}/3 실패: ${navErr.message.slice(0, 100)}`);
+      if (attempt < 3) await humanDelay(2000, 3000);
+    }
+  }
+  if (!navSuccess) {
+    return { success: false, error: '문서24 사이트에 접속할 수 없습니다. 사이트가 일시 점검 중이거나 네트워크 문제일 수 있습니다.' };
+  }
+  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
   await humanDelay(800, 1200);
   await saveScreenshot(page, 'doc24_01_login_page');
 
