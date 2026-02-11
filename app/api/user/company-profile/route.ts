@@ -97,6 +97,15 @@ const companyProfileSchema = z.object({
   hasRndDepartment: z.boolean().optional().default(false),
   researchInstituteDate: z.string().optional().nullable(),
 
+  // Section 7-1: 제조업 정보
+  isManufacturer: z.boolean().optional().default(false),
+  manufacturingItems: z.string().optional().nullable(),
+  factoryAddress: z.string().max(200).optional().nullable(),
+  factoryArea: z.string().max(50).optional().nullable(),
+  manufacturingCerts: z.string().optional().nullable(),
+  hasFactoryRegistration: z.boolean().optional().default(false),
+  mainRawMaterials: z.string().optional().nullable(),
+
   // Section 8: 조달 정보
   isG2bRegistered: z.boolean().optional().default(false),
   g2bRegistrationNumber: z.string().max(50).optional().nullable(),

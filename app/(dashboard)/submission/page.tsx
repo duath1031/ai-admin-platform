@@ -102,7 +102,7 @@ const PROCUREMENT_SITES = [
 export default function SubmissionPage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
-  const typeParam = searchParams.get("type");
+  const typeParam = searchParams.get("type") || searchParams.get("tab");
 
   // URL 파라미터로 탭 초기화
   const getInitialTab = (): TabType => {

@@ -32,6 +32,33 @@ export default function RndProcurementSection({ form, onChange }: Props) {
         </CardContent>
       </Card>
 
+      {/* 제조업 정보 */}
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+            <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            제조업 정보
+          </h2>
+          <div className="space-y-4">
+            <CheckboxField label="제조업체 해당" checked={form.isManufacturer || false} onChange={(v) => onChange("isManufacturer", v)} description="제조업을 영위하는 경우 체크" />
+            {form.isManufacturer && (
+              <>
+                <FormField label="제조물품" value={form.manufacturingItems || ""} onChange={(v) => onChange("manufacturingItems", v)} placeholder="예: 전자부품, 플라스틱 사출물, 금속 가공품 (쉼표 구분)" />
+                <div className="grid md:grid-cols-2 gap-4">
+                  <FormField label="공장 소재지" value={form.factoryAddress || ""} onChange={(v) => onChange("factoryAddress", v)} placeholder="공장 주소" optional />
+                  <FormField label="공장 면적 (㎡)" value={form.factoryArea || ""} onChange={(v) => onChange("factoryArea", v)} placeholder="예: 500" optional />
+                </div>
+                <CheckboxField label="공장등록증 보유" checked={form.hasFactoryRegistration || false} onChange={(v) => onChange("hasFactoryRegistration", v)} />
+                <FormField label="제조 관련 인증" value={form.manufacturingCerts || ""} onChange={(v) => onChange("manufacturingCerts", v)} placeholder="예: HACCP, GMP, KS, CE, ISO14001 (쉼표 구분)" optional />
+                <FormField label="주요 원자재" value={form.mainRawMaterials || ""} onChange={(v) => onChange("mainRawMaterials", v)} placeholder="예: 스테인리스 강판, PP수지, 구리선 (쉼표 구분)" optional />
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* 조달 정보 */}
       <Card>
         <CardContent className="p-6">

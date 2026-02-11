@@ -974,21 +974,21 @@ export default function ChatPage() {
             <span className="text-xl">📄</span>
             <span>공문접수</span>
           </button>
-          {/* 👨‍💼 전문가 대행 */}
+          {/* 👨‍💼 접수대행 → 민원접수 페이지 proxy 탭 */}
           <button
-            onClick={() => setShowHumanModal(true)}
+            onClick={() => router.push("/submission?tab=proxy")}
             className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
           >
             <span className="text-xl">👨‍💼</span>
-            <span>전문가 대행</span>
+            <span>접수대행</span>
           </button>
-          {/* 📋 대리 접수 */}
+          {/* 📋 대리인선임 → 민원접수 페이지 delegate 탭 */}
           <button
-            onClick={() => setShowDelegateModal(true)}
+            onClick={() => router.push("/submission?tab=delegate")}
             className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
           >
             <span className="text-xl">📋</span>
-            <span>대리 접수</span>
+            <span>대리인선임</span>
           </button>
         </div>
         {/* 보조 버튼 */}
@@ -1327,13 +1327,13 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 전문가 대행 접수 모달 (50,000원) */}
+      {/* 접수대행 모달 */}
       {showHumanModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
             <div className="p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-900">👨‍💼 전문가 대행 접수</h3>
+                <h3 className="text-lg font-bold text-gray-900">👨‍💼 접수대행</h3>
                 <button onClick={() => setShowHumanModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1360,11 +1360,11 @@ export default function ChatPage() {
                 <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                   <p className="text-sm text-amber-800 font-medium mb-2">✅ 포함 서비스</p>
                   <ul className="text-xs text-amber-700 space-y-1">
-                    <li>• 행정사가 대리인으로 민원 접수</li>
-                    <li>• 서류 검토 및 보완 안내</li>
-                    <li>• 관할 기관 제출 및 진행 관리</li>
-                    <li>• 처리 완료 시 알림 발송</li>
+                    <li>• 행정사가 접수를 대행합니다</li>
+                    <li>• 관할 기관 제출 및 접수 확인</li>
+                    <li>• 접수 완료 시 결과 안내</li>
                   </ul>
+                  <p className="text-xs text-amber-600 mt-2 italic">※ 대리 서비스가 필요하시면 옆의 &quot;대리인선임&quot;으로 진행해주세요.</p>
                 </div>
 
                 {/* 필요 서류 안내 */}
@@ -1416,13 +1416,13 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 대리 접수 안내 모달 */}
+      {/* 대리인선임 안내 모달 */}
       {showDelegateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
             <div className="p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-900">📋 대리 접수 안내</h3>
+                <h3 className="text-lg font-bold text-gray-900">📋 대리인선임 안내</h3>
                 <button onClick={() => setShowDelegateModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1431,18 +1431,19 @@ export default function ChatPage() {
               </div>
 
               <div className="mb-4 p-4 bg-gradient-to-r from-purple-500 to-violet-600 rounded-xl text-white">
-                <p className="text-sm font-medium">행정사가 위임장을 기반으로 대리 접수합니다</p>
-                <p className="text-xs opacity-80 mt-1">정부24, 각 지자체, 관할 관청 등 모든 기관 대응</p>
+                <p className="text-sm font-medium">행정사가 대리인으로 선임되어 민원을 처리합니다</p>
+                <p className="text-xs opacity-80 mt-1">위임장 기반 대리인 선임 → 서류 검토/보완 → 관할 기관 제출 → 결과 안내</p>
               </div>
 
               <div className="space-y-3">
                 <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
-                  <p className="text-sm text-purple-800 font-medium mb-2">📌 대리 접수 절차</p>
+                  <p className="text-sm text-purple-800 font-medium mb-2">📌 대리인선임 절차</p>
                   <ol className="text-xs text-purple-700 space-y-1 list-decimal list-inside">
                     <li>카카오톡/전화로 민원 내용 상담</li>
                     <li>위임장 작성 및 서명 (전자서명 가능)</li>
                     <li>필요 서류 전달 (카톡/이메일)</li>
-                    <li>행정사가 관할 기관에 대리 접수</li>
+                    <li>행정사가 대리인으로 민원 접수</li>
+                    <li>서류 검토 및 보완 대응</li>
                     <li>처리 결과 안내 및 서류 전달</li>
                   </ol>
                 </div>
@@ -1466,6 +1467,14 @@ export default function ChatPage() {
                     </a>
                     <a href="https://pf.kakao.com/_jWfwb" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 py-2 bg-yellow-400 text-yellow-900 rounded-lg text-xs font-medium hover:bg-yellow-300">
                       💬 카카오 상담
+                    </a>
+                    <a
+                      href="https://www.jungeui.com/%EB%AC%B8%EC%9D%98%ED%95%98%EA%B8%B0"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1 py-2 bg-blue-100 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-200 col-span-2"
+                    >
+                      🌐 온라인 문의하기
                     </a>
                   </div>
                 </div>

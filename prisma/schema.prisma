@@ -129,6 +129,15 @@ model CompanyProfile {
   hasRndDepartment      Boolean  @default(false) // 연구개발전담부서
   researchInstituteDate DateTime? // 연구소 인정일
 
+  // Section 7-1: 제조업 정보 (제조업체인 경우)
+  isManufacturer        Boolean  @default(false) // 제조업체 여부
+  manufacturingItems    String?  // 제조물품 (JSON 배열)
+  factoryAddress        String?  // 공장 소재지
+  factoryArea           String?  // 공장 면적 (㎡)
+  manufacturingCerts    String?  // 제조 관련 인증 (HACCP, GMP, KS 등 JSON)
+  hasFactoryRegistration Boolean @default(false) // 공장등록증 보유
+  mainRawMaterials      String?  // 주요 원자재 (JSON)
+
   // Section 8: 조달 정보
   isG2bRegistered       Boolean  @default(false) // 나라장터 등록 여부
   g2bRegistrationNumber String?  // 나라장터 업체등록번호
