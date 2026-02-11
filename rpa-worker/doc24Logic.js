@@ -398,6 +398,21 @@ async function selectRecipient(page, recipient, log) {
   log('recipient', `수신기관 선택 시작: "${recipient}"`);
   await dismissJconfirmAlerts(page, log);
 
+  // Step 0: 기존에 열린 공지/알림 팝업들 먼저 닫기
+  const existingPages = page.context().pages();
+  for (const p of existingPages) {
+    if (p !== page && !p.isClosed()) {
+      const url = p.url();
+      const title = await p.title().catch(() => '');
+      // 공지/알림 팝업인 경우 닫기 (popup_t.do, 공지, 알림 등)
+      if (url.includes('popup_t.do') || url.includes('popup') || title.includes('공지') || title.includes('알림') || title.includes('안내')) {
+        log('recipient', `기존 팝업 닫기: ${title || url}`);
+        await p.close().catch(() => {});
+        await humanDelay(300, 500);
+      }
+    }
+  }
+
   // Step 1: #ldapSearch 클릭 + popup 이벤트를 Promise.all로 동시 대기
   log('recipient', '#ldapSearch 클릭 + popup 대기 (Promise.all)');
   let searchPopup = null;
@@ -430,12 +445,20 @@ async function selectRecipient(page, recipient, log) {
     log('recipient', `popup 이벤트 대기 실패: ${e.message}`, 'warning');
   }
 
-  // fallback: context pages에서 새 페이지 찾기
+  // fallback: context pages에서 새 페이지 찾기 (수신기관 팝업만)
   if (!searchPopup) {
     await humanDelay(1000, 1500);
     const allPages = page.context().pages();
     for (const p of allPages) {
       if (p !== page && !p.isClosed()) {
+        const url = p.url();
+        const title = await p.title().catch(() => '');
+        // 공지 팝업 제외
+        if (url.includes('popup_t.do') || title.includes('공지') || title.includes('알림') || title.includes('안내')) {
+          log('recipient', `공지 팝업 닫기: ${title || url}`);
+          await p.close().catch(() => {});
+          continue;
+        }
         searchPopup = p;
         log('recipient', `context pages에서 팝업 발견: ${p.url()}`);
         break;
@@ -453,6 +476,31 @@ async function selectRecipient(page, recipient, log) {
   await searchPopup.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
   await searchPopup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await humanDelay(1500, 2000);
+
+  // 팝업이 공지 팝업이면 닫고 다시 시도
+  const popupUrl = searchPopup.url();
+  const popupTitle = await searchPopup.title().catch(() => '');
+  if (popupUrl.includes('popup_t.do') || popupTitle.includes('공지') || popupTitle.includes('알림') || popupTitle.includes('안내')) {
+    log('recipient', `공지 팝업 감지, 닫고 재시도: ${popupTitle}`);
+    await searchPopup.close().catch(() => {});
+    await humanDelay(500, 800);
+
+    // 다시 #ldapSearch 클릭
+    try {
+      [searchPopup] = await Promise.all([
+        page.waitForEvent('popup', { timeout: 15000 }),
+        ldapBtn.click({ force: true }),
+      ]);
+      await searchPopup.waitForLoadState('load', { timeout: 15000 }).catch(() => {});
+      await searchPopup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      await humanDelay(1500, 2000);
+      log('recipient', `수신기관 팝업 재오픈 성공: ${searchPopup.url()}`);
+    } catch (e) {
+      log('recipient', `수신기관 팝업 재오픈 실패: ${e.message}`, 'error');
+      return { success: false, error: '수신기관 검색 팝업을 열 수 없습니다.' };
+    }
+  }
+
   log('recipient', `팝업 로드 완료 - URL: ${searchPopup.url()}`);
   await saveScreenshot(searchPopup, 'doc24_06a_popup_loaded');
 
