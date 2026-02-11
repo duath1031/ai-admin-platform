@@ -949,34 +949,40 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 접수 방식 선택 (3분할: 로봇 / 접수대행 / 대리인선임) + 보조 버튼 */}
+      {/* 접수 방식 선택 (3-Way 하이브리드) + 보조 버튼 */}
       <div className="mt-2 md:mt-3 space-y-2">
         {/* 메인 3분할 버튼 */}
         <div className="grid grid-cols-3 gap-2">
-          {/* 🤖 문서접수봇 */}
+          {/* 📝 직접 접수 (무료) */}
+          <button
+            onClick={() => {
+              // 정부24 또는 관련 민원 페이지로 이동
+              window.open('https://www.gov.kr/portal/main', '_blank', 'noopener,noreferrer');
+            }}
+            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
+          >
+            <span className="text-xl">📝</span>
+            <span>직접 접수</span>
+            <span className="text-[10px] opacity-80">(무료)</span>
+          </button>
+          {/* 🤖 문서24 자동 접수 (구독) */}
           <button
             onClick={handleDoc24Submit}
             disabled={doc24State.status === 'submitting'}
             className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-xs font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
             <span className="text-xl">🤖</span>
-            <span>문서접수봇</span>
+            <span>문서24 자동</span>
+            <span className="text-[10px] opacity-80">(구독)</span>
           </button>
-          {/* 📋 행정사 접수대행 */}
+          {/* 👨‍💼 전문가 대행 접수 */}
           <button
             onClick={() => setShowHumanModal(true)}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
+            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
           >
-            <span className="text-xl">📋</span>
-            <span>접수대행</span>
-          </button>
-          {/* 🤝 행정사 대리인선임 */}
-          <button
-            onClick={() => router.push('/submission?type=delegate')}
-            className="flex flex-col items-center justify-center gap-1 px-2 py-3 bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white text-xs font-bold rounded-xl transition-all shadow-md"
-          >
-            <span className="text-xl">🤝</span>
-            <span>대리인선임</span>
+            <span className="text-xl">👨‍💼</span>
+            <span>전문가 대행</span>
+            <span className="text-[10px] opacity-80">(50,000원)</span>
           </button>
         </div>
         {/* 보조 버튼 */}
@@ -1215,11 +1221,11 @@ export default function ChatPage() {
       {showOrgSearchModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={() => setShowOrgSearchModal(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+          <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4 max-h-[80vh] flex flex-col">
             {/* 헤더 */}
-            <div className="p-4 border-b">
+            <div className="p-4 border-b flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-bold text-gray-900">수신기관 입력</h3>
+                <h3 className="text-lg font-bold text-gray-900">🔍 수신기관 검색</h3>
                 <button onClick={() => setShowOrgSearchModal(false)} className="text-gray-400 hover:text-gray-600">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1227,35 +1233,74 @@ export default function ChatPage() {
                 </button>
               </div>
               <p className="text-sm text-gray-500">
-                수신기관명을 정확히 입력해주세요. 발송 시 문서24에서 자동으로 검색됩니다.
+                2자 이상 입력하면 문서24에서 실시간 검색합니다.
               </p>
             </div>
 
-            {/* 입력 영역 */}
-            <div className="p-4">
-              <div className="space-y-3">
+            {/* 검색 입력 영역 */}
+            <div className="p-4 flex-shrink-0">
+              <div className="relative">
                 <input
                   type="text"
-                  placeholder="예: 강남구청, 서초세무서, 국민건강보험공단"
+                  placeholder="예: 강남구청, 서초세무서, 경기도청"
                   value={orgSearchKeyword}
-                  onChange={(e) => setOrgSearchKeyword(e.target.value)}
+                  onChange={(e) => handleOrgSearchChange(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && orgSearchKeyword.trim()) {
                       selectOrg({ name: orgSearchKeyword.trim(), code: '' });
                     }
                   }}
                   autoFocus
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
                 />
-                <div className="text-xs text-gray-400 space-y-1">
-                  <p>• 기관명은 정확하게 입력해주세요</p>
-                  <p>• 예시: &quot;서울특별시 강남구청&quot;, &quot;서초세무서&quot;</p>
-                </div>
+                {orgSearching && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
               </div>
             </div>
 
+            {/* 검색 결과 목록 */}
+            <div className="flex-1 overflow-y-auto border-t">
+              {orgSearchResults.length > 0 ? (
+                <div className="divide-y">
+                  {orgSearchResults.map((org, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => selectOrg(org)}
+                      className="w-full px-4 py-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{org.name}</p>
+                        {org.category && (
+                          <p className="text-xs text-gray-500">{org.category}</p>
+                        )}
+                      </div>
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+              ) : orgSearchKeyword.length >= 2 && !orgSearching ? (
+                <div className="p-4 text-center text-gray-500">
+                  <p className="text-sm">검색 결과가 없습니다.</p>
+                  <p className="text-xs mt-1">직접 입력하거나 다른 검색어를 시도해보세요.</p>
+                </div>
+              ) : (
+                <div className="p-4 text-center text-gray-400">
+                  <p className="text-sm">2자 이상 입력하면 기관을 검색합니다.</p>
+                  <div className="mt-3 text-xs text-gray-400 space-y-1">
+                    <p>• 예시: &quot;강남구&quot;, &quot;서초세무서&quot;, &quot;경기도청&quot;</p>
+                    <p>• 정확한 기관명을 입력하세요</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* 하단 버튼 */}
-            <div className="p-4 border-t bg-gray-50 rounded-b-xl">
+            <div className="p-4 border-t bg-gray-50 rounded-b-xl flex-shrink-0">
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowOrgSearchModal(false)}
@@ -1272,7 +1317,7 @@ export default function ChatPage() {
                   disabled={!orgSearchKeyword.trim()}
                   className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  선택
+                  직접 입력으로 선택
                 </button>
               </div>
             </div>
@@ -1280,26 +1325,66 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* 행정사 대행 의뢰 모달 */}
+      {/* 전문가 대행 접수 모달 (50,000원) */}
       {showHumanModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
             <div className="p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-900">👨‍💼 행정사 대행 의뢰</h3>
+                <h3 className="text-lg font-bold text-gray-900">👨‍💼 전문가 대행 접수</h3>
                 <button onClick={() => setShowHumanModal(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
+
+              {/* 가격 안내 배너 */}
+              <div className="mb-4 p-4 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs opacity-80">대행 수수료</p>
+                    <p className="text-2xl font-bold">50,000원</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs opacity-80">처리 시간</p>
+                    <p className="text-sm font-medium">영업일 1~2일</p>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-3">
-                <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-                  <p className="text-sm text-indigo-800">
-                    행정사가 대리인으로서 민원 접수부터 완료까지 모든 절차를 대행합니다.
-                    복잡한 인허가, 수수료 납부, 방문 접수 등이 필요한 경우에 적합합니다.
+                {/* 서비스 설명 */}
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <p className="text-sm text-amber-800 font-medium mb-2">✅ 포함 서비스</p>
+                  <ul className="text-xs text-amber-700 space-y-1">
+                    <li>• 행정사가 대리인으로 민원 접수</li>
+                    <li>• 서류 검토 및 보완 안내</li>
+                    <li>• 관할 기관 제출 및 진행 관리</li>
+                    <li>• 처리 완료 시 알림 발송</li>
+                  </ul>
+                </div>
+
+                {/* 필요 서류 안내 */}
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800 font-medium mb-2">📋 필요 서류</p>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    <li>• 위임장 (양식 제공)</li>
+                    <li>• 신분증 사본</li>
+                    <li>• 민원 관련 첨부서류</li>
+                  </ul>
+                </div>
+
+                {/* 결제 안내 */}
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                  <p className="text-sm text-green-800 font-medium mb-2">💳 결제 방법</p>
+                  <p className="text-xs text-green-700">
+                    카카오톡 상담 후 계좌이체 또는 카드결제 가능합니다.
+                    결제 확인 후 즉시 업무를 진행합니다.
                   </p>
                 </div>
+
+                {/* 행정사 정보 */}
                 <div className="p-3 bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl text-white">
                   <h4 className="font-bold mb-1 text-sm">행정사합동사무소 정의</h4>
                   <p className="text-xs text-blue-100 mb-2">염현수 대표 행정사</p>
