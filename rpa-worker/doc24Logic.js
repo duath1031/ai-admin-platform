@@ -551,19 +551,41 @@ async function selectRecipient(page, recipient, log) {
     log('recipient', `검색 결과: ${tableContent}`);
   }
 
-  // Step 6: 모달 닫기 (확인/닫기 버튼)
-  const closeBtnSelectors = [
-    '.jconfirm-box button:has-text("닫기")',
-    '.jconfirm-box button:has-text("확인")',
-    '.jconfirm-box .jconfirm-closeIcon',
+  // Step 6: 선택 확인 버튼 클릭 (모달 내 "선택" 버튼)
+  const selectBtnSelectors = [
+    '.jconfirm-box button:has-text("선택")',
+    '.jconfirm-box a:has-text("선택")',
+    '.jconfirm-box input[type="button"][value*="선택"]',
+    '.jconfirm-box button:has-text("적용")',
   ];
 
-  for (const sel of closeBtnSelectors) {
+  let selectBtnClicked = false;
+  for (const sel of selectBtnSelectors) {
     const btn = page.locator(sel).first();
     if (await btn.count().catch(() => 0) > 0 && await btn.isVisible().catch(() => false)) {
       await btn.click({ force: true });
-      log('recipient', `모달 닫기: ${sel}`);
+      log('recipient', `선택 버튼 클릭: ${sel}`);
+      selectBtnClicked = true;
+      await humanDelay(500, 800);
       break;
+    }
+  }
+
+  // 선택 버튼이 없으면 닫기 버튼 시도 (또는 모달이 자동으로 닫힘)
+  if (!selectBtnClicked) {
+    const closeBtnSelectors = [
+      '.jconfirm-box button:has-text("확인")',
+      '.jconfirm-box button:has-text("닫기")',
+      '.jconfirm-box .jconfirm-closeIcon',
+    ];
+
+    for (const sel of closeBtnSelectors) {
+      const btn = page.locator(sel).first();
+      if (await btn.count().catch(() => 0) > 0 && await btn.isVisible().catch(() => false)) {
+        await btn.click({ force: true });
+        log('recipient', `모달 닫기: ${sel}`);
+        break;
+      }
     }
   }
 
