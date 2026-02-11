@@ -1059,28 +1059,52 @@ async function sendDocument(page, log) {
         return { success: false, error: `발송 실패: ${popupContent.trim().substring(0, 200)}` };
       }
 
-      // 확인/예/수정보내기 버튼 클릭
+      // 팝업 내 버튼 구조 덤프 (디버그)
+      const popupButtons = await page.evaluate(() => {
+        const popup = document.querySelector('.jconfirm.jconfirm-open');
+        if (!popup) return [];
+        return Array.from(popup.querySelectorAll('button, a, input[type="button"]')).map(el => ({
+          tag: el.tagName,
+          text: (el.textContent || el.value || '').trim().substring(0, 30),
+          className: (el.className || '').substring(0, 50),
+          visible: el.offsetParent !== null,
+        }));
+      }).catch(() => []);
+      log('send', `팝업 버튼들: ${JSON.stringify(popupButtons).substring(0, 500)}`);
+
+      // 확인/예/수정보내기 버튼 클릭 (button, a 태그 모두 포함)
       const confirmBtnSelectors = [
+        // 수정보내기 우선
+        '.jconfirm button:has-text("수정보내기")',
+        '.jconfirm a:has-text("수정보내기")',
+        '.jconfirm-box button:has-text("수정보내기")',
+        '.jconfirm-box a:has-text("수정보내기")',
+        // 보내기
+        '.jconfirm button:has-text("보내기")',
+        '.jconfirm a:has-text("보내기")',
+        // 일반 확인 버튼
         '.jconfirm-buttons button:has-text("확인")',
         '.jconfirm-buttons button:has-text("예")',
         '.jconfirm-buttons button:has-text("전송")',
         '.jconfirm-buttons button:has-text("발송")',
-        '.jconfirm-buttons button:has-text("수정보내기")',
-        '.jconfirm-buttons button:has-text("보내기")',
-        // jconfirm-box 내부에도 버튼이 있을 수 있음
-        '.jconfirm-box button:has-text("수정보내기")',
-        '.jconfirm-box button:has-text("보내기")',
-        '.jconfirm-box button:has-text("확인")',
+        '.jconfirm button:has-text("확인")',
+        '.jconfirm a:has-text("확인")',
+        // 마지막 fallback
         '.jconfirm-buttons button',
       ];
       for (const sel of confirmBtnSelectors) {
         const btn = page.locator(sel).first();
-        if (await btn.isVisible({ timeout: 1000 }).catch(() => false)) {
-          const btnText = await btn.textContent().catch(() => '');
-          await btn.click({ force: true });
-          log('send', `발송 확인 버튼 클릭: ${sel} ("${btnText.trim()}")`);
-          confirmClicked = true;
-          break;
+        const count = await btn.count().catch(() => 0);
+        if (count > 0) {
+          const isVis = await btn.isVisible().catch(() => false);
+          log('send', `셀렉터 ${sel}: count=${count}, visible=${isVis}`);
+          if (isVis) {
+            const btnText = await btn.textContent().catch(() => '');
+            await btn.click({ force: true });
+            log('send', `발송 확인 버튼 클릭: ${sel} ("${btnText.trim()}")`);
+            confirmClicked = true;
+            break;
+          }
         }
       }
       break;
