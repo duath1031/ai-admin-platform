@@ -1141,6 +1141,50 @@ async function sendDocument(page, log) {
     if (popupStillOpen > 0) {
       log('send', '팝업이 여전히 열려있음 - 팝업 내부 구조 분석');
 
+      // iframe 내부 분석 시도
+      const iframeAnalysis = await page.evaluate(() => {
+        const popup = document.querySelector('.jconfirm.jconfirm-open');
+        if (!popup) return { error: 'no popup' };
+
+        const iframe = popup.querySelector('iframe');
+        if (!iframe) return { error: 'no iframe' };
+
+        try {
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+          if (!iframeDoc) return { error: 'cannot access iframe document' };
+
+          // iframe 내 HWP 영역 확인
+          const hwpCtrl = iframeDoc.getElementById('Document_HwpCtrl');
+          const hwpInfo = hwpCtrl ? {
+            tagName: hwpCtrl.tagName,
+            className: hwpCtrl.className,
+            innerHTML: hwpCtrl.innerHTML?.substring(0, 200),
+          } : null;
+
+          // iframe 내 에러/경고 메시지 확인
+          const errorEls = iframeDoc.querySelectorAll('.error, .alert, .warning, [class*="err"]');
+          const errors = Array.from(errorEls).map(e => e.textContent?.substring(0, 100));
+
+          // iframe 내 본문 관련 필드
+          const bodyFields = Array.from(iframeDoc.querySelectorAll('textarea, input[name*="content"], input[name*="body"]')).map(el => ({
+            tag: el.tagName, name: el.name, id: el.id, value: (el.value || '').substring(0, 50),
+          }));
+
+          // iframe 전체 텍스트 (미리보기 확인)
+          const bodyText = iframeDoc.body?.innerText?.substring(0, 500);
+
+          return {
+            hwpCtrl: hwpInfo,
+            errors,
+            bodyFields,
+            bodyText,
+          };
+        } catch (e) {
+          return { error: e.message };
+        }
+      }).catch(e => ({ error: e.message }));
+      log('send', `iframe 분석: ${JSON.stringify(iframeAnalysis).substring(0, 1000)}`);
+
       // 팝업 내부 구조 전체 덤프
       const popupAnalysis = await page.evaluate(() => {
         const popup = document.querySelector('.jconfirm.jconfirm-open');
