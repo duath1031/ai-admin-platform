@@ -1109,7 +1109,29 @@ async function sendDocument(page, log) {
   }
 
   if (!confirmClicked) {
-    log('send', 'jconfirm 확인 팝업이 나타나지 않음 - 직접 발송됐을 수 있음', 'warning');
+    log('send', 'jconfirm 확인 팝업이 나타나지 않음 - 페이지 상태 확인');
+
+    // 팝업이 없을 때 페이지 상태 덤프
+    const pageState = await page.evaluate(() => {
+      // alert/error 요소 확인
+      const alerts = document.querySelectorAll('.alert, .error, .warning, [role="alert"]');
+      const alertTexts = Array.from(alerts).map(a => a.textContent?.trim().substring(0, 100));
+
+      // 모든 visible 팝업/모달 확인
+      const modals = document.querySelectorAll('.modal, .popup, [role="dialog"], .jconfirm');
+      const modalInfo = Array.from(modals).filter(m => m.offsetParent !== null)
+        .map(m => ({
+          className: (m.className || '').substring(0, 50),
+          text: m.textContent?.substring(0, 100),
+        }));
+
+      // 현재 페이지 상태
+      const url = location.href;
+      const body = document.body?.innerText?.substring(0, 300);
+
+      return { alerts: alertTexts, modals: modalInfo, url, bodyPreview: body };
+    }).catch(() => ({ error: 'eval failed' }));
+    log('send', `페이지 상태: ${JSON.stringify(pageState).substring(0, 800)}`);
   }
 
   // Step 3: 보내기 버튼이 클릭되었지만 팝업이 닫히지 않은 경우 - JS로 재시도
