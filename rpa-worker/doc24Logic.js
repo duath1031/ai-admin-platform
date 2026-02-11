@@ -2593,95 +2593,107 @@ async function searchDoc24Orgs(loginId, password, keyword, accountType = 'person
       return { success: false, error: `수신기관 검색 버튼(#ldapSearch) 없음. URL: ${pageUrl}`, results: [], logs };
     }
 
-    // 팝업 열기 시도 (20초 타임아웃)
+    // 팝업 열기: 3가지 방법 시도
     let popup = null;
+
+    // 방법 1: Promise.all([waitForEvent('popup'), click])
     try {
-      log('search', '팝업 열기 시도...');
+      log('search', '팝업 열기 시도 (방법1: waitForEvent + click)...');
       [popup] = await Promise.all([
-        page.waitForEvent('popup', { timeout: 20000 }),
-        ldapBtn.click({ force: true }),
+        page.waitForEvent('popup', { timeout: 15000 }),
+        page.evaluate(() => document.querySelector('#ldapSearch')?.click()),
       ]);
-    } catch (popupErr) {
-      log('search', `팝업 열기 실패: ${popupErr.message?.slice(0, 150)}`);
-      await saveScreenshot(page, 'doc24_search_after_ldap_click');
+    } catch {
+      log('search', '방법1 실패');
     }
 
-    // 팝업이 안 열렸으면 인라인 모달/iframe 확인
+    // 방법 2: context().waitForEvent('page')
     if (!popup) {
-      log('search', '팝업 없음 → 인라인 모달/iframe 확인...');
-      await humanDelay(2000, 3000);
-
-      // 새로 나타난 iframe이나 모달 찾기
-      const frames = page.frames();
-      log('search', `현재 프레임 수: ${frames.length}`);
-
-      // iframe 내 검색창이 있는지 확인
-      let inlineCtx = null;
-      for (const f of frames) {
-        if (f === page.mainFrame()) continue;
-        const fUrl = f.url();
-        log('search', `iframe URL: ${fUrl}`);
-        const hasInput = await f.locator('input[type="text"]').count().catch(() => 0);
-        if (hasInput > 0) {
-          inlineCtx = f;
-          log('search', `검색 입력란이 있는 iframe 발견: ${fUrl}`);
-          break;
-        }
+      try {
+        log('search', '팝업 열기 시도 (방법2: context.page + JS click)...');
+        const ctx = page.context();
+        const [newPage] = await Promise.all([
+          ctx.waitForEvent('page', { timeout: 15000 }),
+          page.evaluate(() => {
+            const btn = document.querySelector('#ldapSearch');
+            if (btn) {
+              const href = btn.getAttribute('href') || btn.getAttribute('onclick') || '';
+              if (href.includes('javascript:')) {
+                eval(href.replace('javascript:', ''));
+              } else {
+                btn.click();
+              }
+            }
+          }),
+        ]);
+        popup = newPage;
+      } catch {
+        log('search', '방법2 실패');
       }
-
-      // 인라인 모달 확인
-      if (!inlineCtx) {
-        const modalSels = ['.modal.show', '.popup', '#orgSearchPop', '#recvOrgPop', '[class*="layer"]', '[class*="popup"]'];
-        for (const sel of modalSels) {
-          const modal = page.locator(sel).first();
-          if (await modal.isVisible().catch(() => false)) {
-            inlineCtx = page; // 메인 페이지 컨텍스트 사용
-            log('search', `인라인 모달 발견: ${sel}`);
-            break;
-          }
-        }
-      }
-
-      if (!inlineCtx) {
-        // 마지막으로 페이지 전체 텍스트 덤프
-        const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 800) || '').catch(() => '');
-        log('search', `팝업/모달 모두 없음. 페이지 텍스트: ${bodyText.slice(0, 300)}`);
-        await saveScreenshot(page, 'doc24_search_no_popup_no_modal');
-        return { success: false, error: '수신기관 검색 팝업/모달을 찾을 수 없습니다.', results: [], logs };
-      }
-
-      // inlineCtx를 팝업 대신 사용하여 검색 진행 (아래 코드로 이어짐)
-      // popup 변수 대신 inlineCtx 사용하도록 아래에서 ctx = inlineCtx 할당
     }
 
-    let ctx;
-    if (popup) {
-      await popup.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
-      await popup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-      await humanDelay(1500, 2000);
-
-      ctx = popup;
-      const frames = popup.frames();
-      log('popup', `팝업 프레임 수: ${frames.length}`);
-      if (frames.length > 1) {
-        for (const f of frames) {
-          if (f !== popup.mainFrame()) {
-            ctx = f;
-            log('popup', `iframe 감지 → 전환: ${f.url()}`);
-            break;
-          }
+    // 방법 3: onclick 속성에서 window.open URL 추출 후 직접 열기
+    if (!popup) {
+      try {
+        log('search', '팝업 열기 시도 (방법3: onclick URL 추출)...');
+        const onclickUrl = await page.evaluate(() => {
+          const btn = document.querySelector('#ldapSearch');
+          if (!btn) return null;
+          const onclick = btn.getAttribute('onclick') || '';
+          const href = btn.getAttribute('href') || '';
+          const combined = onclick + ' ' + href;
+          const match = combined.match(/window\.open\s*\(\s*['"]([^'"]+)['"]/);
+          if (match) return match[1];
+          const urlMatch = combined.match(/(\/[a-zA-Z0-9\/._]+\.do[^'"]*)/);
+          return urlMatch ? urlMatch[1] : null;
+        });
+        if (onclickUrl) {
+          const fullUrl = onclickUrl.startsWith('http') ? onclickUrl : `https://docu.gdoc.go.kr${onclickUrl}`;
+          log('search', `onclick URL 발견: ${fullUrl}`);
+          const newPage = await page.context().newPage();
+          await newPage.goto(fullUrl, { timeout: 30000, waitUntil: 'domcontentloaded' });
+          popup = newPage;
         }
+      } catch (e) {
+        log('search', `방법3 실패: ${e.message?.slice(0, 100)}`);
       }
-    } else {
-      // 인라인 컨텍스트 사용
-      ctx = page; // 위에서 inlineCtx가 설정되었으면 여기로 옴
-      const frames = page.frames();
-      for (const f of frames) {
-        if (f === page.mainFrame()) continue;
-        const hasInput = await f.locator('input[type="text"]').count().catch(() => 0);
-        if (hasInput > 0) { ctx = f; break; }
+    }
+
+    if (!popup) {
+      // ldapSearch의 HTML 구조를 덤프하여 디버깅
+      const btnDump = await page.evaluate(() => {
+        const btn = document.querySelector('#ldapSearch');
+        if (!btn) return 'NOT FOUND';
+        return {
+          tag: btn.tagName, id: btn.id, href: btn.getAttribute('href'),
+          onclick: btn.getAttribute('onclick'), className: btn.className,
+          outerHTML: btn.outerHTML.slice(0, 300),
+        };
+      }).catch(() => 'ERROR');
+      log('search', `ldapSearch 구조: ${JSON.stringify(btnDump)}`);
+      await saveScreenshot(page, 'doc24_search_popup_fail');
+      return { success: false, error: '수신기관 검색 팝업을 열 수 없습니다.', results: [], logs };
+    }
+
+    log('search', `팝업 열기 성공! URL: ${popup.url()}`);
+    await popup.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
+    await popup.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await humanDelay(1500, 2000);
+
+    // 팝업 내 iframe 확인 (HWP 에디터 iframe 제외)
+    let ctx = popup;
+    const popupFrames = popup.frames();
+    log('popup', `팝업 프레임 수: ${popupFrames.length}`);
+    if (popupFrames.length > 1) {
+      for (const f of popupFrames) {
+        if (f === popup.mainFrame()) continue;
+        const fUrl = f.url();
+        // HWP 에디터 iframe 제외
+        if (fUrl.includes('hwpctrl') || fUrl.includes('chrome-error')) continue;
+        ctx = f;
+        log('popup', `iframe 감지 → 전환: ${fUrl}`);
+        break;
       }
-      log('search', `인라인 모드로 검색 진행, ctx=${ctx === page ? 'mainPage' : 'iframe'}`);
     }
 
     // 팝업 구조 덤프 (디버깅용)
