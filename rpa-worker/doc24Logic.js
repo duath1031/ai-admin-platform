@@ -1112,7 +1112,35 @@ async function sendDocument(page, log) {
     log('send', 'jconfirm 확인 팝업이 나타나지 않음 - 직접 발송됐을 수 있음', 'warning');
   }
 
-  // Step 3: PDF 변환 및 발송 처리 대기 (~5-6초)
+  // Step 3: 보내기 버튼이 클릭되었지만 팝업이 닫히지 않은 경우 - JS로 재시도
+  if (confirmClicked) {
+    await humanDelay(1000, 1500);
+    const popupStillOpen = await page.locator('.jconfirm.jconfirm-open').count().catch(() => 0);
+    if (popupStillOpen > 0) {
+      log('send', '팝업이 여전히 열려있음 - JS로 보내기 버튼 직접 클릭 시도');
+      const jsClick = await page.evaluate(() => {
+        const popup = document.querySelector('.jconfirm.jconfirm-open');
+        if (!popup) return { success: false, error: 'popup not found' };
+        // 보내기 버튼 찾기 (visible 상태인 것)
+        const buttons = popup.querySelectorAll('button');
+        for (const btn of buttons) {
+          if (btn.textContent?.trim() === '보내기' && btn.offsetParent !== null) {
+            btn.click();
+            return { success: true, text: btn.textContent };
+          }
+        }
+        // 에러 메시지 확인
+        const errEl = popup.querySelector('.error, .alert-danger, [class*="error"]');
+        if (errEl) return { success: false, error: errEl.textContent?.substring(0, 200) };
+        return { success: false, error: 'send button not found' };
+      }).catch(e => ({ success: false, error: e.message }));
+      log('send', `JS 직접 클릭 결과: ${JSON.stringify(jsClick)}`);
+
+      await humanDelay(500, 800);
+    }
+  }
+
+  // Step 4: PDF 변환 및 발송 처리 대기 (~5-6초)
   log('send', 'PDF 변환/발송 처리 대기...');
   await humanDelay(3000, 5000);
   await page.waitForLoadState('networkidle', { timeout: TIMEOUTS.pdfConversion }).catch(() => {});
