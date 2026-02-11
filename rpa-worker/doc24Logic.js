@@ -707,44 +707,128 @@ async function fillContent(page, title, content, log) {
     log('content', `본문 입력 시도: "${content.substring(0, 50)}..."`);
     let contentFilled = false;
 
-    // 방법 1: HWP ActiveX 웹 컨트롤 API (HwpCtrl.InsertText)
-    contentFilled = await page.evaluate((text) => {
-      // HwpCtrl 글로벌 객체
-      if (window.HwpCtrl) {
-        try {
-          if (typeof HwpCtrl.InsertText === 'function') {
-            HwpCtrl.InsertText(text);
-            return 'HwpCtrl.InsertText';
-          }
-          if (typeof HwpCtrl.SetText === 'function') {
-            HwpCtrl.SetText(text);
-            return 'HwpCtrl.SetText';
-          }
-        } catch (e) { /* continue */ }
-      }
-      // Document_HwpCtrl 객체
-      const hwpEl = document.getElementById('Document_HwpCtrl');
-      if (hwpEl) {
-        try {
-          if (typeof hwpEl.InsertText === 'function') {
-            hwpEl.InsertText(text);
-            return 'hwpEl.InsertText';
-          }
-          if (typeof hwpEl.SetText === 'function') {
-            hwpEl.SetText(text);
-            return 'hwpEl.SetText';
-          }
-          if (typeof hwpEl.PutFieldText === 'function') {
-            hwpEl.PutFieldText('본문', text);
-            return 'hwpEl.PutFieldText';
-          }
-        } catch (e) { /* continue */ }
-      }
-      return null;
-    }, content).catch(() => null);
+    // 방법 0 (최우선): 클립보드 붙여넣기 (Ctrl+V)
+    // HWP 에디터 영역을 클릭한 후 Ctrl+V로 붙여넣기 시도
+    try {
+      // HWP 에디터 영역 찾기 및 클릭
+      const hwpEditorSelectors = [
+        '#Document_HwpCtrl',
+        'object#Document_HwpCtrl',
+        '.hwp_editor',
+        'iframe[name*="hwp"]',
+        'iframe[id*="hwp"]',
+        '#editorFrame',
+      ];
 
-    if (contentFilled) {
-      log('content', `본문 입력 완료 (${contentFilled})`);
+      let editorClicked = false;
+      for (const sel of hwpEditorSelectors) {
+        const editor = page.locator(sel).first();
+        if (await editor.count().catch(() => 0) > 0) {
+          // 에디터 영역 클릭
+          await editor.click({ force: true }).catch(() => {});
+          log('content', `HWP 에디터 클릭: ${sel}`);
+          editorClicked = true;
+          await humanDelay(300, 500);
+          break;
+        }
+      }
+
+      if (!editorClicked) {
+        // 에디터가 없으면 페이지 중앙 클릭 시도
+        const pageCenter = await page.evaluate(() => {
+          const hwpArea = document.querySelector('#Document_HwpCtrl, .hwp_wrap, .editor_wrap');
+          if (hwpArea) {
+            const rect = hwpArea.getBoundingClientRect();
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+          }
+          return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        }).catch(() => ({ x: 500, y: 400 }));
+        await page.mouse.click(pageCenter.x, pageCenter.y);
+        log('content', `에디터 영역 좌표 클릭: (${pageCenter.x}, ${pageCenter.y})`);
+        await humanDelay(300, 500);
+      }
+
+      // 클립보드에 텍스트 복사 (브라우저 Clipboard API)
+      const clipboardSet = await page.evaluate(async (text) => {
+        try {
+          // Clipboard API 시도
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return 'clipboard-api';
+          }
+          // execCommand fallback
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          textarea.style.position = 'fixed';
+          textarea.style.left = '-9999px';
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          return 'execCommand';
+        } catch (e) {
+          return null;
+        }
+      }, content).catch(() => null);
+
+      if (clipboardSet) {
+        log('content', `클립보드에 텍스트 복사 완료 (${clipboardSet})`);
+
+        // Ctrl+V로 붙여넣기
+        await page.keyboard.press('Control+V');
+        await humanDelay(500, 800);
+
+        // 붙여넣기 확인을 위한 스크린샷
+        await saveScreenshot(page, 'doc24_content_paste_attempt');
+
+        // HWP 에디터에 내용이 들어갔는지 확인하기 어려우므로 성공으로 간주
+        contentFilled = true;
+        log('content', '클립보드 붙여넣기(Ctrl+V) 시도 완료');
+      }
+    } catch (e) {
+      log('content', `클립보드 붙여넣기 실패: ${e.message}`, 'warning');
+    }
+
+    // 방법 1: HWP ActiveX 웹 컨트롤 API (HwpCtrl.InsertText)
+    if (!contentFilled) {
+      contentFilled = await page.evaluate((text) => {
+        // HwpCtrl 글로벌 객체
+        if (window.HwpCtrl) {
+          try {
+            if (typeof HwpCtrl.InsertText === 'function') {
+              HwpCtrl.InsertText(text);
+              return 'HwpCtrl.InsertText';
+            }
+            if (typeof HwpCtrl.SetText === 'function') {
+              HwpCtrl.SetText(text);
+              return 'HwpCtrl.SetText';
+            }
+          } catch (e) { /* continue */ }
+        }
+        // Document_HwpCtrl 객체
+        const hwpEl = document.getElementById('Document_HwpCtrl');
+        if (hwpEl) {
+          try {
+            if (typeof hwpEl.InsertText === 'function') {
+              hwpEl.InsertText(text);
+              return 'hwpEl.InsertText';
+            }
+            if (typeof hwpEl.SetText === 'function') {
+              hwpEl.SetText(text);
+              return 'hwpEl.SetText';
+            }
+            if (typeof hwpEl.PutFieldText === 'function') {
+              hwpEl.PutFieldText('본문', text);
+              return 'hwpEl.PutFieldText';
+            }
+          } catch (e) { /* continue */ }
+        }
+        return null;
+      }, content).catch(() => null);
+
+      if (contentFilled) {
+        log('content', `본문 입력 완료 (${contentFilled})`);
+      }
     }
 
     // 방법 2: iframe contentDocument 접근
@@ -948,6 +1032,64 @@ async function uploadAttachments(page, files, log) {
       return rows.length;
     }).catch(() => 0);
     log('upload', `첨부 파일 목록 확인: ${attachedCount}개 항목`);
+
+    // === 첨부파일 좌측 체크박스 클릭 (필수!) ===
+    // 문서24에서 첨부파일 업로드 후 좌측 체크박스를 클릭해야 발송 시 포함됨
+    const checkedFiles = await page.evaluate(() => {
+      let checked = 0;
+      // 첨부파일 테이블 내 체크박스 찾기
+      const checkboxSelectors = [
+        '.file_list input[type="checkbox"]',
+        '.attach_list input[type="checkbox"]',
+        'table.fileList input[type="checkbox"]',
+        '.file_item input[type="checkbox"]',
+        '#fileListTable input[type="checkbox"]',
+        'input[name*="fileChk"]',
+        'input[name*="attachChk"]',
+        'input[id*="fileChk"]',
+        'input[id*="chk_file"]',
+        // 일반적인 첨부파일 영역 내 체크박스
+        '.file_wrap input[type="checkbox"]',
+        '.attach_wrap input[type="checkbox"]',
+        '#attFileList input[type="checkbox"]',
+      ];
+
+      for (const sel of checkboxSelectors) {
+        const checkboxes = document.querySelectorAll(sel);
+        checkboxes.forEach(cb => {
+          if (!cb.checked && !cb.disabled) {
+            cb.checked = true;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+            cb.dispatchEvent(new Event('click', { bubbles: true }));
+            checked++;
+          }
+        });
+      }
+
+      // 모든 체크박스가 아닌 경우, 첨부파일 행 내부의 체크박스만 찾기
+      if (checked === 0) {
+        const fileRows = document.querySelectorAll('.file_list tr, .attach_list li, table.fileList tr');
+        fileRows.forEach(row => {
+          const cb = row.querySelector('input[type="checkbox"]');
+          if (cb && !cb.checked && !cb.disabled) {
+            cb.checked = true;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+            checked++;
+          }
+        });
+      }
+
+      return checked;
+    }).catch(() => 0);
+
+    if (checkedFiles > 0) {
+      log('upload', `첨부파일 체크박스 ${checkedFiles}개 선택 완료`);
+      await humanDelay(300, 500);
+    } else {
+      log('upload', '첨부파일 체크박스를 찾지 못했거나 이미 선택되어 있음', 'warning');
+    }
+
+    await saveScreenshot(page, 'doc24_10b_files_checked');
   }
 
   // 임시 파일 정리
