@@ -707,86 +707,160 @@ async function fillContent(page, title, content, log) {
     log('content', `본문 입력 시도: "${content.substring(0, 50)}..."`);
     let contentFilled = false;
 
-    // 방법 0 (최우선): 클립보드 붙여넣기 (Ctrl+V)
-    // HWP 에디터 영역을 클릭한 후 Ctrl+V로 붙여넣기 시도
+    // 방법 0 (최우선): 에디터 구조 분석 및 다양한 입력 방법 시도
     try {
-      // HWP 에디터 영역 찾기 및 클릭
-      const hwpEditorSelectors = [
-        '#Document_HwpCtrl',
-        'object#Document_HwpCtrl',
-        '.hwp_editor',
-        'iframe[name*="hwp"]',
-        'iframe[id*="hwp"]',
-        '#editorFrame',
-      ];
+      // HWP 에디터 영역 및 구조 분석
+      const editorInfo = await page.evaluate(() => {
+        const info = {
+          hwpCtrl: null,
+          iframes: [],
+          editables: [],
+          textareas: [],
+        };
 
-      let editorClicked = false;
-      for (const sel of hwpEditorSelectors) {
-        const editor = page.locator(sel).first();
-        if (await editor.count().catch(() => 0) > 0) {
-          // 에디터 영역 클릭
-          await editor.click({ force: true }).catch(() => {});
-          log('content', `HWP 에디터 클릭: ${sel}`);
-          editorClicked = true;
-          await humanDelay(300, 500);
-          break;
+        // #Document_HwpCtrl 분석
+        const hwpEl = document.getElementById('Document_HwpCtrl');
+        if (hwpEl) {
+          info.hwpCtrl = {
+            tagName: hwpEl.tagName,
+            type: hwpEl.type,
+            className: hwpEl.className,
+            hasInsertText: typeof hwpEl.InsertText === 'function',
+            hasSetText: typeof hwpEl.SetText === 'function',
+            hasPutFieldText: typeof hwpEl.PutFieldText === 'function',
+          };
+        }
+
+        // iframe 분석
+        document.querySelectorAll('iframe').forEach((iframe, idx) => {
+          try {
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            const body = doc?.body;
+            info.iframes.push({
+              idx,
+              id: iframe.id,
+              name: iframe.name,
+              src: (iframe.src || '').substring(0, 100),
+              bodyEditable: body?.contentEditable === 'true' || body?.isContentEditable,
+              designMode: doc?.designMode === 'on',
+            });
+          } catch (e) {
+            info.iframes.push({ idx, id: iframe.id, error: 'cross-origin' });
+          }
+        });
+
+        // contenteditable 요소 분석
+        document.querySelectorAll('[contenteditable="true"]').forEach(el => {
+          info.editables.push({
+            tag: el.tagName,
+            id: el.id,
+            className: (el.className || '').substring(0, 50),
+          });
+        });
+
+        // textarea 분석
+        document.querySelectorAll('textarea').forEach(ta => {
+          info.textareas.push({
+            name: ta.name,
+            id: ta.id,
+            visible: ta.offsetParent !== null,
+          });
+        });
+
+        return info;
+      }).catch(() => ({}));
+
+      log('content', `에디터 구조: ${JSON.stringify(editorInfo).substring(0, 500)}`);
+
+      // 방법 0-A: iframe 내 contenteditable body에 직접 삽입
+      for (const iframeInfo of (editorInfo.iframes || [])) {
+        if (iframeInfo.bodyEditable || iframeInfo.designMode) {
+          const result = await page.evaluate((args) => {
+            const iframe = document.querySelectorAll('iframe')[args.idx];
+            try {
+              const doc = iframe.contentDocument || iframe.contentWindow?.document;
+              const body = doc?.body;
+              if (body) {
+                body.innerHTML = `<p>${args.text.replace(/\n/g, '<br>')}</p>`;
+                return 'iframe-body-insert';
+              }
+            } catch (e) { /* cross-origin */ }
+            return null;
+          }, { idx: iframeInfo.idx, text: content }).catch(() => null);
+
+          if (result) {
+            contentFilled = true;
+            log('content', `본문 입력 완료 (${result} - iframe ${iframeInfo.idx})`);
+            break;
+          }
         }
       }
 
-      if (!editorClicked) {
-        // 에디터가 없으면 페이지 중앙 클릭 시도
-        const pageCenter = await page.evaluate(() => {
-          const hwpArea = document.querySelector('#Document_HwpCtrl, .hwp_wrap, .editor_wrap');
-          if (hwpArea) {
-            const rect = hwpArea.getBoundingClientRect();
-            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+      // 방법 0-B: HWP 에디터 클릭 후 CDP를 통한 클립보드 붙여넣기
+      if (!contentFilled) {
+        const hwpEditorSelectors = [
+          '#Document_HwpCtrl',
+          'object#Document_HwpCtrl',
+          '.hwp_editor',
+          'iframe[name*="hwp"]',
+          'iframe[id*="hwp"]',
+          '#editorFrame',
+        ];
+
+        let editorClicked = false;
+        for (const sel of hwpEditorSelectors) {
+          const editor = page.locator(sel).first();
+          if (await editor.count().catch(() => 0) > 0) {
+            await editor.click({ force: true }).catch(() => {});
+            log('content', `HWP 에디터 클릭: ${sel}`);
+            editorClicked = true;
+            await humanDelay(300, 500);
+            break;
           }
-          return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-        }).catch(() => ({ x: 500, y: 400 }));
-        await page.mouse.click(pageCenter.x, pageCenter.y);
-        log('content', `에디터 영역 좌표 클릭: (${pageCenter.x}, ${pageCenter.y})`);
-        await humanDelay(300, 500);
+        }
+
+        if (editorClicked) {
+          // CDP를 통한 클립보드 설정 및 붙여넣기 시도
+          try {
+            const cdpSession = await page.context().newCDPSession(page);
+
+            // 클립보드 권한 부여
+            await cdpSession.send('Browser.grantPermissions', {
+              permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'],
+              origin: page.url(),
+            }).catch(() => {});
+
+            // insertText로 직접 입력 시도 (CDP Input.insertText)
+            await cdpSession.send('Input.insertText', { text: content }).catch(() => {});
+            log('content', 'CDP Input.insertText 시도');
+
+            await humanDelay(500, 800);
+            await saveScreenshot(page, 'doc24_content_cdp_attempt');
+
+            // 입력이 성공했는지 알 수 없으므로 일단 계속 진행
+            contentFilled = true;
+            log('content', 'CDP 텍스트 삽입 시도 완료');
+          } catch (cdpErr) {
+            log('content', `CDP 입력 실패: ${cdpErr.message}`, 'warning');
+          }
+        }
       }
 
-      // 클립보드에 텍스트 복사 (브라우저 Clipboard API)
-      const clipboardSet = await page.evaluate(async (text) => {
+      // 방법 0-C: 에디터 영역에 직접 키보드 타이핑 (짧은 내용만)
+      if (!contentFilled && content.length <= 500) {
         try {
-          // Clipboard API 시도
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(text);
-            return 'clipboard-api';
-          }
-          // execCommand fallback
-          const textarea = document.createElement('textarea');
-          textarea.value = text;
-          textarea.style.position = 'fixed';
-          textarea.style.left = '-9999px';
-          document.body.appendChild(textarea);
-          textarea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textarea);
-          return 'execCommand';
-        } catch (e) {
-          return null;
+          // 에디터 영역에 포커스가 있다고 가정하고 직접 타이핑
+          await page.keyboard.type(content, { delay: 10 });
+          log('content', `키보드 직접 타이핑 완료 (${content.length}자)`);
+          contentFilled = true;
+          await humanDelay(300, 500);
+        } catch (typeErr) {
+          log('content', `키보드 타이핑 실패: ${typeErr.message}`, 'warning');
         }
-      }, content).catch(() => null);
-
-      if (clipboardSet) {
-        log('content', `클립보드에 텍스트 복사 완료 (${clipboardSet})`);
-
-        // Ctrl+V로 붙여넣기
-        await page.keyboard.press('Control+V');
-        await humanDelay(500, 800);
-
-        // 붙여넣기 확인을 위한 스크린샷
-        await saveScreenshot(page, 'doc24_content_paste_attempt');
-
-        // HWP 에디터에 내용이 들어갔는지 확인하기 어려우므로 성공으로 간주
-        contentFilled = true;
-        log('content', '클립보드 붙여넣기(Ctrl+V) 시도 완료');
       }
+
     } catch (e) {
-      log('content', `클립보드 붙여넣기 실패: ${e.message}`, 'warning');
+      log('content', `본문 입력 방법0 실패: ${e.message}`, 'warning');
     }
 
     // 방법 1: HWP ActiveX 웹 컨트롤 API (HwpCtrl.InsertText)
