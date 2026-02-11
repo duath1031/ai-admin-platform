@@ -1087,17 +1087,19 @@ async function sendDocument(page, log) {
         '.jconfirm-open .jconfirm-buttons button',
       ];
       for (const sel of confirmBtnSelectors) {
-        const btn = page.locator(sel).first();
-        const count = await btn.count().catch(() => 0);
+        // last()를 사용하여 visible 버튼 (두 번째 세트) 선택
+        const btn = page.locator(sel).last();
+        const count = await page.locator(sel).count().catch(() => 0);
         if (count > 0) {
-          const isVis = await btn.isVisible().catch(() => false);
-          log('send', `셀렉터 ${sel}: count=${count}, visible=${isVis}`);
-          if (isVis) {
-            const btnText = await btn.textContent().catch(() => '');
-            await btn.click({ force: true });
-            log('send', `발송 확인 버튼 클릭: ${sel} ("${btnText.trim()}")`);
+          try {
+            const btnText = await btn.textContent({ timeout: 1000 }).catch(() => '');
+            log('send', `셀렉터 ${sel}: count=${count}, 클릭 시도 (last)`);
+            await btn.click({ force: true, timeout: 3000 });
+            log('send', `발송 확인 버튼 클릭 성공: ${sel} ("${btnText.trim()}")`);
             confirmClicked = true;
             break;
+          } catch (clickErr) {
+            log('send', `클릭 실패 (${sel}): ${clickErr.message}`, 'warning');
           }
         }
       }
