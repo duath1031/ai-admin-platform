@@ -26,11 +26,11 @@ interface Stats {
 }
 
 const PLAN_OPTIONS = [
-  { value: "none", label: "없음", color: "gray" },
-  { value: "basic", label: "베이직", color: "blue" },
-  { value: "pro", label: "프로", color: "purple" },
-  { value: "pro_plus", label: "Pro Plus", color: "orange" },
-  { value: "enterprise", label: "Enterprise", color: "red" },
+  { value: "starter", label: "Starter (무료)", color: "gray" },
+  { value: "standard", label: "Standard (9만)", color: "blue" },
+  { value: "pro", label: "Pro (15만)", color: "purple" },
+  { value: "pro_plus", label: "Pro Plus (22만)", color: "orange" },
+  { value: "enterprise", label: "Enterprise (25만)", color: "red" },
 ];
 
 const ROLE_OPTIONS = [

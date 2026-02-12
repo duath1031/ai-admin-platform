@@ -78,6 +78,47 @@ export async function PATCH(
 
     if (plan !== undefined) {
       updateData.plan = plan;
+
+      // Subscription 테이블도 동기화 (관리자 플랜 변경 시)
+      const subscriptionPlan = await prisma.subscriptionPlan.findUnique({
+        where: { planCode: plan },
+      });
+
+      if (subscriptionPlan) {
+        // 기존 활성 구독이 있으면 플랜 변경, 없으면 새로 생성
+        const existingSub = await prisma.subscription.findFirst({
+          where: { userId: params.id, status: { in: ["active", "trial", "past_due", "grace"] } },
+        });
+
+        if (existingSub) {
+          await prisma.subscription.update({
+            where: { id: existingSub.id },
+            data: { planId: subscriptionPlan.id, status: "active" },
+          });
+        } else {
+          const now = new Date();
+          const nextMonth = new Date(now);
+          nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+          await prisma.subscription.create({
+            data: {
+              userId: params.id,
+              planId: subscriptionPlan.id,
+              status: "active",
+              startDate: now,
+              currentPeriodStart: now,
+              currentPeriodEnd: nextMonth,
+              nextBillingDate: nextMonth,
+              billingCycle: "monthly",
+            },
+          });
+        }
+
+        // 토큰도 해당 플랜 기준으로 설정 (credits 별도 지정 안 했을 때)
+        if (credits === undefined) {
+          updateData.credits = subscriptionPlan.tokenQuota;
+        }
+      }
     }
 
     if (credits !== undefined) {

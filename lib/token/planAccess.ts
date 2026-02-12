@@ -90,9 +90,28 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
 };
 
 /**
+ * 레거시 plan 필드 → 현재 planCode 매핑
+ * 관리자 페이지에서 직접 user.plan을 변경한 경우 호환
+ */
+const LEGACY_PLAN_MAP: Record<string, string> = {
+  none: "starter",
+  free: "starter",
+  basic: "standard",
+  standard: "standard",
+  pro: "pro",
+  professional: "pro",
+  pro_plus: "pro_plus",
+  enterprise: "enterprise",
+  starter: "starter",
+};
+
+/**
  * 사용자의 현재 플랜 코드 조회
+ * 1차: Subscription 테이블 (정식 구독자)
+ * 2차: User.plan 필드 (관리자 직접 변경 시)
  */
 export async function getUserPlanCode(userId: string): Promise<string> {
+  // 1) 활성 구독이 있으면 그것을 사용
   const sub = await prisma.subscription.findFirst({
     where: {
       userId,
@@ -102,7 +121,21 @@ export async function getUserPlanCode(userId: string): Promise<string> {
     orderBy: { createdAt: "desc" },
   });
 
-  return sub?.plan?.planCode ?? "starter";
+  if (sub?.plan?.planCode) {
+    return sub.plan.planCode;
+  }
+
+  // 2) 구독 없으면 User.plan 필드에서 매핑
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { plan: true },
+  });
+
+  if (user?.plan) {
+    return LEGACY_PLAN_MAP[user.plan] || "starter";
+  }
+
+  return "starter";
 }
 
 /**
