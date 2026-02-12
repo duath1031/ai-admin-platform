@@ -1,0 +1,289 @@
+"use client";
+
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
+
+function SubscriptionContent() {
+  const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const selectedPlan = searchParams.get("plan");
+
+  const [subData, setSubData] = useState<{
+    subscription: {
+      id: string;
+      status: string;
+      nextBillingDate: string;
+      trialEndsAt: string | null;
+      cancelledAt: string | null;
+      endDate: string | null;
+    } | null;
+    currentPlan: {
+      planCode: string;
+      displayName: string;
+      price: number;
+      features: string;
+      tokenQuota: number;
+    };
+    billingKey: { id: string; cardName: string; cardNumber: string } | null;
+    recentPayments: {
+      orderId: string;
+      amount: number;
+      approvedAt: string;
+      itemName: string;
+      receiptUrl: string | null;
+    }[];
+  } | null>(null);
+  const [balance, setBalance] = useState<{
+    balance: number;
+    monthlyUsed: number;
+    tokenQuota: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(false);
+
+  const loadData = useCallback(async () => {
+    if (!session) return;
+    const [subRes, balRes] = await Promise.all([
+      fetch("/api/payments/subscription").then((r) => r.json()),
+      fetch("/api/tokens/balance").then((r) => r.json()),
+    ]);
+    if (subRes.success) setSubData(subRes);
+    if (balRes.success) setBalance(balRes);
+    setLoading(false);
+  }, [session]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleCancel = async () => {
+    if (!subData?.subscription?.id) return;
+    if (!confirm("정말 구독을 해지하시겠습니까? 현재 결제 기간이 끝날 때까지는 계속 사용 가능합니다.")) return;
+
+    setCancelling(true);
+    const res = await fetch("/api/payments/cancel-subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subscriptionId: subData.subscription.id }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert(data.message);
+      loadData();
+    } else {
+      alert(data.error || "해지 처리 중 오류가 발생했습니다.");
+    }
+    setCancelling(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  const sub = subData?.subscription;
+  const plan = subData?.currentPlan;
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold text-gray-900 mb-8">구독 관리</h1>
+
+      {/* 현재 플랜 */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-gray-900">현재 플랜</h2>
+          {sub?.status && (
+            <span
+              className={`px-3 py-1 rounded-full text-xs font-medium ${
+                sub.status === "active"
+                  ? "bg-green-100 text-green-700"
+                  : sub.status === "trial"
+                  ? "bg-blue-100 text-blue-700"
+                  : sub.status === "cancelled"
+                  ? "bg-red-100 text-red-700"
+                  : "bg-yellow-100 text-yellow-700"
+              }`}
+            >
+              {sub.status === "active"
+                ? "활성"
+                : sub.status === "trial"
+                ? "무료체험 중"
+                : sub.status === "cancelled"
+                ? "해지됨"
+                : sub.status}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-end gap-2 mb-4">
+          <span className="text-3xl font-bold text-gray-900">
+            {plan?.displayName || "Starter"}
+          </span>
+          {plan && plan.price > 0 && (
+            <span className="text-gray-500 mb-1">
+              {plan.price.toLocaleString()}원/월
+            </span>
+          )}
+        </div>
+
+        <p className="text-sm text-gray-600 mb-4">{plan?.features}</p>
+
+        {sub?.nextBillingDate && sub.status !== "cancelled" && (
+          <p className="text-sm text-gray-500">
+            다음 결제일: {new Date(sub.nextBillingDate).toLocaleDateString("ko-KR")}
+          </p>
+        )}
+        {sub?.trialEndsAt && sub.status === "trial" && (
+          <p className="text-sm text-blue-600 font-medium">
+            무료체험 종료: {new Date(sub.trialEndsAt).toLocaleDateString("ko-KR")}
+          </p>
+        )}
+        {sub?.endDate && sub.status === "cancelled" && (
+          <p className="text-sm text-red-600">
+            서비스 종료일: {new Date(sub.endDate).toLocaleDateString("ko-KR")}
+          </p>
+        )}
+
+        <div className="flex gap-3 mt-6">
+          <a
+            href="/pricing"
+            className="py-2 px-4 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            {sub ? "플랜 변경" : "플랜 선택"}
+          </a>
+          {sub && sub.status !== "cancelled" && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="py-2 px-4 border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+            >
+              {cancelling ? "처리중..." : "구독 해지"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 토큰 사용현황 */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 shadow-sm">
+        <h2 className="text-lg font-bold text-gray-900 mb-4">토큰 사용현황</h2>
+
+        {balance && (
+          <>
+            <div className="flex items-end gap-2 mb-2">
+              <span className="text-2xl font-bold text-gray-900">
+                {balance.balance === -1
+                  ? "무제한"
+                  : balance.balance.toLocaleString()}
+              </span>
+              {balance.balance !== -1 && (
+                <span className="text-gray-500 mb-0.5">토큰 남음</span>
+              )}
+            </div>
+
+            {balance.balance !== -1 && (
+              <div className="mb-4">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>이번 달 사용: {balance.monthlyUsed.toLocaleString()}</span>
+                  <span>월 할당: {balance.tokenQuota.toLocaleString()}</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 h-2 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        (balance.monthlyUsed / balance.tokenQuota) * 100
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <a
+              href="/tokens"
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              사용 내역 보기 &rarr;
+            </a>
+          </>
+        )}
+      </div>
+
+      {/* 결제수단 */}
+      {subData?.billingKey && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 shadow-sm">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">결제수단</h2>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-7 bg-blue-100 rounded flex items-center justify-center">
+              <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z" />
+              </svg>
+            </div>
+            <div>
+              <div className="text-sm font-medium text-gray-900">
+                {subData.billingKey.cardName || "카드"}
+              </div>
+              <div className="text-xs text-gray-500">
+                {subData.billingKey.cardNumber || "****"}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 최근 결제 내역 */}
+      {subData?.recentPayments && subData.recentPayments.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">최근 결제</h2>
+          <div className="space-y-3">
+            {subData.recentPayments.map((p) => (
+              <div
+                key={p.orderId}
+                className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+              >
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {p.itemName}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {p.approvedAt
+                      ? new Date(p.approvedAt).toLocaleDateString("ko-KR")
+                      : "-"}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-gray-900">
+                    {p.amount.toLocaleString()}원
+                  </div>
+                  {p.receiptUrl && (
+                    <a
+                      href={p.receiptUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline"
+                    >
+                      영수증
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SubscriptionPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>}>
+      <SubscriptionContent />
+    </Suspense>
+  );
+}
