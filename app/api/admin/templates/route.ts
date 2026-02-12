@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { checkAdminAuth } from "@/lib/admin-auth";
 import prisma from "@/lib/prisma";
 import { saveTemplateToSupabase } from "@/lib/supabaseStorage";
 import { extractPlaceholders } from "@/lib/document/placeholderExtractor";
@@ -18,6 +19,11 @@ import { extractPlaceholders } from "@/lib/document/placeholderExtractor";
  */
 export async function GET(req: NextRequest) {
   try {
+    const { authorized } = await checkAdminAuth();
+    if (!authorized) {
+      return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
     const status = searchParams.get("status") || "active";
@@ -79,7 +85,10 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const { authorized, session } = await checkAdminAuth();
+    if (!authorized) {
+      return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
+    }
 
     const formData = await req.formData();
     const file = formData.get("file") as File | null;

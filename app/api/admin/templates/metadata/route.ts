@@ -12,8 +12,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { checkAdminAuth } from '@/lib/admin-auth';
 import { promises as fs } from 'fs';
 import path from 'path';
 
@@ -21,17 +20,8 @@ const TEMPLATES_DIR = path.join(process.cwd(), 'public', 'templates', 'docx');
 
 export async function POST(request: NextRequest) {
   try {
-    // 관리자 권한 확인
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { success: false, error: '로그인이 필요합니다.' },
-        { status: 401 }
-      );
-    }
-
-    const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim().toLowerCase());
-    if (!adminEmails.includes(session.user.email.toLowerCase())) {
+    const { authorized } = await checkAdminAuth();
+    if (!authorized) {
       return NextResponse.json(
         { success: false, error: '관리자 권한이 필요합니다.' },
         { status: 403 }
@@ -75,6 +65,14 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const { authorized } = await checkAdminAuth();
+    if (!authorized) {
+      return NextResponse.json(
+        { success: false, error: '관리자 권한이 필요합니다.' },
+        { status: 403 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
 
