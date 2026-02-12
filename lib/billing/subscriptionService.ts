@@ -27,10 +27,10 @@ function getGracePeriodEnd(from: Date = new Date()): Date {
   return end;
 }
 
-/** 무료체험 종료일 (14일 후) */
+/** 무료체험 종료일 (1일 후) */
 function getTrialEndDate(from: Date = new Date()): Date {
   const end = new Date(from);
-  end.setDate(end.getDate() + 14);
+  end.setDate(end.getDate() + 1);
   return end;
 }
 

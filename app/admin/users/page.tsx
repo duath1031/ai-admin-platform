@@ -29,7 +29,8 @@ const PLAN_OPTIONS = [
   { value: "none", label: "없음", color: "gray" },
   { value: "basic", label: "베이직", color: "blue" },
   { value: "pro", label: "프로", color: "purple" },
-  { value: "enterprise", label: "기업", color: "orange" },
+  { value: "pro_plus", label: "Pro Plus", color: "orange" },
+  { value: "enterprise", label: "Enterprise", color: "red" },
 ];
 
 const ROLE_OPTIONS = [

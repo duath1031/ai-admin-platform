@@ -24,11 +24,27 @@ import { authOptions } from "@/lib/auth";
 import { generateDocx, validateFormData, FormData } from "@/lib/document/generator";
 import { FORM_TEMPLATES } from "@/lib/document/templates";
 import prisma from "@/lib/prisma";
+import { deductTokens } from "@/lib/token/tokenService";
+import { checkFeatureAccess } from "@/lib/token/planAccess";
 
 export async function POST(req: NextRequest) {
   try {
-    // 세션 확인 (선택적 - 비로그인도 허용할 수 있음)
+    // 세션 확인 (필수)
     const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    // 토큰/플랜 체크
+    const userId = session.user.id;
+    const access = await checkFeatureAccess(userId, "document_create");
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: "플랜 업그레이드가 필요합니다.", requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "document_create");
+    if (!deducted) {
+      return NextResponse.json({ success: false, error: "토큰이 부족합니다.", required: 3000, redirect: "/token-charge" }, { status: 402 });
+    }
 
     // 요청 파싱
     const body = await req.json();

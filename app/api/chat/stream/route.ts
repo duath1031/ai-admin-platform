@@ -13,6 +13,9 @@ import { searchLegalInfo, formatLegalResultForPrompt } from "@/lib/rag/lawServic
 import { quickClassify } from "@/lib/rag/intentClassifier";
 // Knowledge Base - 경량 버전 사용 (Smart Tag 기반)
 import { getKnowledgeByTags } from "@/lib/ai/knowledgeQuery";
+// 토큰 시스템
+import { deductTokens } from "@/lib/token/tokenService";
+import { checkFeatureAccess } from "@/lib/token/planAccess";
 // 문서 생성: LLM-Driven Selection (Phase 11) - DB에서 동적 로드
 
 // Vercel 서버리스 함수 타임아웃 설정
@@ -249,9 +252,10 @@ export async function POST(req: NextRequest) {
 
     // 마지막 사용자 메시지에서 의도 파악
     const lastUserMessage = messages[messages.length - 1]?.content || "";
+    const userId = session.user.id as string;
 
     // =========================================================================
-    // Fast Path: 단순 인사/잡담 → 지식검색 전부 스킵, 즉시 스트리밍
+    // Fast Path: 단순 인사/잡담 → 지식검색 전부 스킵, 토큰 차감 없이 스트리밍
     // =========================================================================
     if (isSimpleGreeting(lastUserMessage)) {
       console.log(`[Chat Stream] 인사 감지 → Fast Path: "${lastUserMessage}"`);
@@ -283,6 +287,25 @@ export async function POST(req: NextRequest) {
       return new Response(stream, {
         headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
       });
+    }
+
+    // =========================================================================
+    // 토큰 체크: 실질적 질문은 ai_chat 비용 차감 (1,000토큰)
+    // =========================================================================
+    const access = await checkFeatureAccess(userId, "ai_chat");
+    if (!access.allowed) {
+      return new Response(
+        JSON.stringify({ error: "플랜 업그레이드가 필요합니다.", requiredPlan: access.requiredPlan }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const deducted = await deductTokens(userId, "ai_chat");
+    if (!deducted) {
+      return new Response(
+        JSON.stringify({ error: "토큰이 부족합니다.", required: 1000, redirect: "/token-charge" }),
+        { status: 402, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     const intent = detectIntent(lastUserMessage);

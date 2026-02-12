@@ -5,6 +5,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { reviewWithGemini } from "@/lib/gemini";
 import { DOCUMENT_REVIEW_PROMPT } from "@/lib/systemPrompts";
+import { deductTokens } from "@/lib/token/tokenService";
+import { checkFeatureAccess } from "@/lib/token/planAccess";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,6 +14,16 @@ export async function POST(req: NextRequest) {
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userId = session.user.id;
+    const access = await checkFeatureAccess(userId, "document_review");
+    if (!access.allowed) {
+      return NextResponse.json({ error: "플랜 업그레이드가 필요합니다.", requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "document_review");
+    if (!deducted) {
+      return NextResponse.json({ error: "토큰이 부족합니다.", required: 2000, redirect: "/token-charge" }, { status: 402 });
     }
 
     const { content, documentType } = await req.json();

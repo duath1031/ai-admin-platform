@@ -9,12 +9,33 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { deductTokens } from '@/lib/token/tokenService';
+import { checkFeatureAccess } from '@/lib/token/planAccess';
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
 export async function POST(request: NextRequest) {
   try {
+    // 인증 체크
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: '로그인이 필요합니다.' }, { status: 401 });
+    }
+
+    // 토큰 체크 (ai_chat 비용 적용 — 경량 AI 호출)
+    const userId = session.user.id;
+    const access = await checkFeatureAccess(userId, "ai_chat");
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "ai_chat");
+    if (!deducted) {
+      return NextResponse.json({ success: false, error: '토큰이 부족합니다.', required: 1000, redirect: '/token-charge' }, { status: 402 });
+    }
+
     const body = await request.json();
     const { serviceCode, naturalInput, fields } = body;
 

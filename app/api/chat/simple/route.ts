@@ -10,6 +10,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import prisma from "@/lib/prisma";
+import { deductTokens } from "@/lib/token/tokenService";
+import { checkFeatureAccess } from "@/lib/token/planAccess";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
@@ -25,6 +27,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     console.log("[Simple Chat] Auth OK:", session.user.email);
+
+    // Step 1.5: 토큰 체크
+    const userId = session.user.id as string;
+    const access = await checkFeatureAccess(userId, "ai_chat");
+    if (!access.allowed) {
+      return NextResponse.json({ error: "플랜 업그레이드가 필요합니다.", requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "ai_chat");
+    if (!deducted) {
+      return NextResponse.json({ error: "토큰이 부족합니다.", required: 1000, redirect: "/token-charge" }, { status: 402 });
+    }
 
     // Step 2: 요청 파싱
     console.log("[Simple Chat] Step 2: Parsing request...");

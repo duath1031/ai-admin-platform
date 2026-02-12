@@ -28,39 +28,45 @@ interface CurrentSub {
 
 const PLAN_FEATURES: Record<string, string[]> = {
   starter: [
-    "AI 상담 3회/월",
-    "서류 작성 1건/월",
-    "기본 서식 열람",
-    "링크 안내",
+    "AI 상담 1회",
+    "서류 작성 1건",
+    "전체 기능 미리보기",
+    "(계정당 평생 1회)",
   ],
   standard: [
     "AI 상담 무제한",
     "서류 작성 20건/월",
-    "민원 자동접수 (문서24)",
+    "문서24/민원 접수 5건",
     "인허가 자가진단",
     "서류 검토",
     "보조금 기본 매칭",
-    "기한 알림",
     "월 100만 토큰",
   ],
   pro: [
     "Standard 전체 포함",
     "입찰 분석 (시뮬레이터)",
-    "정책자금 상세 매칭",
-    "인증 진단 (벤처/이노비즈)",
     "비자 계산기",
-    "노무/HR 관리",
+    "인증 진단",
+    "정책자금 매칭",
     "계약서 AI 분석",
     "월 300만 토큰",
   ],
-  enterprise: [
+  pro_plus: [
     "Pro 전체 포함",
-    "부동산 토지분석 리포트",
+    "거래처(B2B) 50개 관리",
+    "거래처별 서류함",
+    "거래처 대시보드",
+    "일괄 보조금매칭",
+    "리포트 자동생성",
+    "월 500만 토큰",
+  ],
+  enterprise: [
+    "Pro Plus 전체 포함",
+    "토지분석 리포트",
     "안전관리 (TBM)",
-    "전용 API 연동",
     "화이트라벨",
+    "전용 API 연동",
     "전담 매니저",
-    "커스텀 서식",
     "토큰 무제한",
   ],
 };
@@ -69,7 +75,8 @@ const PLAN_COLORS: Record<string, { bg: string; border: string; badge: string }>
   starter: { bg: "bg-gray-50", border: "border-gray-200", badge: "bg-gray-100 text-gray-600" },
   standard: { bg: "bg-blue-50", border: "border-blue-300", badge: "bg-blue-100 text-blue-700" },
   pro: { bg: "bg-purple-50", border: "border-purple-400", badge: "bg-purple-100 text-purple-700" },
-  enterprise: { bg: "bg-amber-50", border: "border-amber-400", badge: "bg-amber-100 text-amber-700" },
+  pro_plus: { bg: "bg-amber-50", border: "border-amber-400", badge: "bg-amber-100 text-amber-700" },
+  enterprise: { bg: "bg-red-50", border: "border-red-400", badge: "bg-red-100 text-red-700" },
 };
 
 export default function PricingPage() {
@@ -97,7 +104,6 @@ export default function PricingPage() {
       router.push("/api/auth/signin");
       return;
     }
-    // TODO: PortOne SDK 빌링키 발급 → /api/payments/billing 호출
     router.push(`/subscription?plan=${planCode}`);
   };
 
@@ -110,19 +116,19 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 py-8">
       {/* 헤더 */}
       <div className="text-center mb-12">
         <h1 className="text-3xl font-bold text-gray-900 mb-3">
-          AI 직원 1명, 월 10만원부터
+          AI 직원 1명, 월 9만원부터
         </h1>
         <p className="text-lg text-gray-500">
           경리 + 노무사 + 행정사 + 입찰담당 + 경영컨설턴트의 역할을 AI가 대신합니다
         </p>
       </div>
 
-      {/* 요금제 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* 요금제 카드 — 5열 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         {plans.map((plan) => {
           const colors = PLAN_COLORS[plan.planCode] || PLAN_COLORS.starter;
           const features = PLAN_FEATURES[plan.planCode] || [];
@@ -132,7 +138,7 @@ export default function PricingPage() {
           return (
             <div
               key={plan.id}
-              className={`relative rounded-2xl border-2 ${colors.border} ${colors.bg} p-6 flex flex-col ${
+              className={`relative rounded-2xl border-2 ${colors.border} ${colors.bg} p-5 flex flex-col ${
                 isPopular ? "ring-2 ring-purple-500 shadow-xl scale-[1.02]" : "shadow-md"
               } transition-all hover:shadow-lg`}
             >
@@ -145,42 +151,44 @@ export default function PricingPage() {
               )}
 
               {/* 플랜명 */}
-              <div className="mb-4">
+              <div className="mb-3">
                 <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${colors.badge}`}>
                   {plan.displayName}
                 </span>
               </div>
 
               {/* 가격 */}
-              <div className="mb-6">
+              <div className="mb-4">
                 {plan.price === 0 ? (
-                  <div className="text-3xl font-bold text-gray-900">무료</div>
+                  <div className="text-2xl font-bold text-gray-900">무료</div>
                 ) : (
                   <>
-                    <div className="text-3xl font-bold text-gray-900">
-                      {(plan.price / 1000).toFixed(0)}
-                      <span className="text-lg font-normal text-gray-500">,000원</span>
+                    <div className="text-2xl font-bold text-gray-900">
+                      {(plan.price / 10000).toFixed(0)}
+                      <span className="text-base font-normal text-gray-500">만원</span>
                     </div>
-                    <div className="text-sm text-gray-500">/월</div>
+                    <div className="text-xs text-gray-500">/월</div>
                   </>
                 )}
               </div>
 
               {/* 토큰 */}
-              <div className="mb-6 py-2 px-3 bg-white/60 rounded-lg">
-                <span className="text-sm text-gray-600">
+              <div className="mb-4 py-1.5 px-2 bg-white/60 rounded-lg">
+                <span className="text-xs text-gray-600">
                   {plan.tokenQuota === -1
                     ? "토큰 무제한"
+                    : plan.tokenQuota < 10000
+                    ? `${plan.tokenQuota.toLocaleString()} 토큰`
                     : `월 ${(plan.tokenQuota / 10000).toFixed(0)}만 토큰`}
                 </span>
               </div>
 
               {/* 기능 목록 */}
-              <ul className="space-y-3 mb-8 flex-1">
+              <ul className="space-y-2 mb-6 flex-1">
                 {features.map((feature, i) => (
-                  <li key={i} className="flex items-start gap-2">
+                  <li key={i} className="flex items-start gap-1.5">
                     <svg
-                      className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0"
+                      className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -192,7 +200,7 @@ export default function PricingPage() {
                         d="M5 13l4 4L19 7"
                       />
                     </svg>
-                    <span className="text-sm text-gray-700">{feature}</span>
+                    <span className="text-xs text-gray-700">{feature}</span>
                   </li>
                 ))}
               </ul>
@@ -201,34 +209,34 @@ export default function PricingPage() {
               {isCurrent ? (
                 <button
                   disabled
-                  className="w-full py-3 px-4 bg-gray-200 text-gray-500 font-medium rounded-xl cursor-not-allowed"
+                  className="w-full py-2.5 px-3 bg-gray-200 text-gray-500 text-sm font-medium rounded-xl cursor-not-allowed"
                 >
                   현재 플랜
                 </button>
               ) : plan.planCode === "starter" ? (
                 <button
                   disabled
-                  className="w-full py-3 px-4 border border-gray-300 text-gray-600 font-medium rounded-xl cursor-not-allowed"
+                  className="w-full py-2.5 px-3 border border-gray-300 text-gray-600 text-sm font-medium rounded-xl cursor-not-allowed"
                 >
                   기본 제공
                 </button>
               ) : plan.planCode === "enterprise" ? (
                 <button
                   onClick={() => window.open("mailto:duath1031@gmail.com?subject=Enterprise 문의")}
-                  className="w-full py-3 px-4 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 transition-colors"
+                  className="w-full py-2.5 px-3 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 transition-colors"
                 >
                   문의하기
                 </button>
               ) : (
                 <button
                   onClick={() => handleSubscribe(plan.planCode)}
-                  className={`w-full py-3 px-4 font-bold rounded-xl transition-colors shadow-lg ${
+                  className={`w-full py-2.5 px-3 text-sm font-bold rounded-xl transition-colors shadow-lg ${
                     isPopular
                       ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700"
                       : "bg-blue-600 text-white hover:bg-blue-700"
                   }`}
                 >
-                  {currentSub?.subscription ? "플랜 변경" : "14일 무료 체험"}
+                  {currentSub?.subscription ? "플랜 변경" : "1일 무료 체험"}
                 </button>
               )}
             </div>

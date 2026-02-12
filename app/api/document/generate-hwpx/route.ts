@@ -16,6 +16,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { generateHwpx, saveHwpxToTemp, extractPlaceholders, transformDataForHwpx } from '@/lib/hwpx';
+import { deductTokens } from '@/lib/token/tokenService';
+import { checkFeatureAccess } from '@/lib/token/planAccess';
 import * as path from 'path';
 
 export async function POST(request: NextRequest) {
@@ -23,6 +25,17 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // 토큰/플랜 체크
+    const userId = session.user.id;
+    const access = await checkFeatureAccess(userId, "document_create");
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "document_create");
+    if (!deducted) {
+      return NextResponse.json({ success: false, error: '토큰이 부족합니다.', required: 3000, redirect: '/token-charge' }, { status: 402 });
     }
 
     const body = await request.json();

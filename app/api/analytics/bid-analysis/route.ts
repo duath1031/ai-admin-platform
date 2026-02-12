@@ -7,6 +7,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import {
   searchBids,
   searchPreSpecs,
@@ -14,9 +16,28 @@ import {
   analyzeBidFitness,
 } from '@/lib/analytics/g2bAnalyzer';
 import type { BidSearchParams, BidItem } from '@/lib/analytics/g2bAnalyzer';
+import { deductTokens } from '@/lib/token/tokenService';
+import { checkFeatureAccess } from '@/lib/token/planAccess';
 
 export async function POST(request: NextRequest) {
   try {
+    // 인증 체크
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: '로그인이 필요합니다.' }, { status: 401 });
+    }
+
+    // 토큰/플랜 체크
+    const userId = session.user.id;
+    const access = await checkFeatureAccess(userId, "bid_analysis");
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "bid_analysis");
+    if (!deducted) {
+      return NextResponse.json({ success: false, error: '토큰이 부족합니다.', required: 2000, redirect: '/token-charge' }, { status: 402 });
+    }
+
     const action = request.nextUrl.searchParams.get('action') || 'search';
     const body = await request.json();
 

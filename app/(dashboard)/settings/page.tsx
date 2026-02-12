@@ -29,9 +29,12 @@ interface UserProfile {
 
 const PLAN_LABELS: Record<string, { name: string; price: string }> = {
   none: { name: '미가입', price: '-' },
-  basic: { name: '일반 (Basic)', price: '99,000원/월' },
-  pro: { name: '프로 (Pro)', price: '150,000원/월' },
-  enterprise: { name: '기업 (Enterprise)', price: '협의' },
+  starter: { name: 'Starter', price: '무료' },
+  standard: { name: 'Standard', price: '90,000원/월' },
+  basic: { name: '일반 (Basic)', price: '90,000원/월' },
+  pro: { name: 'Pro', price: '150,000원/월' },
+  pro_plus: { name: 'Pro Plus', price: '220,000원/월' },
+  enterprise: { name: 'Enterprise', price: '250,000원/월' },
 };
 
 const PROVIDER_LABELS: Record<string, string> = {

@@ -397,12 +397,13 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
             {[
-              { name: "Starter", price: "무료", desc: "개인 기본 사용", features: ["AI 상담 3회/월", "서류 작성 1건/월", "기본 서식 열람"] },
-              { name: "Standard", price: "99,000", desc: "소규모 사업자", features: ["AI 상담 무제한", "서류 작성 20건/월", "민원 자동접수", "인허가 진단"], popular: true },
-              { name: "Pro", price: "150,000", desc: "전문 사업자", features: ["전 기능 무제한", "입찰 분석", "정책자금 매칭", "우선 고객지원"] },
-              { name: "Enterprise", price: "250,000", desc: "기업/법인", features: ["무제한 사용", "전용 API", "화이트라벨", "전담 매니저"] },
+              { name: "Starter", price: "무료", desc: "1회 체험", features: ["AI 상담 1회", "서류 1건", "계정당 평생 1회"] },
+              { name: "Standard", price: "90,000", desc: "소규모/개인 사업자", features: ["AI 상담 무제한", "서류 작성 20건/월", "민원 자동접수", "인허가 진단"], popular: true },
+              { name: "Pro", price: "150,000", desc: "기업담당자/공무원/행정사", features: ["전 기능 무제한", "입찰 분석", "정책자금 매칭", "인증 진단"] },
+              { name: "Pro Plus", price: "220,000", desc: "전문행정사/법무팀", features: ["거래처 관리 50개", "거래처별 서류함", "일괄 보조금매칭", "우선 고객지원"] },
+              { name: "Enterprise", price: "250,000", desc: "대기업/법인", features: ["토지분석+안전관리", "화이트라벨", "전용 API", "토큰 무제한"] },
             ].map((plan) => (
               <div
                 key={plan.name}

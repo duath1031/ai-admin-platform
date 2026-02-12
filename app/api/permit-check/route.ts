@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { searchLandUse } from "@/lib/landUseApi";
+import { deductTokens } from "@/lib/token/tokenService";
+import { checkFeatureAccess } from "@/lib/token/planAccess";
 
 // 용도지역별 허용 업종 매핑
 const ZONE_BUSINESS_MATRIX: Record<string, Record<string, { allowed: boolean; conditions?: string }>> = {
@@ -829,11 +831,22 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session?.user) {
+    if (!session?.user?.id) {
       return NextResponse.json(
         { error: "로그인이 필요합니다." },
         { status: 401 }
       );
+    }
+
+    // 토큰/플랜 체크
+    const userId = session.user.id;
+    const access = await checkFeatureAccess(userId, "permit_check");
+    if (!access.allowed) {
+      return NextResponse.json({ error: "플랜 업그레이드가 필요합니다.", requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "permit_check");
+    if (!deducted) {
+      return NextResponse.json({ error: "토큰이 부족합니다.", required: 2000, redirect: "/token-charge" }, { status: 402 });
     }
 
     const body = await request.json();

@@ -18,6 +18,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { decrypt } from '@/lib/crypto';
+import { deductTokens } from '@/lib/token/tokenService';
+import { checkFeatureAccess } from '@/lib/token/planAccess';
 
 const RPA_WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
 const RPA_WORKER_API_KEY = process.env.RPA_WORKER_API_KEY || process.env.WORKER_API_KEY || '';
@@ -156,6 +158,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
     }
 
+    // 2. 토큰/플랜 체크
+    const access = await checkFeatureAccess(session.user.id, "doc24_submission");
+    if (!access.allowed) {
+      return NextResponse.json(
+        { success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan },
+        { status: 403 }
+      );
+    }
+    const deducted = await deductTokens(session.user.id, "doc24_submission");
+    if (!deducted) {
+      return NextResponse.json(
+        { success: false, error: '토큰이 부족합니다.', required: 5000, redirect: '/token-charge' },
+        { status: 402 }
+      );
+    }
+
     const body = await request.json();
     const { recipient, recipientCode, title, content, files } = body;
 
@@ -163,7 +181,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '수신기관과 제목은 필수입니다.' }, { status: 400 });
     }
 
-    // 2. 문서24 계정 조회
+    // 3. 문서24 계정 조회
     const account = await prisma.doc24Account.findUnique({
       where: { userId: session.user.id },
     });

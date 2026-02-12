@@ -19,8 +19,12 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { z } from 'zod';
 import { executeRpaTask, SupportedSite } from '@/lib/rpa/ventureInAutomation';
+import { deductTokens } from '@/lib/token/tokenService';
+import { checkFeatureAccess } from '@/lib/token/planAccess';
 
 // =============================================================================
 // Request Validation Schema
@@ -130,6 +134,28 @@ function generateClipboardText(guide: ManualInputGuide): string {
 
 export async function POST(request: NextRequest) {
   try {
+    // 인증 체크
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: '인증이 필요합니다' }, { status: 401 });
+    }
+
+    // 토큰/플랜 체크
+    const access = await checkFeatureAccess(session.user.id, "rpa_submission");
+    if (!access.allowed) {
+      return NextResponse.json(
+        { success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan },
+        { status: 403 }
+      );
+    }
+    const deducted = await deductTokens(session.user.id, "rpa_submission");
+    if (!deducted) {
+      return NextResponse.json(
+        { success: false, error: '토큰이 부족합니다.', required: 5000, redirect: '/token-charge' },
+        { status: 402 }
+      );
+    }
+
     const body = await request.json();
     const validationResult = RpaSubmitSchema.safeParse(body);
 

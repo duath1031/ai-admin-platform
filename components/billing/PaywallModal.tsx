@@ -16,9 +16,10 @@ interface PaywallModalProps {
 
 const PLAN_DISPLAY: Record<string, { name: string; price: string; color: string }> = {
   starter: { name: "Starter", price: "무료", color: "text-gray-500" },
-  standard: { name: "Standard", price: "99,000원/월", color: "text-blue-600" },
+  standard: { name: "Standard", price: "90,000원/월", color: "text-blue-600" },
   pro: { name: "Pro", price: "150,000원/월", color: "text-purple-600" },
-  enterprise: { name: "Enterprise", price: "250,000원/월", color: "text-amber-600" },
+  pro_plus: { name: "Pro Plus", price: "220,000원/월", color: "text-amber-600" },
+  enterprise: { name: "Enterprise", price: "250,000원/월", color: "text-red-600" },
 };
 
 export default function PaywallModal({
@@ -175,11 +176,11 @@ export default function PaywallModal({
               <button
                 onClick={() => {
                   handleClose();
-                  router.push("/pricing");
+                  router.push("/token-charge");
                 }}
                 className="flex-1 py-3 px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl hover:from-amber-600 hover:to-orange-600 transition-colors shadow-lg"
               >
-                충전하기
+                토큰 충전하기
               </button>
             </div>
           </>
