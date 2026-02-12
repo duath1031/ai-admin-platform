@@ -12,6 +12,45 @@ import { searchForm, COMMON_FORMS, FormSearchResult, searchFormFromApi } from '.
 import { validateLink, generateFallbackLink, LinkValidationResult } from '../utils/linkValidator';
 
 // =============================================================================
+// 법령 검색 캐시 (인메모리, 15분 TTL)
+// 동일 키워드 반복 쿼리 시 API 호출 절감
+// =============================================================================
+const CACHE_TTL_MS = 15 * 60 * 1000; // 15분
+const MAX_CACHE_SIZE = 100;
+
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const legalSearchCache = new Map<string, CacheEntry<any>>();
+
+function getCached<T>(key: string): T | null {
+  const entry = legalSearchCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    legalSearchCache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+function setCache<T>(key: string, data: T): void {
+  // LRU-like: 캐시 사이즈 초과 시 가장 오래된 항목 삭제
+  if (legalSearchCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = legalSearchCache.keys().next().value;
+    if (firstKey) legalSearchCache.delete(firstKey);
+  }
+  legalSearchCache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+function makeCacheKey(prefix: string, query: string): string {
+  // 핵심 키워드만 추출하여 캐시 키 생성 (유사 쿼리도 히트하도록)
+  const normalized = query.trim().toLowerCase().replace(/\s+/g, " ").substring(0, 100);
+  return `${prefix}:${normalized}`;
+}
+
+// =============================================================================
 // 타입 정의
 // =============================================================================
 
@@ -80,6 +119,13 @@ const LAW_API_ID = process.env.LAW_API_ID || 'duath1031';
  * 법령 검색 API
  */
 async function searchStatutes(query: string): Promise<StatuteResult[]> {
+  const cacheKey = makeCacheKey('statute', query);
+  const cached = getCached<StatuteResult[]>(cacheKey);
+  if (cached) {
+    console.log(`[LawService] 법령 캐시 히트: "${query.substring(0, 30)}"`);
+    return cached;
+  }
+
   try {
     const cleanQuery = cleanSearchQuery(query);
     const url = `${LAW_API_BASE}/lawSearch.do?OC=${LAW_API_ID}&target=law&type=XML&query=${encodeURIComponent(cleanQuery)}`;
@@ -113,7 +159,9 @@ async function searchStatutes(query: string): Promise<StatuteResult[]> {
       });
     }
 
-    return results.slice(0, 5); // 상위 5개만
+    const sliced = results.slice(0, 5);
+    setCache(cacheKey, sliced);
+    return sliced;
   } catch (error) {
     console.error('[LawService] 법령 검색 오류:', error);
     return [];
@@ -124,6 +172,13 @@ async function searchStatutes(query: string): Promise<StatuteResult[]> {
  * 판례 검색 API
  */
 async function searchPrecedents(query: string): Promise<PrecedentResult[]> {
+  const cacheKey = makeCacheKey('prec', query);
+  const cached = getCached<PrecedentResult[]>(cacheKey);
+  if (cached) {
+    console.log(`[LawService] 판례 캐시 히트: "${query.substring(0, 30)}"`);
+    return cached;
+  }
+
   try {
     const cleanQuery = cleanSearchQuery(query);
     const url = `${LAW_API_BASE}/lawSearch.do?OC=${LAW_API_ID}&target=prec&type=XML&query=${encodeURIComponent(cleanQuery)}`;
@@ -162,7 +217,9 @@ async function searchPrecedents(query: string): Promise<PrecedentResult[]> {
       });
     }
 
-    return results.slice(0, 3); // 판례는 3개만
+    const sliced = results.slice(0, 3);
+    setCache(cacheKey, sliced);
+    return sliced;
   } catch (error) {
     console.error('[LawService] 판례 검색 오류:', error);
     return [];
@@ -173,6 +230,13 @@ async function searchPrecedents(query: string): Promise<PrecedentResult[]> {
  * 행정심판 재결례 검색
  */
 async function searchRulings(query: string): Promise<RulingResult[]> {
+  const cacheKey = makeCacheKey('ruling', query);
+  const cached = getCached<RulingResult[]>(cacheKey);
+  if (cached) {
+    console.log(`[LawService] 재결례 캐시 히트: "${query.substring(0, 30)}"`);
+    return cached;
+  }
+
   try {
     const cleanQuery = cleanSearchQuery(query);
     const url = `${LAW_API_BASE}/lawSearch.do?OC=${LAW_API_ID}&target=detc&type=XML&query=${encodeURIComponent(cleanQuery)}`;
@@ -207,7 +271,9 @@ async function searchRulings(query: string): Promise<RulingResult[]> {
       });
     }
 
-    return results.slice(0, 3);
+    const sliced = results.slice(0, 3);
+    setCache(cacheKey, sliced);
+    return sliced;
   } catch (error) {
     console.error('[LawService] 행정심판 검색 오류:', error);
     return [];
@@ -218,6 +284,13 @@ async function searchRulings(query: string): Promise<RulingResult[]> {
  * 자치법규 검색
  */
 async function searchLocalLaws(query: string): Promise<LocalLawResult[]> {
+  const cacheKey = makeCacheKey('local', query);
+  const cached = getCached<LocalLawResult[]>(cacheKey);
+  if (cached) {
+    console.log(`[LawService] 자치법규 캐시 히트: "${query.substring(0, 30)}"`);
+    return cached;
+  }
+
   try {
     const cleanQuery = cleanSearchQuery(query);
     const url = `${LAW_API_BASE}/lawSearch.do?OC=${LAW_API_ID}&target=ordin&type=XML&query=${encodeURIComponent(cleanQuery)}`;
@@ -249,7 +322,9 @@ async function searchLocalLaws(query: string): Promise<LocalLawResult[]> {
       });
     }
 
-    return results.slice(0, 3);
+    const sliced = results.slice(0, 3);
+    setCache(cacheKey, sliced);
+    return sliced;
   } catch (error) {
     console.error('[LawService] 자치법규 검색 오류:', error);
     return [];

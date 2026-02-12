@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { chatWithKnowledgeStream, FileDataPart } from "@/lib/gemini";
+import { chatWithKnowledgeStream, FileDataPart, UserTier } from "@/lib/gemini";
 import { getActiveSystemPrompt } from "@/lib/systemPromptService";
 import { searchForm, formatFormInfo, COMMON_FORMS } from "@/lib/lawApi";
 import { searchLandUse, formatLandUseResult } from "@/lib/landUseApi";
@@ -15,7 +15,9 @@ import { quickClassify } from "@/lib/rag/intentClassifier";
 import { getKnowledgeByTags } from "@/lib/ai/knowledgeQuery";
 // 토큰 시스템
 import { deductTokens } from "@/lib/token/tokenService";
-import { checkFeatureAccess } from "@/lib/token/planAccess";
+import { checkFeatureAccess, getUserPlanCode } from "@/lib/token/planAccess";
+// 멀티 AI 라우터: 질문 유형별 모델 자동 선택
+import { routeQuery, applyPlanOverride, RouteResult } from "@/lib/ai/multiRouter";
 // 문서 생성: LLM-Driven Selection (Phase 11) - DB에서 동적 로드
 
 // Vercel 서버리스 함수 타임아웃 설정
@@ -34,6 +36,24 @@ async function withTimeout<T>(
       setTimeout(() => resolve(fallback), timeoutMs)
     ),
   ]);
+}
+
+// =============================================================================
+// 멀티 AI 라우터: planCode + 질문 유형 → UserTier 매핑
+// Flash 라우팅 시 비용 절감, Pro 라우팅 시 고급 모델 사용
+// =============================================================================
+function resolveUserTier(planCode: string, route: RouteResult): UserTier {
+  if (route.target === 'flash' || route.target === 'flash_grounding') {
+    // 단순 질문 → 저렴한 Flash 모델 (플랜 무관)
+    return planCode === 'starter' ? 'free' : 'basic';
+  }
+  // Pro 라우팅 → 플랜별 Pro 모델
+  switch (planCode) {
+    case 'pro': return 'professional';
+    case 'pro_plus': return 'pro_plus';
+    case 'enterprise': return 'enterprise';
+    default: return 'basic'; // Starter/Standard는 applyPlanOverride에서 Flash로 전환됨
+  }
 }
 
 // =============================================================================
@@ -307,6 +327,15 @@ export async function POST(req: NextRequest) {
         { status: 402, headers: { "Content-Type": "application/json" } }
       );
     }
+
+    // =========================================================================
+    // 멀티 AI 라우팅: 질문 복잡도 분석 → 최적 모델 자동 선택
+    // =========================================================================
+    const planCode = await getUserPlanCode(userId);
+    const queryRoute = applyPlanOverride(routeQuery(lastUserMessage), planCode);
+    const userTier = resolveUserTier(planCode, queryRoute);
+    const enableSearchGrounding = queryRoute.target === 'flash_grounding';
+    console.log(`[Chat Stream] 라우팅: ${queryRoute.target} (${queryRoute.reason}) → tier=${userTier}, plan=${planCode}`);
 
     const intent = detectIntent(lastUserMessage);
 
@@ -621,8 +650,8 @@ ${templateLines}
             messages,
             enhancedPrompt,
             knowledgeFiles,
-            'free',
-            true // Google Search Grounding 활성화 (하이브리드 모드)
+            userTier,
+            enableSearchGrounding || needsLegalSearch // Grounding: 법령 검색 또는 최신정보 질문 시
           );
 
           for await (const chunk of generator) {
