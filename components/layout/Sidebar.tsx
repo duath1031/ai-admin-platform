@@ -203,31 +203,6 @@ const menuItems = [
     ),
   },
   {
-    name: "토큰 관리",
-    href: "/mypage",
-    icon: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-        />
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M12 6v6l4 2"
-        />
-      </svg>
-    ),
-  },
-  {
     name: "요금제",
     href: "/pricing",
     icon: (
@@ -242,25 +217,6 @@ const menuItems = [
           strokeLinejoin="round"
           strokeWidth={2}
           d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
-        />
-      </svg>
-    ),
-  },
-  {
-    name: "구독 관리",
-    href: "/subscription",
-    icon: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
         />
       </svg>
     ),

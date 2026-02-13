@@ -45,11 +45,25 @@ interface OverageData {
   } | null;
 }
 
+interface SubInfo {
+  subscription: {
+    id: string;
+    status: string;
+    nextBillingDate: string;
+    trialEndsAt: string | null;
+    endDate: string | null;
+  } | null;
+  currentPlan: { planCode: string; displayName: string; price: number; features: string; tokenQuota: number };
+  billingKey: { id: string; cardName: string; cardNumber: string } | null;
+}
+
 export default function MyPage() {
   const { data: session } = useSession();
   const [stats, setStats] = useState<Stats | null>(null);
   const [activities, setActivities] = useState<RecentActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // 구독 정보
+  const [subInfo, setSubInfo] = useState<SubInfo | null>(null);
   // 문서24 계정 연동
   const [doc24Account, setDoc24Account] = useState<{ isLinked: boolean; maskedId?: string; displayName?: string; accountType?: string } | null>(null);
   const [doc24Id, setDoc24Id] = useState('');
@@ -66,6 +80,7 @@ export default function MyPage() {
     fetchUserData();
     fetchDoc24Account();
     fetchOverageSettings();
+    fetchSubInfo();
   }, []);
 
   const fetchUserData = async () => {
@@ -89,6 +104,16 @@ export default function MyPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const fetchSubInfo = async () => {
+    try {
+      const res = await fetch("/api/payments/subscription");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) setSubInfo(data);
+      }
+    } catch { /* silent */ }
   };
 
   const handleLogout = () => {
@@ -284,6 +309,56 @@ export default function MyPage() {
 
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
+          {/* 구독 관리 */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-900">구독 관리</h3>
+                {subInfo?.subscription?.status && (
+                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    subInfo.subscription.status === "active" ? "bg-green-100 text-green-700" :
+                    subInfo.subscription.status === "trial" ? "bg-blue-100 text-blue-700" :
+                    subInfo.subscription.status === "cancelled" ? "bg-red-100 text-red-700" :
+                    "bg-gray-100 text-gray-600"
+                  }`}>
+                    {subInfo.subscription.status === "active" ? "활성" :
+                     subInfo.subscription.status === "trial" ? "무료체험" :
+                     subInfo.subscription.status === "cancelled" ? "해지됨" : "Starter"}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-end gap-2 mb-3">
+                <span className="text-2xl font-bold text-gray-900">
+                  {subInfo?.currentPlan?.displayName || "Starter"}
+                </span>
+                {subInfo?.currentPlan && subInfo.currentPlan.price > 0 && (
+                  <span className="text-sm text-gray-500 mb-0.5">{subInfo.currentPlan.price.toLocaleString()}원/월</span>
+                )}
+              </div>
+              {subInfo?.subscription?.nextBillingDate && subInfo.subscription.status !== "cancelled" && (
+                <p className="text-xs text-gray-500 mb-2">
+                  다음 결제일: {new Date(subInfo.subscription.nextBillingDate).toLocaleDateString("ko-KR")}
+                </p>
+              )}
+              {subInfo?.billingKey && (
+                <p className="text-xs text-gray-500 mb-2">
+                  결제수단: {subInfo.billingKey.cardName || "카드"} ({subInfo.billingKey.cardNumber || "****"})
+                </p>
+              )}
+              <div className="flex gap-2 mt-4">
+                <Link href="/pricing" className="px-3 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                  {subInfo?.subscription ? "플랜 변경" : "플랜 선택"}
+                </Link>
+                <Link href="/subscription" className="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  상세 관리
+                </Link>
+                <Link href="/mypage/payments" className="px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                  결제 내역
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Recent Activities */}
           <Card>
             <CardContent className="p-6">

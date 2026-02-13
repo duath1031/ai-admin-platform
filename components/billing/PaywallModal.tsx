@@ -175,7 +175,7 @@ export default function PaywallModal({
               <button
                 onClick={() => {
                   handleClose();
-                  router.push("/token-charge");
+                  router.push("/mypage");
                 }}
                 className="flex-1 py-3 px-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-xl hover:from-amber-600 hover:to-orange-600 transition-colors shadow-lg"
               >
