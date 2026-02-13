@@ -61,7 +61,7 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   document_review: "서류 검토",
   rpa_submission: "민원 자동접수",
   doc24_submission: "문서24 발송",
-  permit_check: "인허가 진단",
+  permit_check: "건축행정AI",
   visa_calculator: "비자AI",
   bid_analysis: "입찰 분석",
   bid_simulation: "입찰 시뮬레이션",
