@@ -81,6 +81,7 @@ model User {
   billingKeys             BillingKey[]
   subsidyMatches          SubsidyMatch[]
   deadlineAlerts          DeadlineAlert[]
+  employees               Employee[]
 }
 
 // 기업 마스터 프로필 (AI 비서의 기억 저장소)
@@ -1081,4 +1082,62 @@ model DeadlineAlert {
   @@index([userId])
   @@index([deadline])
   @@index([isSent])
+}
+
+// ─────────────────────────────────────────
+// 노동행정 AI - 직원 관리 & 급여명세서
+// ─────────────────────────────────────────
+
+model Employee {
+  id                        String    @id @default(cuid())
+  userId                    String
+  name                      String
+  birthDate                 DateTime?
+  hireDate                  DateTime
+  resignDate                DateTime?
+  department                String?
+  position                  String?
+  employmentType            String    @default("regular") // regular, contract, parttime, daily
+  monthlySalary             Int       // 월 기본급
+  dependents                Int       @default(1)
+  childrenUnder20           Int       @default(0)
+  nonTaxableAmount          Int       @default(0) // 비과세(식대 등)
+  nationalPensionExempt     Boolean   @default(false)
+  healthInsuranceExempt     Boolean   @default(false)
+  employmentInsuranceExempt Boolean   @default(false)
+  weeklyWorkHours           Float     @default(40)
+  hourlyWage                Int?
+  industryCode              String    @default("30") // 산재보험 업종코드
+  isActive                  Boolean   @default(true)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  user                      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payslips                  Payslip[]
+
+  @@index([userId])
+}
+
+model Payslip {
+  id              String    @id @default(cuid())
+  employeeId      String
+  userId          String
+  year            Int
+  month           Int
+  baseSalary      Int
+  overtimePay     Int       @default(0)
+  bonusPay        Int       @default(0)
+  otherAllowance  Int       @default(0)
+  mealAllowance   Int       @default(0) // 비과세
+  totalGross      Int
+  deductions      String    // JSON: 각 공제항목 상세
+  totalDeduction  Int
+  netPay          Int
+  employerBurden  String?   // JSON: 사업주 부담분
+  status          String    @default("draft") // draft, confirmed
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, year, month])
+  @@index([userId])
 }

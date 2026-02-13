@@ -50,6 +50,15 @@ export const TOKEN_COSTS: Record<string, number> = {
 
   // HWPX 서식 다운로드
   template_download: 500,
+
+  // 노동행정 AI
+  insurance_calc: 500,
+  payslip_generate: 1500,
+  severance_calc: 500,
+  annual_leave_calc: 300,
+  weekly_holiday_calc: 300,
+  labor_contract: 3000,
+  employee_management: 0,
 };
 
 /**
@@ -72,4 +81,11 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   land_use_check: "토지이용계획 조회",
   law_search: "법령 검색",
   template_download: "서식 다운로드",
+  insurance_calc: "4대보험 계산",
+  payslip_generate: "급여명세서 생성",
+  severance_calc: "퇴직금 계산",
+  annual_leave_calc: "연차 계산",
+  weekly_holiday_calc: "주휴수당 계산",
+  labor_contract: "근로계약서 AI",
+  employee_management: "직원 관리",
 };

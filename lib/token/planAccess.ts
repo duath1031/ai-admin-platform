@@ -21,6 +21,13 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     land_use_check: false,
     law_search: false,
     contract_analysis: false,
+    insurance_calc: true, // 평생 1회
+    severance_calc: false,
+    annual_leave_calc: false,
+    weekly_holiday_calc: false,
+    payslip_generate: false,
+    labor_contract: false,
+    employee_management: false,
   },
   standard: {
     ai_chat: true,
@@ -38,6 +45,13 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     land_use_check: true,
     law_search: true,
     contract_analysis: false,
+    insurance_calc: true,
+    severance_calc: true,
+    annual_leave_calc: true,
+    weekly_holiday_calc: true,
+    payslip_generate: false,
+    labor_contract: false,
+    employee_management: false,
   },
   pro: {
     ai_chat: true,
@@ -56,6 +70,13 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     land_use_check: true,
     law_search: true,
     contract_analysis: true,
+    insurance_calc: true,
+    severance_calc: true,
+    annual_leave_calc: true,
+    weekly_holiday_calc: true,
+    payslip_generate: true,
+    labor_contract: true,
+    employee_management: false,
   },
   pro_plus: {
     ai_chat: true,
@@ -78,6 +99,13 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     land_use_check: true,
     law_search: true,
     contract_analysis: true,
+    insurance_calc: true,
+    severance_calc: true,
+    annual_leave_calc: true,
+    weekly_holiday_calc: true,
+    payslip_generate: true,
+    labor_contract: true,
+    employee_management: true,
   },
 };
 
@@ -178,6 +206,7 @@ export async function checkLifetimeLimit(
   const lifetimeLimits: Record<string, number> = {
     ai_chat: 1,
     document_create: 1,
+    insurance_calc: 1,
   };
 
   const limit = lifetimeLimits[feature];
