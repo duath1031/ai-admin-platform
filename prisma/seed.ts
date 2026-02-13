@@ -66,7 +66,7 @@ async function main() {
       name: "pro_plus",
       planCode: "pro_plus",
       displayName: "Pro Plus",
-      price: 220000,
+      price: 250000,
       credits: 5000000,
       tokenQuota: 5000000,
       trialDays: 0,

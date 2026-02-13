@@ -29,7 +29,7 @@ const PLAN_OPTIONS = [
   { value: "starter", label: "Starter (무료)", color: "gray" },
   { value: "standard", label: "Standard (9만)", color: "blue" },
   { value: "pro", label: "Pro (15만)", color: "purple" },
-  { value: "pro_plus", label: "Pro Plus (22만)", color: "orange" },
+  { value: "pro_plus", label: "Pro Plus (25만)", color: "orange" },
 ];
 
 const ROLE_OPTIONS = [

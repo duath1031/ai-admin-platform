@@ -87,7 +87,7 @@ const MONTHLY_PRICES: Record<string, number> = {
 const ANNUAL_MONTHLY_PRICES: Record<string, number> = {
   standard: 90000,
   pro: 150000,
-  pro_plus: 220000,
+  pro_plus: 250000,
 };
 
 export default function PricingPage() {

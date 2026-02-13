@@ -172,7 +172,7 @@ function buildConfig(): Config {
     plans: {
       basic: { price: 90000, credits: 500 },      // 일반(Standard): 90,000원/월
       pro: { price: 150000, credits: 2000 },      // 프로: 150,000원/월
-      pro_plus: { price: 220000, credits: 5000 },  // Pro Plus: 220,000원/월
+      pro_plus: { price: 250000, credits: 5000 },  // Pro Plus: 250,000원/월
     },
   };
 }
