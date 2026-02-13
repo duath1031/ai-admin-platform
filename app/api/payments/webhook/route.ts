@@ -8,14 +8,29 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getPayment as getPortOnePayment } from "@/lib/billing/portoneClient";
+import { getPayment as getPortOnePayment, verifyWebhookSignature } from "@/lib/billing/portoneClient";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // 원본 body를 텍스트로 먼저 읽어 시그니처 검증에 사용
+    const rawBody = await request.text();
+
+    // Standard Webhooks 시그니처 검증
+    const isValid = verifyWebhookSignature(rawBody, {
+      id: request.headers.get("webhook-id"),
+      timestamp: request.headers.get("webhook-timestamp"),
+      signature: request.headers.get("webhook-signature"),
+    });
+
+    if (!isValid) {
+      console.error("[Webhook] 시그니처 검증 실패 - 요청 거부");
+      return NextResponse.json({ success: false, error: "Invalid signature" }, { status: 401 });
+    }
+
+    const body = JSON.parse(rawBody);
     const { type, data } = body;
 
-    console.log(`[Webhook] 수신: type=${type}`, JSON.stringify(data).slice(0, 200));
+    console.log(`[Webhook] 수신 (검증됨): type=${type}`, data ? JSON.stringify(data).slice(0, 200) : 'no data');
 
     // PortOne V2 웹훅 이벤트 타입 처리
     switch (type) {

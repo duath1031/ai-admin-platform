@@ -106,18 +106,69 @@ export async function deleteBillingKey(billingKey: string) {
   return res.ok;
 }
 
-/** 웹훅 검증 (PortOne V2 웹훅 시그니처) */
+/**
+ * PortOne V2 웹훅 시그니처 검증 (Standard Webhooks spec)
+ *
+ * Headers: webhook-id, webhook-timestamp, webhook-signature
+ * Signing content: "{webhook-id}.{webhook-timestamp}.{body}"
+ * Secret: "whsec_" prefix + base64 encoded key
+ * Signature: "v1,{base64-hmac-sha256}"
+ */
 export function verifyWebhookSignature(
   body: string,
-  signature: string | null
+  headers: { id: string | null; timestamp: string | null; signature: string | null }
 ): boolean {
-  // PortOne V2 웹훅은 기본적으로 paymentId를 포함
-  // 프로덕션에서는 HMAC 검증 필요
   const webhookSecret = process.env.PORTONE_WEBHOOK_SECRET;
   if (!webhookSecret) {
     console.warn("[PortOne] PORTONE_WEBHOOK_SECRET 미설정 - 시그니처 검증 건너뜀");
     return true;
   }
-  // TODO: HMAC-SHA256 검증 (프로덕션 배포 시)
-  return true;
+
+  const { id: webhookId, timestamp, signature } = headers;
+  if (!webhookId || !timestamp || !signature) {
+    console.error("[PortOne] 웹훅 헤더 누락:", { webhookId: !!webhookId, timestamp: !!timestamp, signature: !!signature });
+    return false;
+  }
+
+  // 타임스탬프 검증 (5분 이내)
+  const ts = parseInt(timestamp, 10);
+  const now = Math.floor(Date.now() / 1000);
+  if (isNaN(ts) || Math.abs(now - ts) > 300) {
+    console.error(`[PortOne] 웹훅 타임스탬프 만료: ts=${ts}, now=${now}, diff=${now - ts}s`);
+    return false;
+  }
+
+  // Secret 디코딩 (whsec_ prefix 제거 후 base64 디코딩)
+  const crypto = require("crypto");
+  const secretBytes = Buffer.from(
+    webhookSecret.startsWith("whsec_") ? webhookSecret.slice(6) : webhookSecret,
+    "base64"
+  );
+
+  // HMAC-SHA256 서명 생성
+  const signContent = `${webhookId}.${timestamp}.${body}`;
+  const expectedSig = crypto
+    .createHmac("sha256", secretBytes)
+    .update(signContent)
+    .digest("base64");
+
+  // webhook-signature 헤더에서 v1 서명 추출 (공백 구분, 여러 개 가능)
+  const signatures = signature.split(" ");
+  for (const sig of signatures) {
+    const [version, hash] = sig.split(",");
+    if (version === "v1" && hash) {
+      // 상수 시간 비교 (타이밍 공격 방지)
+      try {
+        if (crypto.timingSafeEqual(Buffer.from(hash, "base64"), Buffer.from(expectedSig, "base64"))) {
+          return true;
+        }
+      } catch {
+        // 길이 불일치 시 timingSafeEqual이 에러를 던짐
+        continue;
+      }
+    }
+  }
+
+  console.error("[PortOne] 웹훅 시그니처 불일치");
+  return false;
 }

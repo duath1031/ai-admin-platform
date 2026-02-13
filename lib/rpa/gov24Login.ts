@@ -825,13 +825,51 @@ export async function submitCivilServiceWithAuth(
     };
   }
 
-  // TODO: 실제 민원 접수 로직 구현
-  // 현재는 성공 시뮬레이션
-  console.log(`[Gov24Auth] Submitting civil service: ${serviceId} with session: ${sessionId}`);
+  // Railway RPA Worker를 통한 실제 민원 제출
+  const WORKER_URL = process.env.RPA_WORKER_URL || 'https://admini-rpa-worker-production.up.railway.app';
+  const WORKER_API_KEY = process.env.RPA_WORKER_API_KEY || 'admini-rpa-worker-2024-secure-key';
 
-  return {
-    success: true,
-    message: '민원 접수가 완료되었습니다.',
-    applicationId: `GOV24-${Date.now()}-${Math.random().toString(36).substring(7)}`,
-  };
+  console.log(`[Gov24Auth] Submitting civil service via Worker: ${serviceId} with session: ${sessionId}`);
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000);
+
+    const res = await fetch(`${WORKER_URL}/gov24/submit`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': WORKER_API_KEY,
+      },
+      body: JSON.stringify({
+        cookies: session.cookies,
+        serviceCode: serviceId,
+        formData: formData || {},
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    const result = await res.json();
+
+    if (!result.success) {
+      return {
+        success: false,
+        message: result.error || '민원 제출 실패',
+      };
+    }
+
+    return {
+      success: true,
+      message: '민원 접수가 완료되었습니다.',
+      applicationId: result.applicationNumber || result.receiptNumber,
+    };
+  } catch (error) {
+    console.error('[Gov24Auth] Worker 호출 실패:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : '민원 접수 중 오류 발생',
+    };
+  }
 }

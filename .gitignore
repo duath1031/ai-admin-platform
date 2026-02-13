@@ -74,3 +74,10 @@ secrets.toml.txt
 
 .vercel
 .env*.local
+
+# Test/temp files
+test-*.ts
+test-*.js
+test-output.*
+temp/
+nul
