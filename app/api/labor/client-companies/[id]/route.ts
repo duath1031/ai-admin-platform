@@ -75,6 +75,7 @@ export async function PUT(
       "manufacturingItems", "factoryAddress", "factoryArea", "manufacturingCerts", "mainRawMaterials",
       "g2bRegistrationNumber", "mainProducts",
       "exportCountries", "foreignWorkerVisaTypes",
+      "otherCertifications", "patentDetails",
     ];
     for (const f of stringFields) {
       if (body[f] !== undefined) updateData[f] = body[f] || null;
@@ -83,6 +84,7 @@ export async function PUT(
     // Date fields
     if (body.foundedDate !== undefined) updateData.foundedDate = body.foundedDate ? new Date(body.foundedDate) : null;
     if (body.researchInstituteDate !== undefined) updateData.researchInstituteDate = body.researchInstituteDate ? new Date(body.researchInstituteDate) : null;
+    if (body.ventureExpiry !== undefined) updateData.ventureExpiry = body.ventureExpiry ? new Date(body.ventureExpiry) : null;
 
     // BigInt fields
     const bigintFields = [
@@ -96,7 +98,10 @@ export async function PUT(
     }
 
     // Int fields
-    const intFields = ["employeeCount", "permanentEmployees", "contractEmployees", "researcherCount", "foreignEmployees", "profileCompleteness"];
+    const intFields = [
+      "employeeCount", "permanentEmployees", "contractEmployees", "researcherCount", "foreignEmployees", "profileCompleteness",
+      "patentCount", "utilityModelCount", "designPatentCount", "trademarkCount", "swCopyrightCount",
+    ];
     for (const f of intFields) {
       if (body[f] !== undefined) updateData[f] = body[f] != null ? Number(body[f]) : null;
     }
@@ -106,6 +111,9 @@ export async function PUT(
       "hasResearchInstitute", "hasRndDepartment", "isManufacturer",
       "isG2bRegistered", "hasDirectProductionCert", "hasMasContract",
       "isExporter", "hasForeignWorkers",
+      "isVentureCertified", "isInnobiz", "isMainbiz",
+      "isISO9001", "isISO14001", "isISO45001",
+      "isWomenBiz", "isSocialEnterprise", "isRootCompany",
     ];
     for (const f of boolFields) {
       if (body[f] !== undefined) updateData[f] = Boolean(body[f]);

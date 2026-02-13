@@ -216,6 +216,25 @@ export interface ClientCompanyData {
   // 외국인
   hasForeignWorkers?: boolean;
   foreignWorkerVisaTypes?: string | null;
+  // 인증
+  isVentureCertified?: boolean;
+  ventureExpiry?: string | null;
+  isInnobiz?: boolean;
+  isMainbiz?: boolean;
+  isISO9001?: boolean;
+  isISO14001?: boolean;
+  isISO45001?: boolean;
+  isWomenBiz?: boolean;
+  isSocialEnterprise?: boolean;
+  isRootCompany?: boolean;
+  otherCertifications?: string | null;
+  // 특허/지식재산권
+  patentCount?: number;
+  utilityModelCount?: number;
+  designPatentCount?: number;
+  trademarkCount?: number;
+  swCopyrightCount?: number;
+  patentDetails?: string | null;
   // 메타
   profileCompleteness?: number;
 }

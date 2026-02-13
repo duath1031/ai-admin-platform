@@ -75,6 +75,14 @@ export const TOKEN_COSTS: Record<string, number> = {
 
   // 기업부설연구소
   research_institute: 2000,
+
+  // 인허가 신청서
+  application_form: 3000,
+
+  // 법인차량 관리
+  fleet_management: 0,
+  transfer_cost_calc: 500,
+  transfer_document: 3000,
 };
 
 /**
@@ -110,4 +118,8 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   meeting_minutes: "회의록/녹취록 AI",
   root_company_check: "뿌리기업 확인",
   research_institute: "기업부설연구소",
+  application_form: "인허가 신청서",
+  fleet_management: "차량 관리",
+  transfer_cost_calc: "취등록세 계산",
+  transfer_document: "이전등록 서류",
 };

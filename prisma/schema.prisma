@@ -163,6 +163,27 @@ model ClientCompany {
   hasForeignWorkers     Boolean  @default(false)
   foreignWorkerVisaTypes String? // 비자 유형
 
+  // Section 10: 기업인증
+  isVentureCertified    Boolean  @default(false)  // 벤처기업 인증
+  ventureExpiry         DateTime?                   // 벤처기업 만료일
+  isInnobiz             Boolean  @default(false)  // 이노비즈 인증
+  isMainbiz             Boolean  @default(false)  // 메인비즈 인증
+  isISO9001             Boolean  @default(false)  // ISO 9001
+  isISO14001            Boolean  @default(false)  // ISO 14001
+  isISO45001            Boolean  @default(false)  // ISO 45001
+  isWomenBiz            Boolean  @default(false)  // 여성기업
+  isSocialEnterprise    Boolean  @default(false)  // 사회적기업
+  isRootCompany         Boolean  @default(false)  // 뿌리기업
+  otherCertifications   String?                     // 기타 인증 (콤마 구분)
+
+  // Section 11: 특허/지식재산권
+  patentCount           Int      @default(0)       // 등록 특허
+  utilityModelCount     Int      @default(0)       // 실용신안
+  designPatentCount     Int      @default(0)       // 디자인등록
+  trademarkCount        Int      @default(0)       // 상표등록
+  swCopyrightCount      Int      @default(0)       // SW 저작권
+  patentDetails         String?                     // 주요 특허/IP 상세 (텍스트)
+
   // 메타
   profileCompleteness   Int      @default(0) // 0~100
 
@@ -171,6 +192,7 @@ model ClientCompany {
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   employees     Employee[]
+  vehicles      Vehicle[]
 
   @@index([userId])
 }
@@ -1253,4 +1275,89 @@ model InsuranceReport {
 
   @@index([userId])
   @@index([employeeId])
+}
+
+// ─── 법인차량 Fleet 관리 ───
+
+model Vehicle {
+  id                String    @id @default(cuid())
+  userId            String
+  clientCompanyId   String?
+
+  // 차량 기본 정보
+  plateNumber       String              // 차량번호 (예: 123가4567)
+  vehicleType       String              // sedan, suv, van, truck, bus, special
+  manufacturer      String?             // 제조사 (현대, 기아, BMW 등)
+  modelName         String?             // 모델명 (소나타, K5 등)
+  modelYear         Int?                // 연식
+  registrationDate  DateTime?           // 최초등록일
+  purchaseDate      DateTime?           // 취득일
+  purchasePrice     Int?                // 취득가격 (원)
+  displacement      Int?                // 배기량 (cc)
+  fuelType          String?             // gasoline, diesel, lpg, electric, hybrid, hydrogen
+  color             String?
+
+  // 보험/검사
+  insuranceCompany  String?             // 보험사
+  insuranceExpiry   DateTime?           // 보험만료일
+  inspectionExpiry  DateTime?           // 검사만료일
+
+  // 운행 정보
+  currentMileage    Int?                // 현재 주행거리 (km)
+  assignedDriver    String?             // 배정 운전자
+  purpose           String?             // 업무용, 출퇴근, 영업용
+
+  // 리스/렌트
+  ownershipType     String    @default("owned") // owned, lease, rent
+  leaseCompany      String?             // 리스/렌트사
+  leaseExpiry       DateTime?           // 리스/렌트 만료일
+  monthlyPayment    Int?                // 월 리스/렌트료
+
+  // 상태
+  status            String    @default("active") // active, maintenance, disposed, transferred
+  memo              String?
+  isActive          Boolean   @default(true)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  transfers         VehicleTransfer[]
+  clientCompany     ClientCompany? @relation(fields: [clientCompanyId], references: [id])
+
+  @@index([userId])
+  @@index([clientCompanyId])
+  @@index([plateNumber])
+}
+
+model VehicleTransfer {
+  id              String    @id @default(cuid())
+  vehicleId       String
+  userId          String
+
+  // 이전등록 정보
+  transferType    String              // purchase(매입), sale(매도), name_change(명의변경)
+  transferDate    DateTime?
+  counterparty    String?             // 상대방 (매도인/매수인)
+  transferPrice   Int?                // 거래금액
+
+  // 취등록세 계산 결과
+  acquisitionTax  Int?                // 취득세
+  registrationTax Int?                // 등록면허세
+  educationTax    Int?                // 교육세
+  bondAmount      Int?                // 공채매입액
+  bondDiscount    Int?                // 공채할인액
+  stampTax        Int?                // 인지세
+  totalCost       Int?                // 총 비용
+
+  // 서류 상태
+  documentsJson   String?             // 생성된 서류 목록 JSON
+  status          String    @default("pending") // pending, in_progress, completed, failed
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  vehicle         Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([vehicleId])
 }

@@ -36,6 +36,10 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     meeting_minutes: false,
     root_company_check: false,
     research_institute: false,
+    application_form: false,
+    fleet_management: false,
+    transfer_cost_calc: false,
+    transfer_document: false,
   },
   standard: {
     ai_chat: true,
@@ -68,6 +72,10 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     meeting_minutes: true,
     root_company_check: true,
     research_institute: true,
+    application_form: true,
+    fleet_management: false,
+    transfer_cost_calc: true,
+    transfer_document: false,
   },
   pro: {
     ai_chat: true,
@@ -101,6 +109,10 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     meeting_minutes: true,
     root_company_check: true,
     research_institute: true,
+    application_form: true,
+    fleet_management: true,
+    transfer_cost_calc: true,
+    transfer_document: true,
   },
   pro_plus: {
     ai_chat: true,
@@ -135,6 +147,10 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     meeting_minutes: true,
     root_company_check: true,
     research_institute: true,
+    application_form: true,
+    fleet_management: true,
+    transfer_cost_calc: true,
+    transfer_document: true,
   },
 };
 
