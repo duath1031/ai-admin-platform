@@ -39,8 +39,8 @@ const features = [
     color: "teal",
   },
   {
-    title: "비자 점수 계산기",
-    description: "E-7, F-2, F-5 등 체류자격 변경에 필요한 점수를 자동 계산하고 부족 요건을 안내",
+    title: "비자AI",
+    description: "E-7, F-2, F-5 등 체류자격별 요건 분석, 점수 계산, 체류자격 변경 경로를 AI가 안내",
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -207,14 +207,14 @@ export default function LandingPage() {
             <span className="text-xs sm:text-sm font-medium text-blue-700">행정사가 만든 AI 행정 플랫폼</span>
           </div>
           <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 mb-3 sm:mb-5 leading-tight">
-            복잡한 행정업무,{" "}
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">AI행정 + 경리 + 노무</span>
             <br className="sm:hidden" />
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">AI가 해결</span>
+            가 한번에
           </h1>
           <p className="text-sm sm:text-base md:text-lg text-gray-600 mb-6 sm:mb-8 max-w-2xl mx-auto leading-relaxed">
-            서류 작성부터 인허가 진단, 입찰 분석, 민원 접수까지
+            서류 작성, 건축행정, 입찰 분석, 민원 접수, 보조금 매칭까지
             <br className="hidden sm:block" />
-            {" "}11가지 행정 서비스를 AI행정사가 원스톱으로 처리합니다
+            {" "}경리 + 노무사 + 행정사 + 입찰담당의 역할을 AI가 대신합니다
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center mb-8 sm:mb-12">
             <Link href="/login" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 sm:px-8 py-3 sm:py-3.5 rounded-xl font-medium text-sm sm:text-base transition-all shadow-lg shadow-blue-200">
@@ -390,39 +390,55 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-6 sm:mb-10">
             <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-2 sm:mb-3">
-              합리적인 요금제
+              AI 직원 1명, 월 9만원부터
             </h2>
-            <p className="text-sm sm:text-base text-gray-600">
-              필요에 맞는 플랜을 선택하세요
+            <p className="text-sm sm:text-base text-gray-600 mb-4">
+              연결제 시 최대 10% 할인! 필요에 맞는 플랜을 선택하세요
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             {[
-              { name: "Starter", price: "무료", desc: "1회 체험", features: ["AI 상담 1회", "서류 1건", "계정당 평생 1회"] },
-              { name: "Standard", price: "90,000", desc: "소규모/개인 사업자", features: ["AI 상담 무제한", "서류 작성 20건/월", "민원 자동접수", "인허가 진단"], popular: true },
-              { name: "Pro", price: "150,000", desc: "기업담당자/공무원/행정사", features: ["전 기능 무제한", "입찰 분석", "정책자금 매칭", "인증 진단"] },
-              { name: "Pro Plus", price: "220,000", desc: "전문행정사/법무팀", features: ["거래처 관리 50개", "거래처별 서류함", "일괄 보조금매칭", "우선 고객지원"] },
-              { name: "Enterprise", price: "250,000", desc: "대기업/법인", features: ["토지분석+안전관리", "화이트라벨", "전용 API", "토큰 무제한"] },
+              { name: "Starter", price: "무료", monthlyPrice: 0, desc: "체험용 (1회)", features: ["AI 상담 1회", "서류 1건", "계정당 평생 1회"] },
+              { name: "Standard", monthlyPrice: 99000, annualMonthly: 90000, desc: "일반인, 소상공인", features: ["AI 상담 (토큰차감)", "서류 작성 20건/월", "건축행정AI", "서류 검토", "월 100만 토큰"] },
+              { name: "Pro", monthlyPrice: 165000, annualMonthly: 150000, desc: "행정사, 기업담당자, 공무원", features: ["Standard 전체 포함", "입찰 분석", "비자AI", "정책자금 매칭", "월 300만 토큰"], popular: true },
+              { name: "Pro Plus", monthlyPrice: 242000, annualMonthly: 220000, desc: "전문행정사, 기업법무팀", features: ["Pro 전체 포함", "거래처 50개 관리", "일괄 보조금매칭", "우선 고객지원", "월 500만 토큰"] },
             ].map((plan) => (
               <div
                 key={plan.name}
                 className={`relative rounded-xl sm:rounded-2xl p-4 sm:p-5 border ${
                   plan.popular
-                    ? "border-blue-300 bg-blue-50/50 shadow-md"
+                    ? "border-purple-300 bg-purple-50/50 shadow-md ring-2 ring-purple-400"
                     : "border-gray-200 bg-white"
                 }`}
               >
                 {plan.popular && (
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[10px] sm:text-xs font-medium px-3 py-0.5 rounded-full">
-                    추천
+                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-[10px] sm:text-xs font-bold px-3 py-0.5 rounded-full">
+                    BEST
                   </div>
                 )}
                 <h3 className="text-sm sm:text-base font-bold text-gray-900">{plan.name}</h3>
                 <p className="text-[11px] sm:text-xs text-gray-500 mb-2 sm:mb-3">{plan.desc}</p>
                 <div className="mb-3 sm:mb-4">
-                  <span className="text-xl sm:text-2xl font-bold text-gray-900">{plan.price}</span>
-                  {plan.price !== "무료" && <span className="text-xs sm:text-sm text-gray-500">원/월</span>}
+                  {plan.price === "무료" ? (
+                    <span className="text-xl sm:text-2xl font-bold text-gray-900">무료</span>
+                  ) : (
+                    <>
+                      {plan.monthlyPrice > (plan.annualMonthly || 0) && (
+                        <div className="text-xs text-gray-400 line-through">월 {plan.monthlyPrice.toLocaleString()}원</div>
+                      )}
+                      <span className="text-xl sm:text-2xl font-bold text-gray-900">
+                        {(plan.annualMonthly || plan.monthlyPrice).toLocaleString()}
+                      </span>
+                      <span className="text-xs sm:text-sm text-gray-500">원/월</span>
+                      <div className="text-[10px] text-gray-400">연결제 기준</div>
+                      {plan.annualMonthly && plan.monthlyPrice > plan.annualMonthly && (
+                        <span className="inline-block mt-0.5 text-[10px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
+                          {Math.round(((plan.monthlyPrice - plan.annualMonthly) / plan.monthlyPrice) * 100)}% 할인
+                        </span>
+                      )}
+                    </>
+                  )}
                 </div>
                 <ul className="space-y-1.5 sm:space-y-2 mb-4">
                   {plan.features.map((f) => (
@@ -438,8 +454,10 @@ export default function LandingPage() {
                   href="/login"
                   className={`block text-center py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                     plan.popular
-                      ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700"
+                      : plan.price === "무료"
+                      ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      : "bg-blue-600 text-white hover:bg-blue-700"
                   }`}
                 >
                   {plan.price === "무료" ? "무료로 시작" : "시작하기"}
