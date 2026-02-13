@@ -1027,6 +1027,7 @@ model SubsidyProgram {
   updatedAt       DateTime       @updatedAt
   matches         SubsidyMatch[]
 
+  @@unique([source, externalId])
   @@index([source])
   @@index([isActive])
   @@index([applicationEnd])
