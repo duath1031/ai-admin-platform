@@ -59,6 +59,7 @@ export const TOKEN_COSTS: Record<string, number> = {
   weekly_holiday_calc: 300,
   labor_contract: 3000,
   employee_management: 0,
+  insurance_report: 1000,
 };
 
 /**
@@ -88,4 +89,5 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   weekly_holiday_calc: "주휴수당 계산",
   labor_contract: "근로계약서 AI",
   employee_management: "직원 관리",
+  insurance_report: "4대보험 신고서",
 };

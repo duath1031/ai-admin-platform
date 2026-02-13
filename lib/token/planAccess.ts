@@ -28,6 +28,7 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     payslip_generate: false,
     labor_contract: false,
     employee_management: false,
+    insurance_report: false,
   },
   standard: {
     ai_chat: true,
@@ -52,6 +53,7 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     payslip_generate: false,
     labor_contract: false,
     employee_management: false,
+    insurance_report: false,
   },
   pro: {
     ai_chat: true,
@@ -77,6 +79,7 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     payslip_generate: true,
     labor_contract: true,
     employee_management: false,
+    insurance_report: true,
   },
   pro_plus: {
     ai_chat: true,
@@ -106,6 +109,7 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     payslip_generate: true,
     labor_contract: true,
     employee_management: true,
+    insurance_report: true,
   },
 };
 

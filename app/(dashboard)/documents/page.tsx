@@ -12,12 +12,49 @@ interface Document {
   createdAt: string;
 }
 
-const documentTypes = {
+const documentTypes: Record<string, { name: string; icon: string }> = {
+  // 행정 서류
   petition: { name: "진정서", icon: "📝" },
   appeal: { name: "탄원서", icon: "📋" },
   objection: { name: "이의신청서", icon: "📄" },
   application: { name: "신청서", icon: "📑" },
+  // 계약서
+  lease_contract: { name: "임대차계약서", icon: "🏠" },
+  goods_contract: { name: "물품매매계약서", icon: "📦" },
+  service_contract: { name: "용역계약서", icon: "🤝" },
+  labor_contract_doc: { name: "근로계약서", icon: "👷" },
+  general_contract: { name: "일반계약서", icon: "📃" },
+  // 내용증명
+  content_certification: { name: "내용증명서", icon: "✉️" },
 };
+
+const quickLaunchGroups = [
+  {
+    label: "행정 서류",
+    items: [
+      { key: "petition", ...documentTypes.petition },
+      { key: "appeal", ...documentTypes.appeal },
+      { key: "objection", ...documentTypes.objection },
+      { key: "application", ...documentTypes.application },
+    ],
+  },
+  {
+    label: "계약서",
+    items: [
+      { key: "lease_contract", ...documentTypes.lease_contract },
+      { key: "goods_contract", ...documentTypes.goods_contract },
+      { key: "service_contract", ...documentTypes.service_contract },
+      { key: "labor_contract_doc", ...documentTypes.labor_contract_doc },
+      { key: "general_contract", ...documentTypes.general_contract },
+    ],
+  },
+  {
+    label: "내용증명",
+    items: [
+      { key: "content_certification", ...documentTypes.content_certification },
+    ],
+  },
+];
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -47,7 +84,7 @@ export default function DocumentsPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">서류 작성</h1>
-          <p className="text-gray-600">AI가 전문적인 행정 서류를 작성해 드립니다</p>
+          <p className="text-gray-600">AI가 전문적인 행정 서류, 계약서, 내용증명서를 작성해 드립니다</p>
         </div>
         <Link href="/documents/new">
           <Button>
@@ -59,22 +96,27 @@ export default function DocumentsPage() {
         </Link>
       </div>
 
-      {/* Document Types */}
-      <div className="grid md:grid-cols-4 gap-4 mb-8">
-        {Object.entries(documentTypes).map(([key, value]) => (
-          <Link key={key} href={`/documents/new?type=${key}`}>
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardContent className="p-4 text-center">
-                <span className="text-3xl mb-2 block">{value.icon}</span>
-                <span className="font-medium text-gray-900">{value.name}</span>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
+      {/* Document Types - Grouped */}
+      {quickLaunchGroups.map(group => (
+        <div key={group.label} className="mb-6">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">{group.label}</h2>
+          <div className={`grid gap-3 ${group.items.length <= 2 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-5"}`}>
+            {group.items.map(item => (
+              <Link key={item.key} href={`/documents/new?type=${item.key}`}>
+                <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                  <CardContent className="p-3 sm:p-4 text-center">
+                    <span className="text-2xl sm:text-3xl mb-1.5 block">{item.icon}</span>
+                    <span className="font-medium text-gray-900 text-xs sm:text-sm">{item.name}</span>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {/* Document List */}
-      <Card>
+      <Card className="mt-8">
         <CardContent className="p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">작성 이력</h2>
 
@@ -102,12 +144,12 @@ export default function DocumentsPage() {
                 >
                   <div className="flex items-center gap-4">
                     <span className="text-2xl">
-                      {documentTypes[doc.type as keyof typeof documentTypes]?.icon || "📄"}
+                      {documentTypes[doc.type]?.icon || "📄"}
                     </span>
                     <div>
                       <p className="font-medium text-gray-900">{doc.title}</p>
                       <p className="text-sm text-gray-500">
-                        {documentTypes[doc.type as keyof typeof documentTypes]?.name || doc.type}
+                        {documentTypes[doc.type]?.name || doc.type}
                         {" · "}
                         {new Date(doc.createdAt).toLocaleDateString("ko-KR")}
                       </p>
