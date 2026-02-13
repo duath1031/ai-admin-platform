@@ -23,7 +23,7 @@ interface Vehicle {
   purpose: string | null;
   memo: string | null;
   status: string;
-  mileage: number | null;
+  currentMileage: number | null;
   createdAt: string;
 }
 
@@ -41,6 +41,7 @@ interface VehicleForm {
   ownershipType: string;
   assignedDriver: string;
   purpose: string;
+  currentMileage: string;
   memo: string;
 }
 
@@ -58,6 +59,7 @@ const EMPTY_FORM: VehicleForm = {
   ownershipType: "owned",
   assignedDriver: "",
   purpose: "",
+  currentMileage: "",
   memo: "",
 };
 
@@ -236,6 +238,7 @@ export default function FleetPage() {
         ownershipType: vehicle.ownershipType || "owned",
         assignedDriver: vehicle.assignedDriver || "",
         purpose: vehicle.purpose || "",
+        currentMileage: vehicle.currentMileage ? formatNumber(String(vehicle.currentMileage)) : "",
         memo: vehicle.memo || "",
       });
     } else {
@@ -270,6 +273,9 @@ export default function FleetPage() {
         ownershipType: form.ownershipType,
         assignedDriver: form.assignedDriver.trim() || null,
         purpose: form.purpose.trim() || null,
+        currentMileage: form.currentMileage
+          ? Number(parseNumber(form.currentMileage))
+          : null,
         memo: form.memo.trim() || null,
       };
 
@@ -536,7 +542,7 @@ export default function FleetPage() {
                       </select>
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-gray-600 hidden lg:table-cell">
-                      {v.mileage != null ? `${v.mileage.toLocaleString()} km` : "-"}
+                      {v.currentMileage != null ? `${v.currentMileage.toLocaleString()} km` : "-"}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
@@ -770,6 +776,25 @@ export default function FleetPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   />
                 </div>
+              </div>
+
+              {/* 현재 주행거리 */}
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">현재 주행거리 (km)</label>
+                <input
+                  type="text"
+                  value={form.currentMileage}
+                  onChange={(e) =>
+                    updateForm("currentMileage", formatNumber(e.target.value))
+                  }
+                  placeholder="50,000"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+                {form.currentMileage && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    {Number(parseNumber(form.currentMileage)).toLocaleString()} km
+                  </p>
+                )}
               </div>
 
               {/* 메모 */}

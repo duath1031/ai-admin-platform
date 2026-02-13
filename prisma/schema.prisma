@@ -1322,6 +1322,7 @@ model Vehicle {
   updatedAt         DateTime  @updatedAt
 
   transfers         VehicleTransfer[]
+  tripLogs          VehicleTripLog[]
   clientCompany     ClientCompany? @relation(fields: [clientCompanyId], references: [id])
 
   @@index([userId])
@@ -1360,4 +1361,83 @@ model VehicleTransfer {
 
   @@index([userId])
   @@index([vehicleId])
+}
+
+// ─── 연구노트 (R&D Note) ───
+model ResearchNote {
+  id              String   @id @default(cuid())
+  userId          String
+  clientCompanyId String?
+
+  // 과제 정보
+  projectName     String           // 연구과제명
+  projectCode     String?          // 과제번호
+  researchPeriod  String?          // 연구기간
+
+  // 노트 내용
+  noteDate        DateTime         // 작성일
+  noteNumber      Int      @default(1)  // 노트 번호 (순번)
+  title           String           // 제목
+  purpose         String?  @db.Text // 연구목적
+  content         String   @db.Text // 실험내용/연구내용
+  result          String?  @db.Text // 결과
+  conclusion      String?  @db.Text // 결론/고찰
+  nextPlan        String?  @db.Text // 향후계획
+  materials       String?  @db.Text // 사용재료/시약
+  equipment       String?  @db.Text // 사용장비
+
+  // 서명
+  researcherName  String?          // 연구원명
+  supervisorName  String?          // 연구책임자명
+
+  // 메타
+  status          String   @default("draft") // draft, signed, archived
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([clientCompanyId])
+  @@index([noteDate])
+}
+
+// ─── 차량 운행일지 (Vehicle Trip Log) ───
+model VehicleTripLog {
+  id              String   @id @default(cuid())
+  vehicleId       String
+  userId          String
+
+  // 운행 정보
+  tripDate        DateTime           // 운행일
+  driverName      String             // 운전자명
+  department      String?            // 부서
+
+  // 거리
+  startMileage    Int                // 출발 전 키로수
+  endMileage      Int                // 도착 후 키로수
+  distance        Int                // 운행거리 (자동계산: endMileage - startMileage)
+
+  // 운행 상세
+  departure       String             // 출발지
+  destination     String             // 목적지
+  purpose         String             // 운행목적 (업무, 출장, 영업, 납품, 기타)
+  startTime       String?            // 출발시간 (HH:mm)
+  endTime         String?            // 도착시간 (HH:mm)
+
+  // 비용
+  fuelCost        Int?               // 주유비 (원)
+  tollCost        Int?               // 통행료 (원)
+  parkingCost     Int?               // 주차비 (원)
+  otherCost       Int?               // 기타비용 (원)
+  costMemo        String?            // 비용 메모
+
+  // 메타
+  memo            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@index([userId])
+  @@index([tripDate])
 }

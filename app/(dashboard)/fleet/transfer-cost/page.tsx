@@ -49,6 +49,9 @@ export default function TransferCostPage() {
   const [isHybrid, setIsHybrid] = useState(false);
   const [isDisabled, setIsDisabled] = useState(false);
   const [isMultiChild, setIsMultiChild] = useState(false);
+  const [isFirstCar, setIsFirstCar] = useState(false);
+  const [passengerCapacityStr, setPassengerCapacityStr] = useState<string>("15");
+  const [loadCapacityStr, setLoadCapacityStr] = useState<string>("");
 
   // ── Result state ──
   const [result, setResult] = useState<TransferCostResult | null>(null);
@@ -77,6 +80,9 @@ export default function TransferCostPage() {
       isHybrid: isHybrid && !isElectric,
       isDisabled,
       isMultiChild,
+      isFirstCar,
+      passengerCapacity: vehicleType === "van" ? (Number(passengerCapacityStr) || 15) : undefined,
+      loadCapacity: vehicleType === "truck" ? (Number(loadCapacityStr) || undefined) : undefined,
     };
 
     try {
@@ -96,6 +102,9 @@ export default function TransferCostPage() {
     isHybrid,
     isDisabled,
     isMultiChild,
+    isFirstCar,
+    passengerCapacityStr,
+    loadCapacityStr,
   ]);
 
   // ── Reset ──
@@ -110,6 +119,9 @@ export default function TransferCostPage() {
     setIsHybrid(false);
     setIsDisabled(false);
     setIsMultiChild(false);
+    setIsFirstCar(false);
+    setPassengerCapacityStr("15");
+    setLoadCapacityStr("");
     setResult(null);
     setError("");
   };
@@ -261,6 +273,42 @@ export default function TransferCostPage() {
                 </div>
               </div>
 
+              {/* 승합차: 인승 / 화물차: 적재량 (조건부 표시) */}
+              {vehicleType === "van" && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">승객 수 (인승)</label>
+                  <input
+                    type="number"
+                    value={passengerCapacityStr}
+                    onChange={(e) => setPassengerCapacityStr(e.target.value)}
+                    placeholder="15"
+                    min={1}
+                    max={99}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    15인 이하: 취득세 7% / 15인 초과: 취득세 5% (비영업용 기준)
+                  </p>
+                </div>
+              )}
+              {vehicleType === "truck" && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">적재량 (톤)</label>
+                  <input
+                    type="number"
+                    value={loadCapacityStr}
+                    onChange={(e) => setLoadCapacityStr(e.target.value)}
+                    placeholder="1.0"
+                    step="0.1"
+                    min={0}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    참고용 (경형 화물차 1000cc 이하는 경차 감면 적용)
+                  </p>
+                </div>
+              )}
+
               {/* 신차/중고 */}
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-2">취득 유형</label>
@@ -330,6 +378,13 @@ export default function TransferCostPage() {
                     description="취득세 50% 감면 (최대 140만원)"
                     disabled={isDisabled}
                   />
+                  <ToggleOption
+                    checked={isFirstCar}
+                    onChange={setIsFirstCar}
+                    label="생애최초 차량"
+                    description="취득가 4천만원 이하 승용차, 취득세 면제 (최대 150만원)"
+                    disabled={isDisabled}
+                  />
                 </div>
               </div>
 
@@ -364,7 +419,9 @@ export default function TransferCostPage() {
                 <li>본 계산기는 2026년 기준 세율로 계산되며, 실제 금액과 차이가 있을 수 있습니다.</li>
                 <li>공채매입 할인율은 시장 상황에 따라 변동됩니다 (현재 4% 기준).</li>
                 <li>정확한 금액은 관할 구청 또는 차량등록사업소에 문의하세요.</li>
-                <li>경차(1000cc 이하)는 취득세율 4%가 자동 적용됩니다.</li>
+                <li>경차(1000cc 이하): 취득세 4% + 최대 75만원 면제, 등록면허세 면제, 농어촌특별세 면제</li>
+                <li>생애최초 차량: 취득가액 4천만원 이하 승용차, 취득세 최대 150만원 면제</li>
+                <li>비영업용 승합차: 15인 이하 7%, 15인 초과 5%</li>
               </ul>
             </div>
           </div>

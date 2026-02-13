@@ -83,6 +83,15 @@ export const TOKEN_COSTS: Record<string, number> = {
   fleet_management: 0,
   transfer_cost_calc: 500,
   transfer_document: 3000,
+
+  // 운행일지
+  trip_log: 0,
+
+  // 연구노트
+  research_note: 2000,
+
+  // 직접생산확인
+  direct_production_check: 1500,
 };
 
 /**
@@ -122,4 +131,7 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   fleet_management: "차량 관리",
   transfer_cost_calc: "취등록세 계산",
   transfer_document: "이전등록 서류",
+  trip_log: "운행일지",
+  research_note: "연구노트 작성",
+  direct_production_check: "직접생산확인 진단",
 };

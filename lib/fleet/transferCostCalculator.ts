@@ -19,6 +19,8 @@ export interface TransferCostInput {
   region: string;                // 지역 (서울, 경기, 부산 등)
   isFirstCar?: boolean;          // 생애최초 차량 여부
   transferType: "new" | "used";  // 신차/중고차
+  passengerCapacity?: number;    // 승객 수(인승) - 승합차 세율 분기용
+  loadCapacity?: number;         // 적재량 (톤) - 화물차 참고용
 }
 
 export interface TransferCostResult {
@@ -55,7 +57,7 @@ const ACQUISITION_TAX_RATES: Record<string, number> = {
   // 비영업용
   "sedan": 0.07,          // 승용차 7%
   "suv": 0.07,            // SUV 7%
-  "van": 0.05,            // 승합차(15인 이하) 5% (비영업용 승합 7%, 경차급 4%)
+  "van": 0.07,            // 승합차(15인 이하) 7% (비영업용), 15인 초과는 5%
   "truck": 0.05,          // 화물차 5%
   "bus": 0.05,            // 버스 5%
   "special": 0.05,        // 특수차 5%
@@ -131,23 +133,46 @@ const HYBRID_TAX_DISCOUNT_LIMIT = 400_000;
 const MULTI_CHILD_DISCOUNT_RATE = 0.5;
 const MULTI_CHILD_DISCOUNT_LIMIT = 1_400_000;
 
+// 경차 취득세 감면한도 (최대 75만원 면제)
+const LIGHT_CAR_TAX_DISCOUNT_LIMIT = 750_000;
+
+// 생애최초 차량 감면 (취득가액 4000만원 이하 승용차, 취득세 100% 면제, 최대 150만원)
+const FIRST_CAR_PRICE_LIMIT = 40_000_000;
+const FIRST_CAR_DISCOUNT_LIMIT = 1_500_000;
+
 // ─── 계산 함수 ───
 
 export function calculateTransferCost(input: TransferCostInput): TransferCostResult {
   const discounts: { name: string; amount: number }[] = [];
   const breakdown: { label: string; amount: number; note?: string }[] = [];
 
-  // 1. 취득세 계산
-  let taxRate = input.isCommercial
-    ? COMMERCIAL_TAX_RATE
-    : ACQUISITION_TAX_RATES[input.vehicleType] || 0.07;
+  // 경차 여부 판정 (배기량 1000cc 이하)
+  const isLightCar = !!(input.displacement && input.displacement <= 1000);
 
-  // 경차 감면 (1000cc 이하)
-  if (input.displacement && input.displacement <= 1000) {
+  // 1. 취득세율 결정
+  let taxRate: number;
+  if (input.isCommercial) {
+    // 영업용: 전차종 4%
+    taxRate = COMMERCIAL_TAX_RATE;
+  } else if (isLightCar) {
+    // 경차 (1000cc 이하): 4%
     taxRate = LIGHT_CAR_TAX_RATE;
+  } else if (input.vehicleType === "van") {
+    // 비영업용 승합차: 인승에 따라 분기
+    const capacity = input.passengerCapacity ?? 15;
+    taxRate = capacity <= 15 ? 0.07 : 0.05;
+  } else {
+    taxRate = ACQUISITION_TAX_RATES[input.vehicleType] || 0.07;
   }
 
   let acquisitionTax = Math.floor(input.purchasePrice * taxRate);
+
+  // 경차 취득세 감면 (최대 75만원 면제)
+  if (isLightCar && !input.isCommercial) {
+    const lightCarDiscount = Math.min(acquisitionTax, LIGHT_CAR_TAX_DISCOUNT_LIMIT);
+    discounts.push({ name: "경차 취득세 감면 (최대 75만원)", amount: lightCarDiscount });
+    acquisitionTax -= lightCarDiscount;
+  }
 
   // 전기차 감면
   if (input.isElectric) {
@@ -161,6 +186,18 @@ export function calculateTransferCost(input: TransferCostInput): TransferCostRes
     const hybridDiscount = Math.min(acquisitionTax, HYBRID_TAX_DISCOUNT_LIMIT);
     discounts.push({ name: "하이브리드 취득세 감면", amount: hybridDiscount });
     acquisitionTax -= hybridDiscount;
+  }
+
+  // 생애최초 차량 감면 (취득가액 4000만원 이하 승용차, 취득세 100% 면제, 최대 150만원)
+  if (
+    input.isFirstCar &&
+    !input.isDisabled &&
+    (input.vehicleType === "sedan" || input.vehicleType === "suv") &&
+    input.purchasePrice <= FIRST_CAR_PRICE_LIMIT
+  ) {
+    const firstCarDiscount = Math.min(acquisitionTax, FIRST_CAR_DISCOUNT_LIMIT);
+    discounts.push({ name: "생애최초 차량 취득세 감면 (최대 150만원)", amount: firstCarDiscount });
+    acquisitionTax -= firstCarDiscount;
   }
 
   // 장애인 감면 (전액 면제 가능)
@@ -183,18 +220,29 @@ export function calculateTransferCost(input: TransferCostInput): TransferCostRes
   // 10원 미만 절사
   acquisitionTax = Math.floor(acquisitionTax / 10) * 10;
 
+  // 세율 표시 텍스트 (승합차 인승 정보 포함)
+  let taxRateNote = `취득가액 ${input.purchasePrice.toLocaleString()}원 × ${(taxRate * 100).toFixed(1)}%`;
+  if (!input.isCommercial && input.vehicleType === "van") {
+    const capacity = input.passengerCapacity ?? 15;
+    taxRateNote += ` (${capacity}인승)`;
+  }
+
   breakdown.push({
     label: "취득세",
     amount: acquisitionTax,
-    note: `취득가액 ${input.purchasePrice.toLocaleString()}원 × ${(taxRate * 100).toFixed(1)}%`,
+    note: taxRateNote,
   });
 
-  // 2. 등록면허세
-  const registrationTax = REGISTRATION_TAX[input.vehicleType] || 15000;
+  // 2. 등록면허세 (경차 1000cc 이하: 면제)
+  let registrationTax = REGISTRATION_TAX[input.vehicleType] || 15000;
+  if (isLightCar && !input.isCommercial) {
+    discounts.push({ name: "경차 등록면허세 면제", amount: registrationTax });
+    registrationTax = 0;
+  }
   breakdown.push({
     label: "등록면허세",
     amount: registrationTax,
-    note: "정액",
+    note: isLightCar && !input.isCommercial ? "경차 면제" : "정액",
   });
 
   // 3. 교육세 (취득세의 20%)
@@ -205,10 +253,11 @@ export function calculateTransferCost(input: TransferCostInput): TransferCostRes
     note: "취득세의 20%",
   });
 
-  // 4. 농어촌특별세 (비영업용 승용 1600cc 초과만)
+  // 4. 농어촌특별세 (비영업용 승용 1600cc 초과만, 경차는 면제)
   let specialTax = 0;
   if (
     !input.isCommercial &&
+    !isLightCar &&
     (input.vehicleType === "sedan" || input.vehicleType === "suv") &&
     input.displacement &&
     input.displacement > 1600 &&
@@ -219,6 +268,13 @@ export function calculateTransferCost(input: TransferCostInput): TransferCostRes
       label: "농어촌특별세",
       amount: specialTax,
       note: "1600cc 초과 승용차, 취득세의 10%",
+    });
+  } else if (isLightCar && !input.isCommercial) {
+    // 경차는 농어촌특별세 면제 (0원이므로 표시만)
+    breakdown.push({
+      label: "농어촌특별세",
+      amount: 0,
+      note: "경차 면제",
     });
   }
 
