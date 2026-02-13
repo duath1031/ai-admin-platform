@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 export async function GET() {
   try {
     const plans = await prisma.subscriptionPlan.findMany({
-      where: { isActive: true },
+      where: { isActive: true, planCode: { not: "enterprise" } },
       orderBy: { sortOrder: "asc" },
       select: {
         id: true,

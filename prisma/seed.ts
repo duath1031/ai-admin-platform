@@ -101,6 +101,13 @@ async function main() {
     console.log(`Plan "${plan.displayName}" (${plan.planCode}) upserted`);
   }
 
+  // Enterprise 플랜 비활성화 (이전에 생성된 경우)
+  await prisma.subscriptionPlan.updateMany({
+    where: { planCode: "enterprise" },
+    data: { isActive: false },
+  });
+  console.log('Enterprise plan deactivated (if existed)');
+
   console.log("\nSeed completed!");
 }
 

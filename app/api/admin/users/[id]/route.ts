@@ -145,9 +145,41 @@ export async function PATCH(
 
     if (role !== undefined && (role === "USER" || role === "ADMIN")) {
       updateData.role = role;
-      // 관리자로 변경 시 토큰 무제한 자동 설정
-      if (role === "ADMIN" && credits === undefined) {
+      // 관리자로 변경 시 토큰 무제한 + pro_plus 플랜 자동 설정
+      if (role === "ADMIN") {
         updateData.credits = -1;
+        updateData.plan = "pro_plus";
+
+        // Subscription도 pro_plus로 동기화
+        const proPlusPlan = await prisma.subscriptionPlan.findUnique({
+          where: { planCode: "pro_plus" },
+        });
+        if (proPlusPlan) {
+          const existingSub = await prisma.subscription.findFirst({
+            where: { userId: params.id, status: { in: ["active", "trial", "past_due", "grace"] } },
+          });
+          if (existingSub) {
+            await prisma.subscription.update({
+              where: { id: existingSub.id },
+              data: { planId: proPlusPlan.id, status: "active" },
+            });
+          } else {
+            const now = new Date();
+            const far = new Date("2099-12-31");
+            await prisma.subscription.create({
+              data: {
+                userId: params.id,
+                planId: proPlusPlan.id,
+                status: "active",
+                startDate: now,
+                currentPeriodStart: now,
+                currentPeriodEnd: far,
+                nextBillingDate: far,
+                billingCycle: "monthly",
+              },
+            });
+          }
+        }
       }
     }
 
