@@ -6,7 +6,7 @@ import { deductTokens } from "@/lib/token/tokenService";
 import { checkFeatureAccess } from "@/lib/token/planAccess";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 /**
  * POST /api/subsidy/generate-application

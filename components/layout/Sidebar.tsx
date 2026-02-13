@@ -108,8 +108,8 @@ const menuItems = [
     ),
   },
   {
-    name: "입찰 분석",
-    href: "/bid-analysis",
+    name: "조달 AI",
+    href: "/procurement",
     icon: (
       <svg
         className="w-5 h-5"
@@ -122,25 +122,6 @@ const menuItems = [
           strokeLinejoin="round"
           strokeWidth={2}
           d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-        />
-      </svg>
-    ),
-  },
-  {
-    name: "입찰 시뮬레이터",
-    href: "/bid-simulation",
-    icon: (
-      <svg
-        className="w-5 h-5"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"
         />
       </svg>
     ),
@@ -165,7 +146,7 @@ const menuItems = [
     ),
   },
   {
-    name: "정책자금 매칭",
+    name: "정부지원·정책자금",
     href: "/fund-matching",
     icon: (
       <svg
