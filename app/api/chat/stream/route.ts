@@ -51,7 +51,6 @@ function resolveUserTier(planCode: string, route: RouteResult): UserTier {
   switch (planCode) {
     case 'pro': return 'professional';
     case 'pro_plus': return 'pro_plus';
-    case 'enterprise': return 'enterprise';
     default: return 'basic'; // Starter/Standard는 applyPlanOverride에서 Flash로 전환됨
   }
 }

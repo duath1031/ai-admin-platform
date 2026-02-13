@@ -82,7 +82,6 @@ interface Config {
     basic: { price: number; credits: number };
     pro: { price: number; credits: number };
     pro_plus: { price: number; credits: number };
-    enterprise: { price: number; credits: number };
   };
 }
 
@@ -174,7 +173,6 @@ function buildConfig(): Config {
       basic: { price: 90000, credits: 500 },      // 일반(Standard): 90,000원/월
       pro: { price: 150000, credits: 2000 },      // 프로: 150,000원/월
       pro_plus: { price: 220000, credits: 5000 },  // Pro Plus: 220,000원/월
-      enterprise: { price: 250000, credits: -1 },  // Enterprise: 250,000원/월, 무제한
     },
   };
 }

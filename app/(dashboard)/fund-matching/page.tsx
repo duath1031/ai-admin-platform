@@ -42,6 +42,14 @@ interface BookmarkItem {
 }
 
 type TabId = "matching" | "deadlines" | "bookmarks";
+type FundType = "all" | "subsidy" | "policy" | "guarantee";
+
+const FUND_TYPE_FILTERS: { key: FundType; label: string; categories: string[] }[] = [
+  { key: "all", label: "전체", categories: [] },
+  { key: "subsidy", label: "정부지원금", categories: ["R&D", "수출", "사업화"] },
+  { key: "policy", label: "정책자금", categories: ["정책자금"] },
+  { key: "guarantee", label: "보증", categories: ["보증"] },
+];
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   {
@@ -92,6 +100,15 @@ function DdayBadge({ days, size = "sm" }: { days: number; size?: "sm" | "lg" }) 
   return <span className={`${baseClass} rounded-full bg-green-100 text-green-700`}>D-{days}</span>;
 }
 
+/** supportType 문자열로 카테고리 그룹 판별 */
+function getSupportCategory(supportType: string | null): FundType {
+  if (!supportType) return "subsidy";
+  const st = supportType.toLowerCase();
+  if (st.includes("융자") || st.includes("대출") || st.includes("정책자금")) return "policy";
+  if (st.includes("보증")) return "guarantee";
+  return "subsidy"; // 출연금, 바우처, 보조금 등
+}
+
 function UrgencyIcon({ urgency }: { urgency: string }) {
   if (urgency === "critical") return <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse inline-block" />;
   if (urgency === "high") return <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />;
@@ -109,6 +126,7 @@ export default function FundMatchingPage() {
   const [matchLoading, setMatchLoading] = useState(true);
   const [matchError, setMatchError] = useState("");
   const [filter, setFilter] = useState<"all" | "high" | "medium">("all");
+  const [fundType, setFundType] = useState<FundType>("all");
   const [matchingApi, setMatchingApi] = useState(false);
 
   // AI 컨설팅 state
@@ -123,6 +141,7 @@ export default function FundMatchingPage() {
   const [deadlines, setDeadlines] = useState<DeadlineItem[]>([]);
   const [deadlineLoading, setDeadlineLoading] = useState(false);
   const [deadlineStats, setDeadlineStats] = useState({ total: 0, critical: 0 });
+  const [deadlineFundType, setDeadlineFundType] = useState<FundType>("all");
 
   // 즐겨찾기 state
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([]);
@@ -190,20 +209,19 @@ export default function FundMatchingPage() {
     }
   }
 
-  async function generateApplication(programName: string, programInfo: string) {
+  async function generateGuide(programName: string, programInfo: string) {
     setAppGenLoading(programName);
     try {
-      const res = await fetch("/api/subsidy/generate-application", {
+      const res = await fetch("/api/subsidy/consulting", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ programName, programInfo }),
+        body: JSON.stringify({ programName, programInfo, type: "guide" }),
       });
       const data = await res.json();
       if (data.success) {
-        alert(`신청서가 생성되었습니다! 서류함에서 확인하세요.`);
-        window.open(`/documents/${data.documentId}`, "_blank");
+        setConsultingResult({ programName: data.programName, analysis: data.analysis });
       } else {
-        alert(data.error || "생성 실패");
+        alert(data.error || "가이드 생성 실패");
       }
     } catch {
       alert("네트워크 오류");
@@ -286,10 +304,17 @@ export default function FundMatchingPage() {
 
   // ─── Computed ───
 
+  // 카테고리 필터 적용
+  const categoryFilter = FUND_TYPE_FILTERS.find((f) => f.key === fundType);
+  const categoryFiltered =
+    fundType === "all"
+      ? results
+      : results.filter((r) => categoryFilter?.categories.includes(r.program.category));
+
   const filteredResults =
-    filter === "all" ? results : results.filter((r) => r.matchLevel === filter);
-  const highCount = results.filter((r) => r.matchLevel === "high").length;
-  const medCount = results.filter((r) => r.matchLevel === "medium").length;
+    filter === "all" ? categoryFiltered : categoryFiltered.filter((r) => r.matchLevel === filter);
+  const highCount = categoryFiltered.filter((r) => r.matchLevel === "high").length;
+  const medCount = categoryFiltered.filter((r) => r.matchLevel === "medium").length;
   const maxAmount =
     results.length > 0
       ? Math.max(
@@ -382,10 +407,33 @@ export default function FundMatchingPage() {
                 </button>
               </div>
 
-              {/* 필터 */}
+              {/* 카테고리 필터 */}
+              <div className="flex flex-wrap gap-2">
+                {FUND_TYPE_FILTERS.map((ft) => {
+                  const count =
+                    ft.key === "all"
+                      ? results.length
+                      : results.filter((r) => ft.categories.includes(r.program.category)).length;
+                  return (
+                    <button
+                      key={ft.key}
+                      onClick={() => { setFundType(ft.key); setFilter("all"); }}
+                      className={`px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                        fundType === ft.key
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      {ft.label} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 적합도 필터 */}
               <div className="flex gap-2">
                 {[
-                  { key: "all" as const, label: "전체", count: results.length },
+                  { key: "all" as const, label: "전체", count: categoryFiltered.length },
                   { key: "high" as const, label: "높은 적합", count: highCount },
                   { key: "medium" as const, label: "보통", count: medCount },
                 ].map((f) => (
@@ -394,7 +442,7 @@ export default function FundMatchingPage() {
                     onClick={() => setFilter(f.key)}
                     className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                       filter === f.key
-                        ? "bg-indigo-600 text-white"
+                        ? "bg-gray-700 text-white"
                         : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                     }`}
                   >
@@ -411,7 +459,7 @@ export default function FundMatchingPage() {
                     result={result}
                     onConsulting={requestConsulting}
                     consultingLoading={consultingLoading}
-                    onGenerateApp={generateApplication}
+                    onGenerateGuide={generateGuide}
                     appGenLoading={appGenLoading}
                   />
                 ))}
@@ -454,37 +502,71 @@ export default function FundMatchingPage() {
             </div>
           ) : (
             <>
-              {/* 마감 요약 */}
-              <div className="grid grid-cols-4 gap-3">
-                <div className="bg-red-50 rounded-xl p-3 text-center">
-                  <p className="text-xs text-red-600 font-medium">긴급 (3일 이내)</p>
-                  <p className="text-xl font-bold text-red-800 mt-0.5">
-                    {deadlines.filter((d) => d.urgency === "critical").length}건
-                  </p>
-                </div>
-                <div className="bg-orange-50 rounded-xl p-3 text-center">
-                  <p className="text-xs text-orange-600 font-medium">주의 (7일 이내)</p>
-                  <p className="text-xl font-bold text-orange-800 mt-0.5">
-                    {deadlines.filter((d) => d.urgency === "high").length}건
-                  </p>
-                </div>
-                <div className="bg-yellow-50 rounded-xl p-3 text-center">
-                  <p className="text-xs text-yellow-600 font-medium">관심 (14일 이내)</p>
-                  <p className="text-xl font-bold text-yellow-800 mt-0.5">
-                    {deadlines.filter((d) => d.urgency === "medium").length}건
-                  </p>
-                </div>
-                <div className="bg-green-50 rounded-xl p-3 text-center">
-                  <p className="text-xs text-green-600 font-medium">여유 (30일 이내)</p>
-                  <p className="text-xl font-bold text-green-800 mt-0.5">
-                    {deadlines.filter((d) => d.urgency === "low").length}건
-                  </p>
-                </div>
+              {/* 마감임박 카테고리 필터 */}
+              <div className="flex flex-wrap gap-2">
+                {(
+                  [
+                    { key: "all" as FundType, label: "전체" },
+                    { key: "subsidy" as FundType, label: "정부지원금" },
+                    { key: "policy" as FundType, label: "정책자금" },
+                    { key: "guarantee" as FundType, label: "보증" },
+                  ] as const
+                ).map((ft) => (
+                  <button
+                    key={ft.key}
+                    onClick={() => setDeadlineFundType(ft.key)}
+                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+                      deadlineFundType === ft.key
+                        ? "bg-orange-600 text-white border-orange-600"
+                        : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                    }`}
+                  >
+                    {ft.label}
+                  </button>
+                ))}
               </div>
 
-              {/* 마감임박 리스트 */}
-              <div className="space-y-3">
-                {deadlines.map((item) => (
+              {/* 마감 요약 */}
+              {(() => {
+                const filtered = deadlineFundType === "all"
+                  ? deadlines
+                  : deadlines.filter((d) => getSupportCategory(d.supportType) === deadlineFundType);
+                return (
+                  <>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="bg-red-50 rounded-xl p-3 text-center">
+                        <p className="text-xs text-red-600 font-medium">긴급 (3일 이내)</p>
+                        <p className="text-xl font-bold text-red-800 mt-0.5">
+                          {filtered.filter((d) => d.urgency === "critical").length}건
+                        </p>
+                      </div>
+                      <div className="bg-orange-50 rounded-xl p-3 text-center">
+                        <p className="text-xs text-orange-600 font-medium">주의 (7일 이내)</p>
+                        <p className="text-xl font-bold text-orange-800 mt-0.5">
+                          {filtered.filter((d) => d.urgency === "high").length}건
+                        </p>
+                      </div>
+                      <div className="bg-yellow-50 rounded-xl p-3 text-center">
+                        <p className="text-xs text-yellow-600 font-medium">관심 (14일 이내)</p>
+                        <p className="text-xl font-bold text-yellow-800 mt-0.5">
+                          {filtered.filter((d) => d.urgency === "medium").length}건
+                        </p>
+                      </div>
+                      <div className="bg-green-50 rounded-xl p-3 text-center">
+                        <p className="text-xs text-green-600 font-medium">여유 (30일 이내)</p>
+                        <p className="text-xl font-bold text-green-800 mt-0.5">
+                          {filtered.filter((d) => d.urgency === "low").length}건
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 마감임박 리스트 */}
+                    <div className="space-y-3">
+                      {filtered.length === 0 ? (
+                        <div className="text-center py-8 text-gray-400">
+                          해당 카테고리의 마감임박 프로그램이 없습니다.
+                        </div>
+                      ) : filtered.map((item) => (
                   <div
                     key={item.id}
                     className={`border rounded-xl p-4 transition-colors hover:bg-gray-50 ${
@@ -544,8 +626,11 @@ export default function FundMatchingPage() {
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </>
           )}
         </>
@@ -708,13 +793,13 @@ function FundCard({
   result,
   onConsulting,
   consultingLoading,
-  onGenerateApp,
+  onGenerateGuide,
   appGenLoading,
 }: {
   result: FundMatchResult;
   onConsulting: (name: string, info: string) => void;
   consultingLoading: boolean;
-  onGenerateApp: (name: string, info: string) => void;
+  onGenerateGuide: (name: string, info: string) => void;
   appGenLoading: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -827,9 +912,9 @@ function FundCard({
               href={result.program.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors"
+              className="inline-flex items-center gap-1 px-4 py-2 text-sm font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
             >
-              공식 사이트
+              신청하기
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
               </svg>
@@ -842,11 +927,11 @@ function FundCard({
               {consultingLoading ? "분석 중..." : "AI 전략 분석 (3,000토큰)"}
             </button>
             <button
-              onClick={() => onGenerateApp(result.program.name, programInfo)}
+              onClick={() => onGenerateGuide(result.program.name, programInfo)}
               disabled={appGenLoading !== null}
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-50"
             >
-              {appGenLoading === result.program.name ? "생성 중..." : "신청서 초안 작성 (5,000토큰)"}
+              {appGenLoading === result.program.name ? "생성 중..." : "신청 가이드 (2,000토큰)"}
             </button>
           </div>
         </div>

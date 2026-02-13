@@ -60,15 +60,13 @@ const PLAN_FEATURES: Record<string, string[]> = {
     "리포트 자동생성",
     "월 500만 토큰",
   ],
-  enterprise: [
-    "Pro Plus 전체 포함",
-    "토지분석 리포트",
-    "안전관리 (TBM)",
-    "화이트라벨",
-    "전용 API 연동",
-    "전담 매니저",
-    "토큰 무제한",
-  ],
+};
+
+const PLAN_TARGET: Record<string, string> = {
+  starter: "체험용",
+  standard: "일반인, 소상공인",
+  pro: "행정사, 기업담당자, 공무원",
+  pro_plus: "전문행정사, 기업법무팀",
 };
 
 const PLAN_COLORS: Record<string, { bg: string; border: string; badge: string }> = {
@@ -76,7 +74,6 @@ const PLAN_COLORS: Record<string, { bg: string; border: string; badge: string }>
   standard: { bg: "bg-blue-50", border: "border-blue-300", badge: "bg-blue-100 text-blue-700" },
   pro: { bg: "bg-purple-50", border: "border-purple-400", badge: "bg-purple-100 text-purple-700" },
   pro_plus: { bg: "bg-amber-50", border: "border-amber-400", badge: "bg-amber-100 text-amber-700" },
-  enterprise: { bg: "bg-red-50", border: "border-red-400", badge: "bg-red-100 text-red-700" },
 };
 
 export default function PricingPage() {
@@ -127,8 +124,8 @@ export default function PricingPage() {
         </p>
       </div>
 
-      {/* 요금제 카드 — 5열 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* 요금제 카드 — 4열 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {plans.map((plan) => {
           const colors = PLAN_COLORS[plan.planCode] || PLAN_COLORS.starter;
           const features = PLAN_FEATURES[plan.planCode] || [];
@@ -150,11 +147,14 @@ export default function PricingPage() {
                 </div>
               )}
 
-              {/* 플랜명 */}
+              {/* 플랜명 + 대상자 */}
               <div className="mb-3">
                 <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${colors.badge}`}>
                   {plan.displayName}
                 </span>
+                {PLAN_TARGET[plan.planCode] && (
+                  <p className="text-xs text-gray-500 mt-1.5">{PLAN_TARGET[plan.planCode]}</p>
+                )}
               </div>
 
               {/* 가격 */}
@@ -219,13 +219,6 @@ export default function PricingPage() {
                   className="w-full py-2.5 px-3 border border-gray-300 text-gray-600 text-sm font-medium rounded-xl cursor-not-allowed"
                 >
                   기본 제공
-                </button>
-              ) : plan.planCode === "enterprise" ? (
-                <button
-                  onClick={() => window.open("mailto:duath1031@gmail.com?subject=Enterprise 문의")}
-                  className="w-full py-2.5 px-3 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 transition-colors"
-                >
-                  문의하기
                 </button>
               ) : (
                 <button

@@ -30,7 +30,6 @@ const PLAN_OPTIONS = [
   { value: "standard", label: "Standard (9만)", color: "blue" },
   { value: "pro", label: "Pro (15만)", color: "purple" },
   { value: "pro_plus", label: "Pro Plus (22만)", color: "orange" },
-  { value: "enterprise", label: "Enterprise (25만)", color: "red" },
 ];
 
 const ROLE_OPTIONS = [

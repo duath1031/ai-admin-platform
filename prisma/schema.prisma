@@ -483,7 +483,7 @@ model SubmissionTrackingLog {
 model SubscriptionPlan {
   id                    String         @id @default(cuid())
   name                  String         @unique
-  planCode              String         @unique  // starter, standard, pro, enterprise
+  planCode              String         @unique  // starter, standard, pro, pro_plus
   displayName           String
   price                 Int
   credits               Int

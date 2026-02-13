@@ -81,26 +81,6 @@ async function main() {
       }),
       sortOrder: 4,
     },
-    {
-      name: "enterprise",
-      planCode: "enterprise",
-      displayName: "Enterprise",
-      price: 250000,
-      credits: -1,
-      tokenQuota: -1,
-      trialDays: 0,
-      features: "토큰 무제한, 토지분석 리포트, 안전관리(TBM), 화이트라벨, 전용 API, 전담 매니저",
-      maxFeatures: JSON.stringify({
-        all: true,
-        unlimited_tokens: true,
-        land_analysis_report: true,
-        safety_management: true,
-        white_label: true,
-        api_access: true,
-        dedicated_manager: true,
-      }),
-      sortOrder: 5,
-    },
   ];
 
   for (const plan of plans) {

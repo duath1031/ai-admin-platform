@@ -10,7 +10,7 @@ const GOOGLE_SEARCH_TOOL = { googleSearch: {} } as any;
 // 사용자 등급에 따라 다른 모델 사용
 // =============================================================================
 
-export type UserTier = 'free' | 'basic' | 'professional' | 'pro_plus' | 'enterprise';
+export type UserTier = 'free' | 'basic' | 'professional' | 'pro_plus';
 
 export interface ModelConfig {
   modelName: string;
@@ -45,12 +45,6 @@ const MODEL_CONFIGS: Record<UserTier, ModelConfig> = {
     maxOutputTokens: 8192,
     description: 'Pro Plus - 최대 성능'
   },
-  enterprise: {
-    modelName: 'gemini-1.5-pro',
-    temperature: 0.3,
-    maxOutputTokens: 8192,
-    description: 'Enterprise - 최대 성능 + 무제한'
-  }
 };
 
 // 전문가용 시스템 프롬프트 추가 지침
@@ -71,7 +65,7 @@ function getModelConfig(userTier: UserTier = 'free'): ModelConfig {
 
 // 시스템 프롬프트 강화 (전문가 등급인 경우)
 function enhanceSystemPrompt(systemPrompt: string, userTier: UserTier): string {
-  if (userTier === 'professional' || userTier === 'pro_plus' || userTier === 'enterprise') {
+  if (userTier === 'professional' || userTier === 'pro_plus') {
     return systemPrompt + PROFESSIONAL_SYSTEM_PROMPT_SUFFIX;
   }
   return systemPrompt;

@@ -67,29 +67,6 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     client_dashboard: true,
     batch_subsidy_matching: true,
   },
-  enterprise: {
-    ai_chat: true,
-    document_create: true,
-    document_review: true,
-    rpa_submission: true,
-    doc24_submission: true,
-    permit_check: true,
-    visa_calculator: true,
-    bid_analysis: true,
-    bid_simulation: true,
-    certification_check: true,
-    fund_matching: true,
-    subsidy_matching: true,
-    template_download: true,
-    client_management: true,
-    client_document_box: true,
-    client_dashboard: true,
-    batch_subsidy_matching: true,
-    land_analysis_report: true,
-    safety_management: true,
-    white_label: true,
-    api_access: true,
-  },
 };
 
 /**
@@ -104,7 +81,6 @@ const LEGACY_PLAN_MAP: Record<string, string> = {
   pro: "pro",
   professional: "pro",
   pro_plus: "pro_plus",
-  enterprise: "enterprise",
   starter: "starter",
 };
 
@@ -155,7 +131,7 @@ export async function checkFeatureAccess(
     select: { role: true },
   });
   if (user?.role === "ADMIN") {
-    return { allowed: true, planCode: "enterprise", requiredPlan: null };
+    return { allowed: true, planCode: "pro_plus", requiredPlan: null };
   }
 
   const planCode = await getUserPlanCode(userId);
@@ -166,7 +142,7 @@ export async function checkFeatureAccess(
   }
 
   // 어떤 플랜부터 사용 가능한지 찾기
-  const planOrder = ["starter", "standard", "pro", "pro_plus", "enterprise"];
+  const planOrder = ["starter", "standard", "pro", "pro_plus"];
   const requiredPlan =
     planOrder.find((p) => PLAN_ACCESS[p]?.[feature] === true) || "standard";
 

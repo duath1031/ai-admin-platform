@@ -19,7 +19,6 @@ const PLAN_DISPLAY: Record<string, { name: string; price: string; color: string 
   standard: { name: "Standard", price: "90,000원/월", color: "text-blue-600" },
   pro: { name: "Pro", price: "150,000원/월", color: "text-purple-600" },
   pro_plus: { name: "Pro Plus", price: "220,000원/월", color: "text-amber-600" },
-  enterprise: { name: "Enterprise", price: "250,000원/월", color: "text-red-600" },
 };
 
 export default function PaywallModal({

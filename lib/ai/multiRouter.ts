@@ -149,8 +149,8 @@ export function applyPlanOverride(
     }
   }
 
-  // Pro Plus/Enterprise → Pro 모델 maxOutputTokens 확장
-  if (planCode === "pro_plus" || planCode === "enterprise") {
+  // Pro Plus → Pro 모델 maxOutputTokens 확장
+  if (planCode === "pro_plus") {
     if (route.target === "pro") {
       return {
         ...route,
