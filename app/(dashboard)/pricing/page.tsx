@@ -49,13 +49,16 @@ const PLAN_FEATURES: Record<string, string[]> = {
     "인증 진단",
     "정책자금 매칭",
     "계약서 AI 분석",
+    "내용증명 작성",
+    "4대보험 신고서",
+    "급여명세서/근로계약서",
     "월 300만 토큰",
   ],
   pro_plus: [
     "Pro 전체 포함",
     "거래처(B2B) 50개 관리",
-    "거래처별 서류함",
-    "거래처 대시보드",
+    "거래처별 서류함/대시보드",
+    "거래처 기준 전체 기능 사용",
     "일괄 보조금매칭",
     "리포트 자동생성",
     "월 500만 토큰",
@@ -76,11 +79,11 @@ const PLAN_COLORS: Record<string, { bg: string; border: string; badge: string }>
   pro_plus: { bg: "bg-amber-50", border: "border-amber-400", badge: "bg-amber-100 text-amber-700" },
 };
 
-// 월결제 가격 (연결제 대비 ~10% 높음 → 연결제 할인 효과)
+// 월결제 가격
 const MONTHLY_PRICES: Record<string, number> = {
   standard: 99000,
   pro: 165000,
-  pro_plus: 242000,
+  pro_plus: 300000,
 };
 
 // 연결제 월 환산 가격 (기존 DB 가격 = 연결제 기준)
@@ -88,6 +91,11 @@ const ANNUAL_MONTHLY_PRICES: Record<string, number> = {
   standard: 90000,
   pro: 150000,
   pro_plus: 250000,
+};
+
+// 할인율 표시 오버라이드 (실제 계산 대신 고정 표시)
+const DISCOUNT_OVERRIDE: Record<string, number> = {
+  pro_plus: 20,
 };
 
 export default function PricingPage() {
@@ -159,12 +167,12 @@ export default function PricingPage() {
             }`}
           >
             연결제
-            <span className="ml-1.5 text-xs text-green-600 font-bold">SAVE</span>
+            <span className="ml-1.5 text-xs text-green-600 font-bold">20% OFF</span>
           </button>
         </div>
         {isAnnual && (
           <p className="mt-2 text-sm text-green-600 font-medium">
-            연결제 시 최대 10% 할인!
+            연결제 시 최대 20% 할인!
           </p>
         )}
       </div>
@@ -210,7 +218,7 @@ export default function PricingPage() {
                   const monthlyPrice = MONTHLY_PRICES[plan.planCode] || plan.price;
                   const annualMonthly = ANNUAL_MONTHLY_PRICES[plan.planCode] || plan.price;
                   const displayPrice = isAnnual ? annualMonthly : monthlyPrice;
-                  const savings = Math.round(((monthlyPrice - annualMonthly) / monthlyPrice) * 100);
+                  const savings = DISCOUNT_OVERRIDE[plan.planCode] || Math.round(((monthlyPrice - annualMonthly) / monthlyPrice) * 100);
                   return (
                     <>
                       {isAnnual && monthlyPrice > annualMonthly && (

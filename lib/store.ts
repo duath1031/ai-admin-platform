@@ -155,3 +155,29 @@ export const useUIStore = create<UIState>((set) => ({
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
 }));
+
+/** 거래처 선택 글로벌 스토어 (Pro Plus) */
+interface ClientCompanyData {
+  id: string;
+  companyName: string;
+  ownerName?: string | null;
+  bizRegNo?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  npBizNo?: string | null;
+  hiBizNo?: string | null;
+  eiBizNo?: string | null;
+  memo?: string | null;
+}
+
+interface ClientState {
+  selectedClient: ClientCompanyData | null;
+  setSelectedClient: (client: ClientCompanyData | null) => void;
+  clearSelectedClient: () => void;
+}
+
+export const useClientStore = create<ClientState>((set) => ({
+  selectedClient: null,
+  setSelectedClient: (selectedClient) => set({ selectedClient }),
+  clearSelectedClient: () => set({ selectedClient: null }),
+}));

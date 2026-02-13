@@ -60,6 +60,12 @@ export const TOKEN_COSTS: Record<string, number> = {
   labor_contract: 3000,
   employee_management: 0,
   insurance_report: 1000,
+
+  // 내용증명
+  legal_notice: 3000,
+
+  // 거래처 관리
+  client_management: 0,
 };
 
 /**
@@ -90,4 +96,6 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   labor_contract: "근로계약서 AI",
   employee_management: "직원 관리",
   insurance_report: "4대보험 신고서",
+  legal_notice: "내용증명 작성",
+  client_management: "거래처 관리",
 };
