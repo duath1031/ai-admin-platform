@@ -145,6 +145,10 @@ export async function PATCH(
 
     if (role !== undefined && (role === "USER" || role === "ADMIN")) {
       updateData.role = role;
+      // 관리자로 변경 시 토큰 무제한 자동 설정
+      if (role === "ADMIN" && credits === undefined) {
+        updateData.credits = -1;
+      }
     }
 
     const user = await prisma.user.update({

@@ -143,11 +143,21 @@ export async function getUserPlanCode(userId: string): Promise<string> {
 
 /**
  * 특정 기능에 대한 접근 권한 확인
+ * 관리자(ADMIN)는 모든 기능에 접근 가능
  */
 export async function checkFeatureAccess(
   userId: string,
   feature: string
 ): Promise<{ allowed: boolean; planCode: string; requiredPlan: string | null }> {
+  // 관리자는 모든 기능 접근 가능
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  if (user?.role === "ADMIN") {
+    return { allowed: true, planCode: "enterprise", requiredPlan: null };
+  }
+
   const planCode = await getUserPlanCode(userId);
   const access = PLAN_ACCESS[planCode]?.[feature] ?? false;
 

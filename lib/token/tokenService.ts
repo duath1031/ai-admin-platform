@@ -2,13 +2,25 @@ import { prisma } from "@/lib/prisma";
 import { TOKEN_COSTS } from "@/lib/config/tokenCosts";
 
 /**
- * 토큰 잔액 조회
+ * 관리자(ADMIN) 여부 확인
+ */
+async function isAdmin(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true },
+  });
+  return user?.role === "ADMIN";
+}
+
+/**
+ * 토큰 잔액 조회 (관리자는 항상 무제한)
  */
 export async function getBalance(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { credits: true },
+    select: { credits: true, role: true },
   });
+  if (user?.role === "ADMIN") return -1;
   return user?.credits ?? 0;
 }
 
@@ -39,6 +51,7 @@ export async function checkBalance(
 
 /**
  * 원자적 토큰 차감 (race condition 방지)
+ * 관리자(ADMIN)는 항상 무제한 — 토큰 차감 없이 통과
  * @returns true if deduction succeeded, false if insufficient balance
  */
 export async function deductTokens(
@@ -49,11 +62,12 @@ export async function deductTokens(
   const cost = customCost ?? getCost(feature);
   if (cost <= 0) return true;
 
-  // 무제한 유저 체크
+  // 관리자 또는 무제한 유저 체크
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { credits: true },
+    select: { credits: true, role: true },
   });
+  if (user?.role === "ADMIN") return true;
   if (user?.credits === -1) return true;
 
   // 원자적 차감: credits >= cost 조건으로 업데이트
