@@ -30,6 +30,10 @@ export interface CompanyDataForFund {
   businessSector?: string | null;
   certifications?: { certType: string; isActive: boolean }[];
   patents?: { patentType: string; status: string }[];
+  founderAge?: number;
+  isWomenOwned?: boolean;
+  isRural?: boolean;
+  isGreenBiz?: boolean;
 }
 
 function yearsSinceDate(date: string | Date | null | undefined): number {
@@ -60,6 +64,18 @@ function checkRequirement(field: string, data: CompanyDataForFund): boolean {
       return !!data.isExporter || (data.exportAmount || 0) > 0;
     case 'isManufacturing':
       return (data.businessSector || '').includes('제조');
+    case 'isSocialEnterprise':
+      return (data.certifications || []).some(c => c.certType === 'social_enterprise' && c.isActive);
+    case 'isYoungFounder':
+      return (data.founderAge || 999) <= 39;
+    case 'isWomenOwned':
+      return !!data.isWomenOwned;
+    case 'hasIPRights':
+      return (data.patents || []).length > 0;
+    case 'isRural':
+      return !!data.isRural;
+    case 'isGreenBiz':
+      return !!data.isGreenBiz;
     default:
       return false;
   }
