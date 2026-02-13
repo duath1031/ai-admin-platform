@@ -15,7 +15,7 @@ interface MenuItem {
   name: string;
   href: string;
   icon: React.ReactNode;
-  external?: boolean; // 외부 링크 여부
+  external?: boolean;
 }
 
 interface MenuGroup {
@@ -49,9 +49,9 @@ const sidebarItems: SidebarItem[] = [
       </svg>
     ),
   },
-  // 서류 작성/내용증명 그룹
+  // 서류AI (서류작성 + 서류검토/분석 + 신청서 통합)
   {
-    name: "서류 작성",
+    name: "서류AI",
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -63,7 +63,34 @@ const sidebarItems: SidebarItem[] = [
         href: "/documents",
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        ),
+      },
+      {
+        name: "서류 검토/분석",
+        href: "/review",
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          </svg>
+        ),
+      },
+      {
+        name: "인허가 신청서",
+        href: "/application-form",
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        ),
+      },
+      {
+        name: "계약서 AI 분석",
+        href: "/contract-analysis",
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
           </svg>
         ),
       },
@@ -76,32 +103,12 @@ const sidebarItems: SidebarItem[] = [
           </svg>
         ),
       },
-    ],
-  },
-  // 서류 검토/분석 그룹
-  {
-    name: "서류 검토/분석",
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-      </svg>
-    ),
-    children: [
       {
-        name: "서류 검토",
-        href: "/review",
+        name: "회의록/녹취록",
+        href: "/meeting-minutes",
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-          </svg>
-        ),
-      },
-      {
-        name: "계약서 AI 분석",
-        href: "/contract-analysis",
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
           </svg>
         ),
       },
@@ -222,11 +229,20 @@ const sidebarItems: SidebarItem[] = [
         ),
       },
       {
-        name: "내용증명",
-        href: "/legal-notice",
+        name: "뿌리기업 확인",
+        href: "/root-company-check",
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+          </svg>
+        ),
+      },
+      {
+        name: "기업부설연구소",
+        href: "/research-institute",
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
         ),
       },
@@ -381,10 +397,8 @@ export default function Sidebar() {
   const { data: session } = useSession();
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
-  // 관리자 여부 체크 (대소문자 무시)
   const isAdmin = session?.user?.email && ADMIN_EMAILS.includes(session.user.email.toLowerCase());
 
-  // 현재 경로가 그룹 내 자식에 해당하면 자동 펼침
   useEffect(() => {
     const newOpen = new Set<string>();
     for (const item of sidebarItems) {
@@ -404,7 +418,6 @@ export default function Sidebar() {
     }
   }, [pathname]);
 
-  // 화면 크기 변경 시 모바일에서 사이드바 자동 닫기
   useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth < 768 && sidebarOpen) {
@@ -439,13 +452,11 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* 모바일 백드롭 */}
       <div
         className="fixed inset-0 bg-black/50 z-30 md:hidden"
         onClick={() => setSidebarOpen(false)}
       />
 
-      {/* 사이드바 */}
       <aside className="fixed left-0 top-14 sm:top-16 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] w-56 sm:w-64 bg-white border-r border-gray-200 z-40 overflow-y-auto">
         <nav className="p-2 sm:p-4 space-y-0.5 sm:space-y-1">
           {sidebarItems.map((item) => {
@@ -457,7 +468,6 @@ export default function Sidebar() {
 
               return (
                 <div key={item.name}>
-                  {/* 그룹 헤더 */}
                   <button
                     onClick={() => toggleGroup(item.name)}
                     className={`
@@ -480,11 +490,9 @@ export default function Sidebar() {
                     </svg>
                   </button>
 
-                  {/* 하위 메뉴 */}
                   {isOpen && (
                     <div className="ml-3 sm:ml-4 mt-0.5 space-y-0.5 border-l-2 border-gray-200 pl-2 sm:pl-3">
                       {item.children.map((child) => {
-                        // 외부 링크 처리
                         if (child.external) {
                           return (
                             <a
@@ -527,7 +535,6 @@ export default function Sidebar() {
               );
             }
 
-            // 일반 메뉴 아이템
             const menuItem = item as MenuItem;
             const isActive =
               pathname === menuItem.href ||
@@ -552,7 +559,6 @@ export default function Sidebar() {
             );
           })}
 
-          {/* 관리자 메뉴 - 관리자만 표시 */}
           {isAdmin && (
             <>
               <div className="border-t border-gray-200 my-1 sm:my-2" />

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import ClientSelector from "@/components/common/ClientSelector";
+import { useClientStore } from "@/lib/store";
 
 // ─── Types ───
 
@@ -99,6 +101,7 @@ type TabKey = "employees" | "generate" | "list";
 // ─── Main Page ───
 
 export default function PayslipPage() {
+  const { selectedClient } = useClientStore();
   const [activeTab, setActiveTab] = useState<TabKey>("employees");
 
   // ── 직원 관리 state ──
@@ -140,7 +143,8 @@ export default function PayslipPage() {
     setEmpLoading(true);
     setEmpError("");
     try {
-      const res = await fetch("/api/labor/employees?active=false");
+      const clientId = selectedClient?.id || "none";
+      const res = await fetch(`/api/labor/employees?active=false&clientCompanyId=${clientId}`);
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "직원 목록 조회 실패");
       setEmployees(data.data);
@@ -149,7 +153,7 @@ export default function PayslipPage() {
     } finally {
       setEmpLoading(false);
     }
-  }, []);
+  }, [selectedClient]);
 
   // ── 명세서 목록 로드 ──
   const fetchPayslips = useCallback(async () => {
@@ -333,11 +337,14 @@ export default function PayslipPage() {
       {/* 메인 콘텐츠 */}
       <div className="max-w-7xl mx-auto space-y-6 print:hidden">
         {/* 헤더 */}
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">급여명세서</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            직원 관리 및 급여명세서를 생성합니다
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">급여명세서</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              직원 관리 및 급여명세서를 생성합니다
+            </p>
+          </div>
+          <ClientSelector />
         </div>
 
         {/* 탭 */}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { runCertificationCheck, type CertEligibilityResult, type CompanyData } from "@/lib/analytics/certificationChecker";
+import ClientSelector from "@/components/common/ClientSelector";
 
 export default function CertificationCheckPage() {
   const [profile, setProfile] = useState<CompanyData | null>(null);
@@ -61,11 +62,14 @@ export default function CertificationCheckPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">인증 적격성 진단</h1>
-        <p className="text-gray-500 mt-1">
-          기업 프로필 기반으로 주요 인증의 취득 가능성을 자동 진단합니다.
-        </p>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">인증 적격성 진단</h1>
+          <p className="text-gray-500 mt-1">
+            기업 프로필 기반으로 주요 인증의 취득 가능성을 자동 진단합니다.
+          </p>
+        </div>
+        <ClientSelector />
       </div>
 
       {/* 요약 카드 */}

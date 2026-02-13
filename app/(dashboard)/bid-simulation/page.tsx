@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui";
 import { BidSimulator, RateDistributionChart, MonteCarloResult } from "@/components/procurement";
+import ClientSelector from "@/components/common/ClientSelector";
 
 // ─── Types ───
 
@@ -197,11 +198,14 @@ export default function BidSimulationPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       {/* 헤더 */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">입찰 시뮬레이터</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          과거 공개 데이터 기반 분석 도구 — 복수예비가격 사정률 시뮬레이션
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">입찰 시뮬레이터</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            과거 공개 데이터 기반 분석 도구 — 복수예비가격 사정률 시뮬레이션
+          </p>
+        </div>
+        <ClientSelector />
       </div>
 
       {/* 에러 표시 */}

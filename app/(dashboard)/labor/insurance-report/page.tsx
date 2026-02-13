@@ -20,6 +20,8 @@ import {
 } from "@/components/ui";
 import InsuranceReportPdf from "@/components/labor/InsuranceReportPdf";
 import type { CompanyInfo, ReportData } from "@/components/labor/InsuranceReportPdf";
+import ClientSelector from "@/components/common/ClientSelector";
+import { useClientStore } from "@/lib/store";
 
 // ─── Types ───
 
@@ -134,6 +136,7 @@ const DEADLINE_INFO: Record<ReportType, string> = {
 // ─── Main Component ───
 
 export default function InsuranceReportPage() {
+  const { selectedClient } = useClientStore();
   const [activeTab, setActiveTab] = useState<ReportType>("acquisition");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
@@ -203,8 +206,9 @@ export default function InsuranceReportPage() {
 
   // ── Load data ──
   useEffect(() => {
+    const clientId = selectedClient?.id || "none";
     Promise.all([
-      fetch("/api/labor/employees").then(r => r.json()),
+      fetch(`/api/labor/employees?clientCompanyId=${clientId}`).then(r => r.json()),
       fetch("/api/user/company-profile").then(r => r.json()),
       fetch("/api/labor/insurance-report").then(r => r.json()),
       fetch("/api/labor/client-companies").then(r => r.json()),
@@ -226,7 +230,7 @@ export default function InsuranceReportPage() {
       if (reportRes.success) setSavedReports(reportRes.data);
       if (clientRes.success) setClientCompanies(clientRes.data);
     }).catch(console.error);
-  }, []);
+  }, [selectedClient]);
 
   // ── 거래처 선택 시 CompanyInfo 동기화 ──
   useEffect(() => {
@@ -453,9 +457,12 @@ export default function InsuranceReportPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6 p-4 sm:p-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">4대보험 신고서</h1>
-        <p className="text-gray-600 mt-1">국민건강보험법·국민연금법·고용보험법 시행규칙에 따른 법정양식 신고서를 자동 작성합니다.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">4대보험 신고서</h1>
+          <p className="text-gray-600 mt-1">국민건강보험법·국민연금법·고용보험법 시행규칙에 따른 법정양식 신고서를 자동 작성합니다.</p>
+        </div>
+        <ClientSelector />
       </div>
 
       {/* Tabs */}

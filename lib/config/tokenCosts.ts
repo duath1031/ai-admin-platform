@@ -66,6 +66,15 @@ export const TOKEN_COSTS: Record<string, number> = {
 
   // 거래처 관리
   client_management: 0,
+
+  // 회의록/녹취록
+  meeting_minutes: 3000,
+
+  // 뿌리기업 확인
+  root_company_check: 2000,
+
+  // 기업부설연구소
+  research_institute: 2000,
 };
 
 /**
@@ -98,4 +107,7 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   insurance_report: "4대보험 신고서",
   legal_notice: "내용증명 작성",
   client_management: "거래처 관리",
+  meeting_minutes: "회의록/녹취록 AI",
+  root_company_check: "뿌리기업 확인",
+  research_institute: "기업부설연구소",
 };

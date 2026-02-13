@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { runFundMatching, type FundMatchResult } from "@/lib/analytics/fundMatcher";
+import ClientSelector from "@/components/common/ClientSelector";
 
 // ─── Types ───
 
@@ -328,11 +329,14 @@ export default function FundMatchingPage() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">정부지원 / 정책자금</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          기업마당 연동 + 기업 프로필 기반 정책자금 매칭, 마감일 추적, AI 전략 분석
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">정부지원 / 정책자금</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            기업마당 연동 + 기업 프로필 기반 정책자금 매칭, 마감일 추적, AI 전략 분석
+          </p>
+        </div>
+        <ClientSelector />
       </div>
 
       {/* Tabs */}

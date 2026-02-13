@@ -19,6 +19,7 @@ import {
   Alert,
   AlertDescription,
 } from "@/components/ui";
+import ClientSelector from "@/components/common/ClientSelector";
 
 // ─── Types ───
 
@@ -296,13 +297,18 @@ export default function InsuranceCalcPage() {
       )}
 
       {/* Header */}
-      <div className="print:text-center">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-          4대보험 계산기
-        </h1>
-        <p className="text-gray-500 mt-1">
-          2026년 기준 4대보험료 및 소득세를 계산합니다
-        </p>
+      <div className="flex items-center justify-between print:text-center">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+            4대보험 계산기
+          </h1>
+          <p className="text-gray-500 mt-1">
+            2026년 기준 4대보험료 및 소득세를 계산합니다
+          </p>
+        </div>
+        <div className="print:hidden">
+          <ClientSelector />
+        </div>
       </div>
 
       {/* Input Form */}

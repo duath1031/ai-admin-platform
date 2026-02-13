@@ -98,10 +98,79 @@ model ClientCompany {
   hiBizNo       String?  // 건강보험 사업장관리번호
   eiBizNo       String?  // 고용·산재보험 사업장관리번호
   memo          String?
+
+  // Section 2: 식별 상세
+  ceoGender         String?   // 대표자 성별 (male/female)
+  corpRegNo         String?   // 법인등록번호
+  bizType           String?   // 업태/종목
+  foundedDate       DateTime? // 설립일/개업일
+
+  // Section 3: 업종 상세
+  businessSector    String?   // 업종 대분류 (제조업/서비스업/건설업 등)
+  industryCode      String?   // 한국표준산업분류 코드
+  industryName      String?   // 산업분류명
+  businessSubType   String?   // 세부업종
+
+  // Section 4: 재무 정보 (최근 3개년)
+  revenueYear1          BigInt?  // 매출액 1차년도
+  revenueYear2          BigInt?  // 매출액 2차년도
+  revenueYear3          BigInt?  // 매출액 3차년도
+  revenueLabel1         String?  // 예: "2025년"
+  revenueLabel2         String?  // 예: "2024년"
+  revenueLabel3         String?  // 예: "2023년"
+  operatingProfitYear1  BigInt?  // 영업이익 1차년도
+  operatingProfitYear2  BigInt?  // 영업이익 2차년도
+  operatingProfitYear3  BigInt?  // 영업이익 3차년도
+  netIncomeYear1        BigInt?  // 당기순이익 1차년도
+  netIncomeYear2        BigInt?  // 당기순이익 2차년도
+  netIncomeYear3        BigInt?  // 당기순이익 3차년도
+  totalAssets           BigInt?  // 총자산
+  totalLiabilities      BigInt?  // 총부채
+  capital               BigInt?  // 자본금
+  rndExpenditure        BigInt?  // 연구개발비
+  exportAmount          BigInt?  // 수출액
+
+  // Section 5: 고용 정보
+  employeeCount         Int      @default(0)  // 상시근로자 수
+  permanentEmployees    Int?     // 정규직 수
+  contractEmployees     Int?     // 계약직 수
+  researcherCount       Int?     // 연구원 수
+  foreignEmployees      Int?     // 외국인 근로자 수
+
+  // Section 6: 연구소/전담부서
+  hasResearchInstitute  Boolean  @default(false)
+  hasRndDepartment      Boolean  @default(false)
+  researchInstituteDate DateTime?
+
+  // Section 7: 제조업 정보
+  isManufacturer        Boolean  @default(false)
+  manufacturingItems    String?  // 제조물품 (콤마 구분)
+  factoryAddress        String?  // 공장 소재지
+  factoryArea           String?  // 공장 면적 (㎡)
+  manufacturingCerts    String?  // 제조 관련 인증 (HACCP, GMP, KS 등)
+  mainRawMaterials      String?  // 주요 원자재
+
+  // Section 8: 조달/입찰 정보
+  isG2bRegistered       Boolean  @default(false)
+  g2bRegistrationNumber String?  // 나라장터 업체등록번호
+  mainProducts          String?  // 주요 생산품목 (콤마 구분)
+  hasDirectProductionCert Boolean @default(false)
+  hasMasContract        Boolean  @default(false)
+
+  // Section 9: 수출/외국인
+  isExporter            Boolean  @default(false)
+  exportCountries       String?  // 수출 대상국
+  hasForeignWorkers     Boolean  @default(false)
+  foreignWorkerVisaTypes String? // 비자 유형
+
+  // 메타
+  profileCompleteness   Int      @default(0) // 0~100
+
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employees     Employee[]
 
   @@index([userId])
 }
@@ -1113,6 +1182,7 @@ model DeadlineAlert {
 model Employee {
   id                        String    @id @default(cuid())
   userId                    String
+  clientCompanyId           String?   // null이면 내 기업 직원, 값이면 거래처 직원
   name                      String
   birthDate                 DateTime?
   hireDate                  DateTime
@@ -1134,10 +1204,12 @@ model Employee {
   createdAt                 DateTime  @default(now())
   updatedAt                 DateTime  @updatedAt
   user                      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientCompany             ClientCompany? @relation(fields: [clientCompanyId], references: [id], onDelete: SetNull)
   payslips                  Payslip[]
   insuranceReports          InsuranceReport[]
 
   @@index([userId])
+  @@index([clientCompanyId])
 }
 
 model Payslip {

@@ -1,7 +1,7 @@
 /**
  * 직원 관리 API
- * GET  /api/labor/employees - 직원 목록
- * POST /api/labor/employees - 직원 등록
+ * GET  /api/labor/employees - 직원 목록 (clientCompanyId 필터 지원)
+ * POST /api/labor/employees - 직원 등록 (거래처 직원 등록 가능)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -19,11 +19,30 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const activeOnly = searchParams.get("active") !== "false";
+    const clientCompanyId = searchParams.get("clientCompanyId");
+
+    // clientCompanyId 파라미터 처리:
+    // - "none" 또는 미지정: 내 기업 직원만 (clientCompanyId IS NULL)
+    // - 특정 ID: 해당 거래처 직원만
+    // - "all": 전체 직원
+    const whereClause: Record<string, unknown> = {
+      userId: session.user.id,
+      ...(activeOnly ? { isActive: true } : {}),
+    };
+
+    if (clientCompanyId === "all") {
+      // 전체 직원
+    } else if (clientCompanyId && clientCompanyId !== "none") {
+      whereClause.clientCompanyId = clientCompanyId;
+    } else {
+      // 기본: 내 기업 직원 (clientCompanyId가 null인 것)
+      whereClause.clientCompanyId = null;
+    }
 
     const employees = await prisma.employee.findMany({
-      where: {
-        userId: session.user.id,
-        ...(activeOnly ? { isActive: true } : {}),
+      where: whereClause,
+      include: {
+        clientCompany: { select: { id: true, companyName: true } },
       },
       orderBy: { name: "asc" },
     });
@@ -44,7 +63,6 @@ export async function POST(request: NextRequest) {
 
     const access = await checkFeatureAccess(session.user.id, "employee_management");
     if (!access.allowed) {
-      // Pro 이하에서도 직원 등록은 허용 (10명 제한)
       const existingCount = await prisma.employee.count({
         where: { userId: session.user.id, isActive: true },
       });
@@ -60,15 +78,26 @@ export async function POST(request: NextRequest) {
     const { name, birthDate, hireDate, department, position, employmentType,
       monthlySalary, dependents, childrenUnder20, nonTaxableAmount,
       nationalPensionExempt, healthInsuranceExempt, employmentInsuranceExempt,
-      weeklyWorkHours, hourlyWage, industryCode } = body;
+      weeklyWorkHours, hourlyWage, industryCode, clientCompanyId } = body;
 
     if (!name || !hireDate || !monthlySalary) {
       return NextResponse.json({ error: "이름, 입사일, 월급여는 필수입니다." }, { status: 400 });
     }
 
+    // 거래처 ID가 있으면 소유권 확인
+    if (clientCompanyId) {
+      const client = await prisma.clientCompany.findFirst({
+        where: { id: clientCompanyId, userId: session.user.id, isActive: true },
+      });
+      if (!client) {
+        return NextResponse.json({ error: "해당 거래처를 찾을 수 없습니다." }, { status: 404 });
+      }
+    }
+
     const employee = await prisma.employee.create({
       data: {
         userId: session.user.id,
+        clientCompanyId: clientCompanyId || null,
         name,
         birthDate: birthDate ? new Date(birthDate) : null,
         hireDate: new Date(hireDate),
@@ -85,6 +114,9 @@ export async function POST(request: NextRequest) {
         weeklyWorkHours: Number(weeklyWorkHours) || 40,
         hourlyWage: hourlyWage ? Number(hourlyWage) : null,
         industryCode: industryCode || "80",
+      },
+      include: {
+        clientCompany: { select: { id: true, companyName: true } },
       },
     });
 

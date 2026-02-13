@@ -157,7 +157,7 @@ export const useUIStore = create<UIState>((set) => ({
 }));
 
 /** 거래처 선택 글로벌 스토어 (Pro Plus) */
-interface ClientCompanyData {
+export interface ClientCompanyData {
   id: string;
   companyName: string;
   ownerName?: string | null;
@@ -168,6 +168,48 @@ interface ClientCompanyData {
   hiBizNo?: string | null;
   eiBizNo?: string | null;
   memo?: string | null;
+  // 식별 상세
+  ceoGender?: string | null;
+  corpRegNo?: string | null;
+  bizType?: string | null;
+  foundedDate?: string | null;
+  // 업종 상세
+  businessSector?: string | null;
+  industryCode?: string | null;
+  industryName?: string | null;
+  businessSubType?: string | null;
+  // 재무 정보
+  revenueYear1?: number | null;
+  revenueYear2?: number | null;
+  revenueYear3?: number | null;
+  revenueLabel1?: string | null;
+  revenueLabel2?: string | null;
+  revenueLabel3?: string | null;
+  totalAssets?: number | null;
+  totalLiabilities?: number | null;
+  capital?: number | null;
+  // 고용 정보
+  employeeCount?: number;
+  permanentEmployees?: number | null;
+  contractEmployees?: number | null;
+  researcherCount?: number | null;
+  foreignEmployees?: number | null;
+  // 연구소
+  hasResearchInstitute?: boolean;
+  hasRndDepartment?: boolean;
+  // 제조업
+  isManufacturer?: boolean;
+  manufacturingItems?: string | null;
+  factoryAddress?: string | null;
+  mainProducts?: string | null;
+  // 조달
+  isG2bRegistered?: boolean;
+  g2bRegistrationNumber?: string | null;
+  // 외국인
+  hasForeignWorkers?: boolean;
+  foreignWorkerVisaTypes?: string | null;
+  // 메타
+  profileCompleteness?: number;
 }
 
 interface ClientState {
