@@ -29,7 +29,7 @@ const features = [
     badge: "핵심",
   },
   {
-    title: "인허가 자가진단",
+    title: "건축행정AI",
     description: "GIS 기반으로 사업장 위치의 용도지역을 분석하여 인허가 가능성을 자동 진단",
     icon: (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -18,10 +18,10 @@ export const TOKEN_COSTS: Record<string, number> = {
   // 문서24 공문 발송
   doc24_submission: 5000,
 
-  // 인허가 자가진단
+  // 건축행정AI
   permit_check: 2000,
 
-  // 비자 계산기
+  // 비자AI
   visa_calculator: 1000,
 
   // 입찰 분석
@@ -62,7 +62,7 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   rpa_submission: "민원 자동접수",
   doc24_submission: "문서24 발송",
   permit_check: "인허가 진단",
-  visa_calculator: "비자 계산기",
+  visa_calculator: "비자AI",
   bid_analysis: "입찰 분석",
   bid_simulation: "입찰 시뮬레이션",
   contract_analysis: "계약서 AI 분석",

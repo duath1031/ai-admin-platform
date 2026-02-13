@@ -58,10 +58,10 @@ const PLAN_TARGET: Record<string, string> = {
 
 const PLAN_FEATURES: Record<string, string[]> = {
   standard: [
-    "AI 상담 무제한",
+    "AI 상담 (1,000토큰/회)",
     "서류 작성 20건/월",
     "문서24/민원 접수",
-    "인허가 자가진단",
+    "건축행정AI",
     "서류 검토",
     "보조금 기본 매칭",
     "월 100만 토큰",
@@ -69,7 +69,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
   pro: [
     "Standard 전체 포함",
     "입찰 분석 (시뮬레이터)",
-    "비자 계산기",
+    "비자AI",
     "인증 진단",
     "정책자금 매칭",
     "계약서 AI 분석",

@@ -155,7 +155,7 @@ export default function PermitCheckPage() {
             </svg>
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">인허가 자가진단</h1>
+            <h1 className="text-2xl font-bold text-gray-900">건축행정AI</h1>
             <p className="text-gray-600">GIS 기반 인허가 가능성 진단 시스템</p>
           </div>
         </div>
@@ -552,7 +552,7 @@ export default function PermitCheckPage() {
       {/* Info Section */}
       {!result && (
         <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
-          <h3 className="font-medium text-gray-900 mb-2">인허가 자가진단 안내</h3>
+          <h3 className="font-medium text-gray-900 mb-2">건축행정AI 안내</h3>
           <ul className="text-sm text-gray-600 space-y-1">
             <li>• 토지이용계획 정보를 기반으로 인허가 가능성을 사전에 진단합니다.</li>
             <li>• 용도지역, 건폐율, 용적률 등을 종합적으로 분석합니다.</li>

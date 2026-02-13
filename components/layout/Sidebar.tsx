@@ -70,7 +70,7 @@ const menuItems = [
     ),
   },
   {
-    name: "인허가 자가진단",
+    name: "건축행정AI",
     href: "/permit-check",
     icon: (
       <svg
@@ -89,7 +89,7 @@ const menuItems = [
     ),
   },
   {
-    name: "비자 계산기",
+    name: "비자AI",
     href: "/visa-calculator",
     icon: (
       <svg

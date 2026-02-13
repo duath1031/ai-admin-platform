@@ -27,7 +27,7 @@ async function main() {
       credits: 1000000,
       tokenQuota: 1000000,
       trialDays: 0,
-      features: "AI 상담 무제한, 서류 작성 20건/월, 민원 자동접수, 인허가 진단, 서류 검토, 보조금 기본 매칭",
+      features: "AI 상담(토큰차감), 서류 작성 20건/월, 민원 자동접수, 건축행정AI, 서류 검토, 보조금 기본 매칭",
       maxFeatures: JSON.stringify({
         ai_chat: -1,
         document_create: 20,
@@ -46,7 +46,7 @@ async function main() {
       credits: 3000000,
       tokenQuota: 3000000,
       trialDays: 0,
-      features: "전 기능 무제한, 입찰 분석, 정책자금 매칭, 인증 진단, 비자 계산기, 우선 고객지원",
+      features: "전 기능 무제한, 입찰 분석, 정책자금 매칭, 인증 진단, 비자AI, 우선 고객지원",
       maxFeatures: JSON.stringify({
         ai_chat: -1,
         document_create: -1,

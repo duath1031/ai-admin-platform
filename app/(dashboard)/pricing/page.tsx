@@ -34,10 +34,10 @@ const PLAN_FEATURES: Record<string, string[]> = {
     "(계정당 평생 1회)",
   ],
   standard: [
-    "AI 상담 무제한",
+    "AI 상담 (1,000토큰/회)",
     "서류 작성 20건/월",
     "문서24/민원 접수 5건",
-    "인허가 자가진단",
+    "건축행정AI",
     "서류 검토",
     "보조금 기본 매칭",
     "월 100만 토큰",
@@ -45,7 +45,7 @@ const PLAN_FEATURES: Record<string, string[]> = {
   pro: [
     "Standard 전체 포함",
     "입찰 분석 (시뮬레이터)",
-    "비자 계산기",
+    "비자AI",
     "인증 진단",
     "정책자금 매칭",
     "계약서 AI 분석",
@@ -76,12 +76,27 @@ const PLAN_COLORS: Record<string, { bg: string; border: string; badge: string }>
   pro_plus: { bg: "bg-amber-50", border: "border-amber-400", badge: "bg-amber-100 text-amber-700" },
 };
 
+// 월결제 가격 (연결제 대비 ~10% 높음 → 연결제 할인 효과)
+const MONTHLY_PRICES: Record<string, number> = {
+  standard: 99000,
+  pro: 165000,
+  pro_plus: 242000,
+};
+
+// 연결제 월 환산 가격 (기존 DB 가격 = 연결제 기준)
+const ANNUAL_MONTHLY_PRICES: Record<string, number> = {
+  standard: 90000,
+  pro: 150000,
+  pro_plus: 220000,
+};
+
 export default function PricingPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [currentSub, setCurrentSub] = useState<CurrentSub | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAnnual, setIsAnnual] = useState(true); // 기본 연결제 (할인 표시)
 
   useEffect(() => {
     Promise.all([
@@ -101,7 +116,7 @@ export default function PricingPage() {
       router.push("/api/auth/signin");
       return;
     }
-    router.push(`/subscription?plan=${planCode}`);
+    router.push(`/subscription?plan=${planCode}&cycle=${isAnnual ? "annual" : "monthly"}`);
   };
 
   if (loading) {
@@ -117,11 +132,41 @@ export default function PricingPage() {
       {/* 헤더 */}
       <div className="text-center mb-12">
         <h1 className="text-3xl font-bold text-gray-900 mb-3">
-          AI 직원 1명, 월 9만원부터
+          AI 직원 1명, 월 {isAnnual ? "9만" : "9.9만"}원부터
         </h1>
-        <p className="text-lg text-gray-500">
+        <p className="text-lg text-gray-500 mb-6">
           경리 + 노무사 + 행정사 + 입찰담당 + 경영컨설턴트의 역할을 AI가 대신합니다
         </p>
+
+        {/* 월결제 / 연결제 토글 */}
+        <div className="inline-flex items-center gap-3 bg-gray-100 rounded-full p-1">
+          <button
+            onClick={() => setIsAnnual(false)}
+            className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
+              !isAnnual
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            월결제
+          </button>
+          <button
+            onClick={() => setIsAnnual(true)}
+            className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
+              isAnnual
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            연결제
+            <span className="ml-1.5 text-xs text-green-600 font-bold">SAVE</span>
+          </button>
+        </div>
+        {isAnnual && (
+          <p className="mt-2 text-sm text-green-600 font-medium">
+            연결제 시 최대 10% 할인!
+          </p>
+        )}
       </div>
 
       {/* 요금제 카드 — 4열 */}
@@ -161,15 +206,33 @@ export default function PricingPage() {
               <div className="mb-4">
                 {plan.price === 0 ? (
                   <div className="text-2xl font-bold text-gray-900">무료</div>
-                ) : (
-                  <>
-                    <div className="text-2xl font-bold text-gray-900">
-                      {(plan.price / 10000).toFixed(0)}
-                      <span className="text-base font-normal text-gray-500">만원</span>
-                    </div>
-                    <div className="text-xs text-gray-500">/월</div>
-                  </>
-                )}
+                ) : (() => {
+                  const monthlyPrice = MONTHLY_PRICES[plan.planCode] || plan.price;
+                  const annualMonthly = ANNUAL_MONTHLY_PRICES[plan.planCode] || plan.price;
+                  const displayPrice = isAnnual ? annualMonthly : monthlyPrice;
+                  const savings = Math.round(((monthlyPrice - annualMonthly) / monthlyPrice) * 100);
+                  return (
+                    <>
+                      {isAnnual && monthlyPrice > annualMonthly && (
+                        <div className="text-sm text-gray-400 line-through mb-0.5">
+                          월 {monthlyPrice.toLocaleString()}원
+                        </div>
+                      )}
+                      <div className="text-2xl font-bold text-gray-900">
+                        {displayPrice.toLocaleString()}
+                        <span className="text-base font-normal text-gray-500">원</span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {isAnnual ? `/월 (연 ${(annualMonthly * 12).toLocaleString()}원)` : "/월"}
+                      </div>
+                      {isAnnual && savings > 0 && (
+                        <span className="inline-block mt-1 text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                          {savings}% 할인
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* 토큰 */}

@@ -23,29 +23,47 @@ export interface ModelConfig {
 const MODEL_CONFIGS: Record<UserTier, ModelConfig> = {
   free: {
     modelName: 'gemini-2.0-flash',
-    temperature: 0.7,
-    maxOutputTokens: 1024,
+    temperature: 0.6,
+    maxOutputTokens: 4096,
     description: '무료 사용자용 - 빠른 응답'
   },
   basic: {
     modelName: 'gemini-2.0-flash',
-    temperature: 0.7,
-    maxOutputTokens: 2048,
+    temperature: 0.5,
+    maxOutputTokens: 8192,
     description: '기본 사용자용 - 확장된 응답'
   },
   professional: {
-    modelName: 'gemini-1.5-pro',
-    temperature: 0.5,
-    maxOutputTokens: 4096,
+    modelName: 'gemini-2.0-flash',
+    temperature: 0.4,
+    maxOutputTokens: 16384,
     description: '전문가용 (행정사, 정부기관) - 상세하고 정확한 응답'
   },
   pro_plus: {
-    modelName: 'gemini-1.5-pro',
+    modelName: 'gemini-2.0-flash',
     temperature: 0.3,
-    maxOutputTokens: 8192,
-    description: 'Pro Plus - 최대 성능'
+    maxOutputTokens: 32768,
+    description: 'Pro Plus - 최대 성능, 최대 출력'
   },
 };
+
+// 대화 히스토리 관리: 너무 긴 대화는 최근 메시지만 유지
+const MAX_HISTORY_MESSAGES = 40; // 최대 40개 메시지 (user+assistant 합산)
+const KEEP_FIRST_MESSAGES = 2;   // 초기 컨텍스트 유지
+
+export function trimConversationHistory(
+  messages: { role: string; content: string }[]
+): { role: string; content: string }[] {
+  if (messages.length <= MAX_HISTORY_MESSAGES) return messages;
+
+  // 첫 2개(초기 컨텍스트) + 최근 메시지 유지
+  const keepRecent = MAX_HISTORY_MESSAGES - KEEP_FIRST_MESSAGES;
+  const firstPart = messages.slice(0, KEEP_FIRST_MESSAGES);
+  const recentPart = messages.slice(-keepRecent);
+
+  console.log(`[Gemini] 대화 히스토리 트리밍: ${messages.length}개 → ${firstPart.length + recentPart.length}개`);
+  return [...firstPart, ...recentPart];
+}
 
 // 전문가용 시스템 프롬프트 추가 지침
 const PROFESSIONAL_SYSTEM_PROMPT_SUFFIX = `
@@ -56,6 +74,8 @@ const PROFESSIONAL_SYSTEM_PROMPT_SUFFIX = `
 - 필요한 구비서류와 수수료를 정확히 안내하세요.
 - 처리 기한과 유의사항을 포함하세요.
 - 담당 부서 및 연락처 정보를 제공하세요.
+- 답변이 길어지더라도 끝까지 완성하세요. 절대 중간에 자르지 마세요.
+- 복잡한 질문에는 목차/번호를 사용하여 체계적으로 답변하세요.
 `;
 
 // 사용자 등급에 따른 모델 설정 반환
@@ -80,7 +100,6 @@ export async function chatWithGemini(
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
 
-  // systemInstruction을 사용하여 Google AI Studio "나의 지침"과 동일한 효과
   const model = genAI.getGenerativeModel({
     model: config.modelName,
     systemInstruction: enhancedPrompt,
@@ -93,8 +112,9 @@ export async function chatWithGemini(
     ...(enableGrounding && { tools: [GOOGLE_SEARCH_TOOL] }),
   });
 
-  // 대화 내역을 Gemini 형식으로 변환
-  const chatHistory = messages.slice(0, -1).map(msg => ({
+  // 대화 히스토리 트리밍
+  const trimmedMessages = trimConversationHistory(messages);
+  const chatHistory = trimmedMessages.slice(0, -1).map(msg => ({
     role: msg.role === "assistant" ? "model" : "user",
     parts: [{ text: msg.content }]
   }));
@@ -103,8 +123,7 @@ export async function chatWithGemini(
     history: chatHistory,
   });
 
-  // 마지막 사용자 메시지 전송
-  const lastMessage = messages[messages.length - 1];
+  const lastMessage = trimmedMessages[trimmedMessages.length - 1];
   const result = await chat.sendMessage(lastMessage.content);
   const response = result.response;
 
@@ -210,7 +229,6 @@ export async function chatWithKnowledge(
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
 
-  // Long Context 지원 모델 사용 (gemini-2.0-flash)
   const modelName = knowledgeFiles.length > 0 ? 'gemini-2.0-flash' : config.modelName;
 
   const model = genAI.getGenerativeModel({
@@ -225,16 +243,16 @@ export async function chatWithKnowledge(
     ...(enableGrounding && { tools: [GOOGLE_SEARCH_TOOL] }),
   });
 
-  // 마지막 사용자 메시지
-  const lastMessage = messages[messages.length - 1];
+  // 대화 히스토리 트리밍
+  const trimmedMessages = trimConversationHistory(messages);
+  const lastMessage = trimmedMessages[trimmedMessages.length - 1];
 
   // Knowledge 파일이 있는 경우 generateContent 사용
   if (knowledgeFiles.length > 0) {
     console.log(`[Gemini] Knowledge 파일 ${knowledgeFiles.length}개와 함께 질의`);
 
-    // 파일 + 대화 기록 + 현재 질문 조합
-    const conversationContext = messages.slice(0, -1).length > 0
-      ? `\n\n[이전 대화]\n${messages.slice(0, -1).map(m =>
+    const conversationContext = trimmedMessages.slice(0, -1).length > 0
+      ? `\n\n[이전 대화]\n${trimmedMessages.slice(0, -1).map(m =>
           `${m.role === 'assistant' ? 'AI' : '사용자'}: ${m.content}`
         ).join('\n\n')}\n\n[현재 질문]\n${lastMessage.content}`
       : lastMessage.content;
@@ -249,7 +267,7 @@ export async function chatWithKnowledge(
   }
 
   // Knowledge 파일이 없는 경우 기존 채팅 방식
-  const chatHistory = messages.slice(0, -1).map(msg => ({
+  const chatHistory = trimmedMessages.slice(0, -1).map(msg => ({
     role: msg.role === "assistant" ? "model" : "user",
     parts: [{ text: msg.content }]
   }));
@@ -306,7 +324,10 @@ export async function* chatWithKnowledgeStream(
   const config = getModelConfig(userTier);
   const enhancedPrompt = enhanceSystemPrompt(systemPrompt, userTier);
   const modelName = knowledgeFiles.length > 0 ? 'gemini-2.0-flash' : config.modelName;
-  const lastMessage = messages[messages.length - 1];
+
+  // 대화 히스토리 트리밍 (긴 대화 잘림 방지)
+  const trimmedMessages = trimConversationHistory(messages);
+  const lastMessage = trimmedMessages[trimmedMessages.length - 1];
 
   // Grounding 활성화 시도 → 실패 시 grounding 없이 재시도
   const attempts = enableGrounding ? [true, false] : [false];
@@ -328,8 +349,8 @@ export async function* chatWithKnowledgeStream(
       if (knowledgeFiles.length > 0) {
         console.log(`[Gemini Stream] Knowledge ${knowledgeFiles.length}개 + Grounding=${useGrounding}`);
 
-        const conversationContext = messages.slice(0, -1).length > 0
-          ? `\n\n[이전 대화]\n${messages.slice(0, -1).map(m =>
+        const conversationContext = trimmedMessages.slice(0, -1).length > 0
+          ? `\n\n[이전 대화]\n${trimmedMessages.slice(0, -1).map(m =>
               `${m.role === 'assistant' ? 'AI' : '사용자'}: ${m.content}`
             ).join('\n\n')}\n\n[현재 질문]\n${lastMessage.content}`
           : lastMessage.content;
@@ -351,7 +372,7 @@ export async function* chatWithKnowledgeStream(
       }
 
       // Knowledge 파일이 없는 경우
-      const chatHistory = messages.slice(0, -1).map(msg => ({
+      const chatHistory = trimmedMessages.slice(0, -1).map(msg => ({
         role: msg.role === "assistant" ? "model" : "user",
         parts: [{ text: msg.content }]
       }));

@@ -31,7 +31,7 @@ export default function DashboardPage() {
       color: "green",
     },
     {
-      title: "인허가 자가진단",
+      title: "건축행정AI",
       description: "GIS 기반 인허가 가능성 진단",
       href: "/permit-check",
       icon: (
