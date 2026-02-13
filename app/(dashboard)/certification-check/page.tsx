@@ -1,207 +1,115 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { runCertificationCheck, type CertEligibilityResult, type CompanyData } from "@/lib/analytics/certificationChecker";
+import { useState } from "react";
 import ClientSelector from "@/components/common/ClientSelector";
+import CertDiagnosis from "@/components/certification/CertDiagnosis";
+import RootCompanyCheck from "@/components/certification/RootCompanyCheck";
+import ResearchInstituteCheck from "@/components/certification/ResearchInstituteCheck";
+
+type TabType = "diagnosis" | "root-company" | "research-institute";
+
+const TABS: { key: TabType; label: string; icon: React.ReactNode; description: string }[] = [
+  {
+    key: "diagnosis",
+    label: "인증 적격성 진단",
+    description: "벤처/이노비즈/메인비즈/ISO/여성기업 등",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+      </svg>
+    ),
+  },
+  {
+    key: "root-company",
+    label: "뿌리기업 확인",
+    description: "뿌리산업법 6대 기술 해당 여부",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+      </svg>
+    ),
+  },
+  {
+    key: "research-institute",
+    label: "기업부설연구소",
+    description: "KOITA 기준 적격성 AI 진단",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+      </svg>
+    ),
+  },
+];
 
 export default function CertificationCheckPage() {
-  const [profile, setProfile] = useState<CompanyData | null>(null);
-  const [results, setResults] = useState<CertEligibilityResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    fetchProfile();
-  }, []);
-
-  async function fetchProfile() {
-    try {
-      const res = await fetch("/api/user/company-profile");
-      const data = await res.json();
-      if (!data.success || !data.data) {
-        setError("기업 프로필을 먼저 등록해주세요. 마이페이지 > 기업정보에서 등록할 수 있습니다.");
-        return;
-      }
-      setProfile(data.data);
-      const diagnosticResults = runCertificationCheck(data.data);
-      setResults(diagnosticResults);
-    } catch {
-      setError("데이터를 불러오는 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto py-12 text-center">
-        <div className="animate-spin w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full mx-auto" />
-        <p className="mt-4 text-gray-500">기업 프로필을 분석하고 있습니다...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="max-w-4xl mx-auto py-12">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
-          <svg className="w-12 h-12 mx-auto text-yellow-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-          </svg>
-          <p className="text-yellow-800 font-medium">{error}</p>
-          <a href="/mypage/company" className="inline-block mt-4 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors text-sm">
-            기업정보 등록하기
-          </a>
-        </div>
-      </div>
-    );
-  }
-
-  const eligible = results.filter(r => r.eligible);
-  const avgScore = results.length > 0 ? Math.round(results.reduce((sum, r) => sum + r.score, 0) / results.length) : 0;
+  const [activeTab, setActiveTab] = useState<TabType>("diagnosis");
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">인증 적격성 진단</h1>
-          <p className="text-gray-500 mt-1">
-            기업 프로필 기반으로 주요 인증의 취득 가능성을 자동 진단합니다.
-          </p>
-        </div>
-        <ClientSelector />
-      </div>
-
-      {/* 요약 카드 */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-teal-50 rounded-xl p-4 text-center">
-          <p className="text-xs text-teal-600 font-medium">진단 인증 수</p>
-          <p className="text-2xl font-bold text-teal-800 mt-1">{results.length}개</p>
-        </div>
-        <div className="bg-green-50 rounded-xl p-4 text-center">
-          <p className="text-xs text-green-600 font-medium">적격 판정</p>
-          <p className="text-2xl font-bold text-green-800 mt-1">{eligible.length}개</p>
-        </div>
-        <div className="bg-blue-50 rounded-xl p-4 text-center">
-          <p className="text-xs text-blue-600 font-medium">평균 적합도</p>
-          <p className="text-2xl font-bold text-blue-800 mt-1">{avgScore}점</p>
-        </div>
-      </div>
-
-      {/* 기업명 표시 */}
-      {profile && (
-        <div className="mb-4 px-4 py-2 bg-gray-50 rounded-lg text-sm text-gray-600">
-          분석 대상: <span className="font-medium text-gray-900">{(profile as any).companyName || "미입력"}</span>
-          {(profile as any).bizType && <span className="ml-2">({(profile as any).bizType})</span>}
-        </div>
-      )}
-
-      {/* 결과 리스트 */}
-      <div className="space-y-4">
-        {results.map((result) => (
-          <CertCard key={result.certType} result={result} />
-        ))}
-      </div>
-
-      <div className="mt-8 p-4 bg-gray-50 rounded-xl text-xs text-gray-500">
-        * 본 진단은 기업 프로필 데이터 기반의 참고용 결과입니다. 실제 인증 심사 기준과 차이가 있을 수 있으며, 정확한 요건은 각 인증기관에 확인하시기 바랍니다.
-      </div>
-    </div>
-  );
-}
-
-function CertCard({ result }: { result: CertEligibilityResult }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const statusColor = result.score >= 70
-    ? "border-green-200 bg-green-50"
-    : result.score >= 40
-      ? "border-yellow-200 bg-yellow-50"
-      : "border-red-200 bg-red-50";
-
-  const badgeColor = result.eligible
-    ? "bg-green-100 text-green-700"
-    : "bg-red-100 text-red-700";
-
-  return (
-    <div className={`border rounded-xl overflow-hidden ${result.score >= 70 ? 'border-green-200' : result.score >= 40 ? 'border-yellow-200' : 'border-red-200'}`}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left"
-      >
-        <div className="flex items-center gap-3">
-          <div className="relative w-12 h-12 flex-shrink-0">
-            <svg className="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
-              <circle cx="18" cy="18" r="15.5" fill="none" stroke="#e5e7eb" strokeWidth="3" />
-              <circle
-                cx="18" cy="18" r="15.5" fill="none"
-                stroke={result.score >= 70 ? '#22c55e' : result.score >= 40 ? '#eab308' : '#ef4444'}
-                strokeWidth="3"
-                strokeDasharray={`${result.score * 0.974} 100`}
-                strokeLinecap="round"
-              />
-            </svg>
-            <span className="absolute inset-0 flex items-center justify-center text-xs font-bold">
-              {result.score}
-            </span>
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">{result.certName}</p>
-            <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${badgeColor}`}>
-              {result.eligible ? '적격' : '부적격'}
-            </span>
-          </div>
-        </div>
-        <svg className={`w-5 h-5 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {expanded && (
-        <div className="px-4 pb-4 border-t border-gray-100">
-          <div className="grid md:grid-cols-2 gap-4 mt-3">
-            {/* 충족 항목 */}
-            <div>
-              <p className="text-xs font-medium text-green-700 mb-2">충족 항목</p>
-              {result.met.length > 0 ? (
-                <ul className="space-y-1">
-                  {result.met.map((item, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-sm text-green-800">
-                      <svg className="w-4 h-4 mt-0.5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-400">없음</p>
-              )}
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">인증 진단</h1>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  기업 프로필 기반 인증 적격성 자동 진단
+                </p>
+              </div>
             </div>
-            {/* 미충족 항목 */}
-            <div>
-              <p className="text-xs font-medium text-red-700 mb-2">미충족 항목</p>
-              {result.unmet.length > 0 ? (
-                <ul className="space-y-1">
-                  {result.unmet.map((item, i) => (
-                    <li key={i} className="flex items-start gap-1.5 text-sm text-red-800">
-                      <svg className="w-4 h-4 mt-0.5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-400">없음</p>
-              )}
+            <div className="hidden sm:block">
+              <ClientSelector />
             </div>
           </div>
-          <div className={`mt-3 p-3 rounded-lg text-sm ${statusColor}`}>
-            {result.recommendation}
+          {/* Mobile ClientSelector */}
+          <div className="sm:hidden mt-3">
+            <ClientSelector />
           </div>
         </div>
-      )}
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex gap-0 overflow-x-auto">
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`relative flex items-center gap-2 px-4 sm:px-5 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
+                  activeTab === tab.key
+                    ? "text-teal-700 border-b-2 border-teal-600"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {tab.icon}
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label.length > 8 ? tab.label.slice(0, 8) + "..." : tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Description */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+        <p className="text-xs text-gray-400">
+          {TABS.find(t => t.key === activeTab)?.description}
+        </p>
+      </div>
+
+      {/* Tab Content */}
+      <div className="px-4 sm:px-6 lg:px-8 pb-8">
+        {activeTab === "diagnosis" && <CertDiagnosis />}
+        {activeTab === "root-company" && <RootCompanyCheck />}
+        {activeTab === "research-institute" && <ResearchInstituteCheck />}
+      </div>
     </div>
   );
 }

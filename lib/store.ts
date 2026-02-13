@@ -185,9 +185,17 @@ export interface ClientCompanyData {
   revenueLabel1?: string | null;
   revenueLabel2?: string | null;
   revenueLabel3?: string | null;
+  operatingProfitYear1?: number | null;
+  operatingProfitYear2?: number | null;
+  operatingProfitYear3?: number | null;
+  netIncomeYear1?: number | null;
+  netIncomeYear2?: number | null;
+  netIncomeYear3?: number | null;
   totalAssets?: number | null;
   totalLiabilities?: number | null;
   capital?: number | null;
+  rndExpenditure?: number | null;
+  exportAmount?: number | null;
   // 고용 정보
   employeeCount?: number;
   permanentEmployees?: number | null;
