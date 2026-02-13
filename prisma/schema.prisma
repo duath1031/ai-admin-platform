@@ -82,6 +82,28 @@ model User {
   subsidyMatches          SubsidyMatch[]
   deadlineAlerts          DeadlineAlert[]
   employees               Employee[]
+  clientCompanies         ClientCompany[]
+}
+
+// 거래처 기업 프로필 (행정사가 관리하는 거래처 사업장)
+model ClientCompany {
+  id            String   @id @default(cuid())
+  userId        String
+  companyName   String   // 거래처 상호
+  ownerName     String?  // 대표자명
+  bizRegNo      String?  // 사업자등록번호
+  address       String?  // 주소
+  phone         String?  // 전화번호
+  npBizNo       String?  // 국민연금 사업장관리번호
+  hiBizNo       String?  // 건강보험 사업장관리번호
+  eiBizNo       String?  // 고용·산재보험 사업장관리번호
+  memo          String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // 기업 마스터 프로필 (AI 비서의 기억 저장소)

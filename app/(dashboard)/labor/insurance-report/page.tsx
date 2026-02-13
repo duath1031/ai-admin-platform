@@ -50,12 +50,24 @@ interface SavedReport {
   employee: { id: string; name: string; department?: string | null; position?: string | null };
 }
 
+interface ClientCompanyItem {
+  id: string;
+  companyName: string;
+  ownerName?: string | null;
+  bizRegNo?: string | null;
+  address?: string | null;
+  phone?: string | null;
+  npBizNo?: string | null;
+  hiBizNo?: string | null;
+  eiBizNo?: string | null;
+}
+
 // ─── Constants ───
 
 const TABS: { key: ReportType; label: string; desc: string; formNo: string }[] = [
-  { key: "acquisition", label: "취득신고", desc: "별지 제5호서식 - 신규 입사 시 4대보험 자격취득", formNo: "별지 제5호서식" },
-  { key: "loss", label: "상실신고", desc: "별지 제6호서식 - 퇴사/이직 시 4대보험 자격상실", formNo: "별지 제6호서식" },
-  { key: "salary_change", label: "보수월액변경", desc: "보수월액(소득월액) 변경 신고", formNo: "보수월액변경서식" },
+  { key: "acquisition", label: "취득신고", desc: "별지 제6호서식 - 신규 입사 시 4대보험 자격취득", formNo: "별지 제6호서식" },
+  { key: "loss", label: "상실신고", desc: "별지 제8호서식 - 퇴사/이직 시 4대보험 자격상실", formNo: "별지 제8호서식" },
+  { key: "salary_change", label: "보수월액변경", desc: "별지 제27호서식 - 보수월액(소득월액) 변경 신고", formNo: "별지 제27호서식" },
 ];
 
 // 국민연금 취득부호
@@ -132,10 +144,15 @@ export default function InsuranceReportPage() {
   const [showPreview, setShowPreview] = useState(false);
 
   // ── 사업장 정보 소스 ──
-  const [companySource, setCompanySource] = useState<"profile" | "manual">("profile");
+  const [companySource, setCompanySource] = useState<"profile" | "client" | "manual">("profile");
   const [profileCompany, setProfileCompany] = useState<CompanyInfo>({});
   const [manualCompany, setManualCompany] = useState<CompanyInfo>({});
-  const company = companySource === "profile" ? profileCompany : manualCompany;
+  const [clientCompanies, setClientCompanies] = useState<ClientCompanyItem[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState("");
+  const [clientCompany, setClientCompany] = useState<CompanyInfo>({});
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [newClient, setNewClient] = useState({ companyName: "", ownerName: "", bizRegNo: "", address: "", phone: "", npBizNo: "", hiBizNo: "", eiBizNo: "" });
+  const company = companySource === "profile" ? profileCompany : companySource === "client" ? clientCompany : manualCompany;
 
   // ── 근로자 추가 정보 (인쇄 전용, DB 미저장) ──
   const [residentNo, setResidentNo] = useState("");
@@ -190,7 +207,8 @@ export default function InsuranceReportPage() {
       fetch("/api/labor/employees").then(r => r.json()),
       fetch("/api/user/company-profile").then(r => r.json()),
       fetch("/api/labor/insurance-report").then(r => r.json()),
-    ]).then(([empRes, profileRes, reportRes]) => {
+      fetch("/api/labor/client-companies").then(r => r.json()),
+    ]).then(([empRes, profileRes, reportRes, clientRes]) => {
       if (empRes.success) setEmployees(empRes.data);
       if (profileRes.success && profileRes.data) {
         const p = profileRes.data;
@@ -206,8 +224,46 @@ export default function InsuranceReportPage() {
         });
       }
       if (reportRes.success) setSavedReports(reportRes.data);
+      if (clientRes.success) setClientCompanies(clientRes.data);
     }).catch(console.error);
   }, []);
+
+  // ── 거래처 선택 시 CompanyInfo 동기화 ──
+  useEffect(() => {
+    if (selectedClientId) {
+      const c = clientCompanies.find(cc => cc.id === selectedClientId);
+      if (c) {
+        setClientCompany({
+          companyName: c.companyName || "",
+          ownerName: c.ownerName || "",
+          bizRegNo: c.bizRegNo || "",
+          address: c.address || "",
+          phone: c.phone || "",
+          npBizNo: c.npBizNo || "",
+          hiBizNo: c.hiBizNo || "",
+          eiBizNo: c.eiBizNo || "",
+        });
+      }
+    }
+  }, [selectedClientId, clientCompanies]);
+
+  const handleAddClient = async () => {
+    if (!newClient.companyName) return;
+    try {
+      const res = await fetch("/api/labor/client-companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newClient),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setClientCompanies(prev => [...prev, data.data]);
+        setSelectedClientId(data.data.id);
+        setShowAddClient(false);
+        setNewClient({ companyName: "", ownerName: "", bizRegNo: "", address: "", phone: "", npBizNo: "", hiBizNo: "", eiBizNo: "" });
+      }
+    } catch { /* ignore */ }
+  };
 
   // ── Update form when employee changes ──
   useEffect(() => {
@@ -433,10 +489,14 @@ export default function InsuranceReportPage() {
             <CardHeader>
               <CardTitle className="text-base">1. 사업장 정보</CardTitle>
               <CardDescription>
-                <span className="flex gap-3 mt-1">
+                <span className="flex flex-wrap gap-3 mt-1">
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input type="radio" name="companySource" checked={companySource === "profile"} onChange={() => setCompanySource("profile")} />
-                    <span className="text-sm">기업마스터프로필에서 불러오기</span>
+                    <span className="text-sm">내 기업프로필</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="companySource" checked={companySource === "client"} onChange={() => setCompanySource("client")} />
+                    <span className="text-sm">거래처 프로필</span>
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input type="radio" name="companySource" checked={companySource === "manual"} onChange={() => setCompanySource("manual")} />
@@ -446,7 +506,8 @@ export default function InsuranceReportPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {companySource === "profile" ? (
+              {/* 내 기업프로필 */}
+              {companySource === "profile" && (
                 <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
                   {profileCompany.companyName ? (
                     <>
@@ -459,10 +520,103 @@ export default function InsuranceReportPage() {
                       <p className="text-xs text-gray-500 mt-2">사업장관리번호·전화번호는 아래에서 직접 입력하세요.</p>
                     </>
                   ) : (
-                    <p className="text-gray-500">기업프로필이 등록되어 있지 않습니다. <a href="/mypage/company" className="text-blue-600 underline">마이페이지</a>에서 등록하거나 &apos;직접 작성&apos;을 선택하세요.</p>
+                    <p className="text-gray-500">기업프로필이 등록되어 있지 않습니다. <a href="/mypage/company" className="text-blue-600 underline">마이페이지</a>에서 등록하거나 다른 옵션을 선택하세요.</p>
                   )}
                 </div>
-              ) : (
+              )}
+
+              {/* 거래처 프로필 */}
+              {companySource === "client" && (
+                <div className="space-y-3">
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Label className="text-xs">거래처 선택</Label>
+                      <Select value={selectedClientId} onValueChange={setSelectedClientId}>
+                        <SelectTrigger className="text-sm">
+                          <SelectValue placeholder="거래처를 선택하세요" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {clientCompanies.map(c => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.companyName} {c.ownerName ? `(${c.ownerName})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setShowAddClient(!showAddClient)}>
+                      {showAddClient ? "취소" : "+ 새 거래처"}
+                    </Button>
+                  </div>
+
+                  {/* 선택된 거래처 정보 표시 */}
+                  {selectedClientId && clientCompany.companyName && (
+                    <div className="bg-blue-50 rounded-lg p-3 text-sm">
+                      <div className="grid grid-cols-2 gap-2">
+                        <span>사업장명: <strong>{clientCompany.companyName}</strong></span>
+                        <span>대표자: <strong>{clientCompany.ownerName || "-"}</strong></span>
+                        <span>사업자번호: <strong>{clientCompany.bizRegNo || "-"}</strong></span>
+                        <span>소재지: <strong>{clientCompany.address || "-"}</strong></span>
+                        {clientCompany.npBizNo && <span>국민연금: <strong>{clientCompany.npBizNo}</strong></span>}
+                        {clientCompany.hiBizNo && <span>건강보험: <strong>{clientCompany.hiBizNo}</strong></span>}
+                        {clientCompany.eiBizNo && <span>고용·산재: <strong>{clientCompany.eiBizNo}</strong></span>}
+                        {clientCompany.phone && <span>전화: <strong>{clientCompany.phone}</strong></span>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 새 거래처 등록 폼 */}
+                  {showAddClient && (
+                    <div className="border border-blue-200 rounded-lg p-3 bg-blue-50/50 space-y-3">
+                      <p className="text-sm font-medium text-blue-800">새 거래처 등록</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">사업장명 *</Label>
+                          <Input value={newClient.companyName} onChange={e => setNewClient(p => ({ ...p, companyName: e.target.value }))} placeholder="거래처 상호" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">대표자명</Label>
+                          <Input value={newClient.ownerName} onChange={e => setNewClient(p => ({ ...p, ownerName: e.target.value }))} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">사업자등록번호</Label>
+                          <Input value={newClient.bizRegNo} onChange={e => setNewClient(p => ({ ...p, bizRegNo: e.target.value }))} placeholder="000-00-00000" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">소재지</Label>
+                          <Input value={newClient.address} onChange={e => setNewClient(p => ({ ...p, address: e.target.value }))} />
+                        </div>
+                        <div>
+                          <Label className="text-xs">전화번호</Label>
+                          <Input value={newClient.phone} onChange={e => setNewClient(p => ({ ...p, phone: e.target.value }))} placeholder="02-0000-0000" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <Label className="text-xs">국민연금 관리번호</Label>
+                          <Input value={newClient.npBizNo} onChange={e => setNewClient(p => ({ ...p, npBizNo: e.target.value }))} className="text-xs" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">건강보험 관리번호</Label>
+                          <Input value={newClient.hiBizNo} onChange={e => setNewClient(p => ({ ...p, hiBizNo: e.target.value }))} className="text-xs" />
+                        </div>
+                        <div>
+                          <Label className="text-xs">고용·산재 관리번호</Label>
+                          <Input value={newClient.eiBizNo} onChange={e => setNewClient(p => ({ ...p, eiBizNo: e.target.value }))} className="text-xs" />
+                        </div>
+                      </div>
+                      <Button size="sm" onClick={handleAddClient} disabled={!newClient.companyName}>등록</Button>
+                    </div>
+                  )}
+
+                  {clientCompanies.length === 0 && !showAddClient && (
+                    <p className="text-sm text-gray-500">등록된 거래처가 없습니다. &apos;+ 새 거래처&apos; 버튼으로 등록하세요.</p>
+                  )}
+                </div>
+              )}
+
+              {/* 직접 작성 */}
+              {companySource === "manual" && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <Label className="text-xs">사업장 명칭 *</Label>
@@ -483,7 +637,8 @@ export default function InsuranceReportPage() {
                 </div>
               )}
 
-              {/* 사업장관리번호 + 전화번호 (공통) */}
+              {/* 사업장관리번호 + 전화번호 (프로필/수동 모드에서만 표시, 거래처는 이미 포함) */}
+              {companySource !== "client" && (
               <div className="border-t pt-3 mt-3">
                 <p className="text-xs font-medium text-gray-700 mb-2">사업장 관리번호 · 연락처</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -525,6 +680,7 @@ export default function InsuranceReportPage() {
                   </div>
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
 
