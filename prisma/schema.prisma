@@ -819,6 +819,9 @@ model Procurement {
   updatedAt       DateTime          @updatedAt
   source          String            @default("g2b") // 데이터 소스
 
+  // Relations
+  reservePriceDetail ReservePriceDetail?
+
   @@index([agency])
   @@index([type])
   @@index([status])
@@ -826,6 +829,63 @@ model Procurement {
   @@index([announceDt])
   @@index([openingDt])
   @@index([winner])
+}
+
+// ─────────────────────────────────────────
+// 복수예비가격 상세 (입찰 시뮬레이터용)
+// ─────────────────────────────────────────
+
+model ReservePriceDetail {
+  id              String       @id @default(cuid())
+  bidNo           String       @unique  // 공고번호
+  bssamt          BigInt?      // 기초금액
+  plnprc          BigInt?      // 예정가격
+  assessmentRate  Float?       // 사정률 (예정가격/기초금액*100)
+
+  // 15개 예비가격 + 추첨여부
+  rsrvPrc1        BigInt?
+  rsrvPrc2        BigInt?
+  rsrvPrc3        BigInt?
+  rsrvPrc4        BigInt?
+  rsrvPrc5        BigInt?
+  rsrvPrc6        BigInt?
+  rsrvPrc7        BigInt?
+  rsrvPrc8        BigInt?
+  rsrvPrc9        BigInt?
+  rsrvPrc10       BigInt?
+  rsrvPrc11       BigInt?
+  rsrvPrc12       BigInt?
+  rsrvPrc13       BigInt?
+  rsrvPrc14       BigInt?
+  rsrvPrc15       BigInt?
+
+  drwtYn1         Boolean      @default(false)
+  drwtYn2         Boolean      @default(false)
+  drwtYn3         Boolean      @default(false)
+  drwtYn4         Boolean      @default(false)
+  drwtYn5         Boolean      @default(false)
+  drwtYn6         Boolean      @default(false)
+  drwtYn7         Boolean      @default(false)
+  drwtYn8         Boolean      @default(false)
+  drwtYn9         Boolean      @default(false)
+  drwtYn10        Boolean      @default(false)
+  drwtYn11        Boolean      @default(false)
+  drwtYn12        Boolean      @default(false)
+  drwtYn13        Boolean      @default(false)
+  drwtYn14        Boolean      @default(false)
+  drwtYn15        Boolean      @default(false)
+
+  openingDt       DateTime?    // 개찰일시
+
+  // Procurement 릴레이션
+  procurementId   String?      @unique
+  procurement     Procurement? @relation(fields: [procurementId], references: [id], onDelete: SetNull)
+
+  collectedAt     DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([assessmentRate])
+  @@index([openingDt])
 }
 
 // ─────────────────────────────────────────

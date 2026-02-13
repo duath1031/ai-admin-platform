@@ -263,6 +263,110 @@ async function collectWinningBids(type: 'service' | 'goods' | 'construction'): P
 }
 
 // ─────────────────────────────────────────
+// Reserve Price Details Collection
+// ─────────────────────────────────────────
+
+interface RawReservePriceItem {
+  bidNtceNo?: string;
+  bssamt?: string | number;
+  plnprc?: string | number;
+  presmptPrce?: string | number;
+  asignBdgtAmt?: string | number;
+  opengDt?: string;
+  rlOpengDt?: string;
+  [key: string]: string | number | undefined;
+}
+
+async function collectReservePriceDetails(type: 'service' | 'goods' | 'construction'): Promise<number> {
+  const operationMap: Record<string, string> = {
+    goods: 'getOpengResultListInfoThngPreparPcDetail',
+    construction: 'getOpengResultListInfoCnstwkPreparPcDetail',
+    service: 'getOpengResultListInfoServcPreparPcDetail',
+  };
+
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  let items: RawReservePriceItem[];
+  try {
+    items = await fetchG2BData(
+      'as/ScsbidInfoService',
+      operationMap[type],
+      {
+        pageNo: '1',
+        numOfRows: '100',
+        inqryDiv: '1',
+        inqryBgnDt: formatDate(monthStart) + '0000',
+        inqryEndDt: formatDate(today) + '2359',
+        type: 'json',
+      }
+    ) as RawReservePriceItem[];
+  } catch (e) {
+    console.error(`[Procurement Cron] Reserve price fetch failed for ${type}:`, e);
+    return 0;
+  }
+
+  let upsertCount = 0;
+
+  for (const item of items) {
+    const bidNo = String(item.bidNtceNo || '');
+    if (!bidNo) continue;
+
+    const bssamt = item.bssamt ? BigInt(Math.round(Number(item.bssamt))) : (item.asignBdgtAmt ? BigInt(Math.round(Number(item.asignBdgtAmt))) : null);
+    const plnprc = item.plnprc ? BigInt(Math.round(Number(item.plnprc))) : (item.presmptPrce ? BigInt(Math.round(Number(item.presmptPrce))) : null);
+
+    const bssamtNum = Number(bssamt || 0);
+    const plnprcNum = Number(plnprc || 0);
+    const assessmentRate = bssamtNum > 0 ? (plnprcNum / bssamtNum) * 100 : null;
+
+    // 예비가격 15개 파싱
+    const reservePrices: Record<string, bigint | null> = {};
+    const drawnFlags: Record<string, boolean> = {};
+    for (let i = 1; i <= 15; i++) {
+      const priceVal = item[`rsrvPrc${i}`];
+      reservePrices[`rsrvPrc${i}`] = priceVal ? BigInt(Math.round(Number(priceVal))) : null;
+      drawnFlags[`drwtYn${i}`] = String(item[`drwtYn${i}`] || '').toUpperCase() === 'Y';
+    }
+
+    // Procurement 연결 시도
+    const procurement = await prisma.procurement.findUnique({
+      where: { bidNo },
+      select: { id: true },
+    });
+
+    try {
+      await prisma.reservePriceDetail.upsert({
+        where: { bidNo },
+        create: {
+          bidNo,
+          bssamt,
+          plnprc,
+          assessmentRate: assessmentRate ? Math.round(assessmentRate * 10000) / 10000 : null,
+          ...reservePrices,
+          ...drawnFlags,
+          openingDt: parseDateString(item.rlOpengDt || item.opengDt),
+          procurementId: procurement?.id || null,
+        },
+        update: {
+          bssamt,
+          plnprc,
+          assessmentRate: assessmentRate ? Math.round(assessmentRate * 10000) / 10000 : null,
+          ...reservePrices,
+          ...drawnFlags,
+          openingDt: parseDateString(item.rlOpengDt || item.opengDt),
+          procurementId: procurement?.id || null,
+        },
+      });
+      upsertCount++;
+    } catch (e) {
+      console.error(`[Procurement Cron] Reserve price upsert failed for ${bidNo}:`, e);
+    }
+  }
+
+  return upsertCount;
+}
+
+// ─────────────────────────────────────────
 // Main Handler
 // ─────────────────────────────────────────
 
@@ -281,6 +385,7 @@ export async function GET(request: NextRequest) {
   const results = {
     bids: { service: 0, goods: 0, construction: 0 },
     winning: { service: 0, goods: 0, construction: 0 },
+    reservePrices: { service: 0, goods: 0, construction: 0 },
     errors: [] as string[],
   };
 
@@ -307,11 +412,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 예비가격상세 수집
+    for (const type of ['service', 'goods', 'construction'] as const) {
+      try {
+        results.reservePrices[type] = await collectReservePriceDetails(type);
+      } catch (e) {
+        const msg = `ReservePrices ${type}: ${e instanceof Error ? e.message : 'Unknown error'}`;
+        results.errors.push(msg);
+        console.error(`[Procurement Cron] ${msg}`);
+      }
+    }
+
     const duration = Date.now() - startTime;
     const totalBids = results.bids.service + results.bids.goods + results.bids.construction;
     const totalWinning = results.winning.service + results.winning.goods + results.winning.construction;
+    const totalReservePrices = results.reservePrices.service + results.reservePrices.goods + results.reservePrices.construction;
 
-    console.log(`[Procurement Cron] Completed in ${duration}ms - Bids: ${totalBids}, Winning: ${totalWinning}`);
+    console.log(`[Procurement Cron] Completed in ${duration}ms - Bids: ${totalBids}, Winning: ${totalWinning}, ReservePrices: ${totalReservePrices}`);
 
     return NextResponse.json({
       success: true,
@@ -319,8 +436,10 @@ export async function GET(request: NextRequest) {
       stats: {
         bids: results.bids,
         winning: results.winning,
+        reservePrices: results.reservePrices,
         totalBids,
         totalWinning,
+        totalReservePrices,
         duration: `${duration}ms`,
       },
       errors: results.errors.length > 0 ? results.errors : undefined,

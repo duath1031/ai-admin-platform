@@ -27,6 +27,9 @@ export const TOKEN_COSTS: Record<string, number> = {
   // 입찰 분석
   bid_analysis: 2000,
 
+  // 입찰 시뮬레이션
+  bid_simulation: 3000,
+
   // 계약서 AI 분석
   contract_analysis: 4000,
 
@@ -61,6 +64,7 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   permit_check: "인허가 진단",
   visa_calculator: "비자 계산기",
   bid_analysis: "입찰 분석",
+  bid_simulation: "입찰 시뮬레이션",
   contract_analysis: "계약서 AI 분석",
   certification_check: "인증 진단",
   fund_matching: "정책자금 매칭",

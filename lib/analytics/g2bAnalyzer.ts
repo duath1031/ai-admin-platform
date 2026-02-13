@@ -668,3 +668,139 @@ function formatKRW(amount: number): string {
   if (amount >= 10000) return `${(amount / 10000).toFixed(0)}만원`;
   return `${amount.toLocaleString()}원`;
 }
+
+// ─────────────────────────────────────────
+// 5. 복수예비가격 상세 조회
+// ─────────────────────────────────────────
+
+export interface ReservePriceDetailResult {
+  bidNo: string;
+  bssamt: number;         // 기초금액
+  plnprc: number;         // 예정가격
+  assessmentRate: number; // 사정률
+  reservePrices: { index: number; price: number; isDrawn: boolean }[];
+  openingDt: string;
+}
+
+/**
+ * G2B 개찰결과 예비가격상세 조회
+ * API: /as/ScsbidInfoService/getOpengResultListInfo{Type}PreparPcDetail
+ */
+export async function fetchReservePriceDetails(params: {
+  bidNo: string;
+  bidType?: 'goods' | 'construction' | 'service';
+}): Promise<ReservePriceDetailResult | null> {
+  const operationMap: Record<string, string> = {
+    goods: 'getOpengResultListInfoThngPreparPcDetail',
+    construction: 'getOpengResultListInfoCnstwkPreparPcDetail',
+    service: 'getOpengResultListInfoServcPreparPcDetail',
+  };
+
+  const operation = operationMap[params.bidType || 'service'];
+
+  try {
+    const { items } = await fetchG2B(
+      'as/ScsbidInfoService',
+      operation,
+      {
+        numOfRows: '1',
+        pageNo: '1',
+        bidNtceNo: params.bidNo,
+        type: 'json',
+      },
+    );
+
+    if (!items || items.length === 0) return null;
+
+    const item = items[0];
+    const bssamt = Number(item.bssamt || item.asignBdgtAmt || 0);
+    const plnprc = Number(item.plnprc || item.presmptPrce || 0);
+    const assessmentRate = bssamt > 0 ? (plnprc / bssamt) * 100 : 0;
+
+    const reservePrices: ReservePriceDetailResult['reservePrices'] = [];
+    for (let i = 1; i <= 15; i++) {
+      const price = Number(item[`rsrvPrc${i}`] || 0);
+      const isDrawn = String(item[`drwtYn${i}`] || '').toUpperCase() === 'Y';
+      if (price > 0) {
+        reservePrices.push({ index: i, price, isDrawn });
+      }
+    }
+
+    return {
+      bidNo: params.bidNo,
+      bssamt,
+      plnprc,
+      assessmentRate: Math.round(assessmentRate * 10000) / 10000,
+      reservePrices,
+      openingDt: String(item.opengDt || item.rlOpengDt || ''),
+    };
+  } catch (e) {
+    console.error(`[G2B] fetchReservePriceDetails error for ${params.bidNo}:`, e);
+    return null;
+  }
+}
+
+/**
+ * 복수예비가격 상세 일괄 조회 (크론용)
+ * 최근 1개월 개찰 결과에서 예비가격 상세 수집
+ */
+export async function fetchReservePriceDetailsBulk(params: {
+  bidType: 'goods' | 'construction' | 'service';
+  startDate?: string;
+  endDate?: string;
+}): Promise<ReservePriceDetailResult[]> {
+  const operationMap: Record<string, string> = {
+    goods: 'getOpengResultListInfoThngPreparPcDetail',
+    construction: 'getOpengResultListInfoCnstwkPreparPcDetail',
+    service: 'getOpengResultListInfoServcPreparPcDetail',
+  };
+
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+  const { items } = await fetchG2B(
+    'as/ScsbidInfoService',
+    operationMap[params.bidType],
+    {
+      numOfRows: '100',
+      pageNo: '1',
+      inqryDiv: '1',
+      inqryBgnDt: (params.startDate || formatDate(monthStart)) + '0000',
+      inqryEndDt: (params.endDate || formatDate(today)) + '2359',
+      type: 'json',
+    },
+  );
+
+  const results: ReservePriceDetailResult[] = [];
+
+  for (const item of items) {
+    const bidNo = String(item.bidNtceNo || '');
+    if (!bidNo) continue;
+
+    const bssamt = Number(item.bssamt || item.asignBdgtAmt || 0);
+    const plnprc = Number(item.plnprc || item.presmptPrce || 0);
+    const assessmentRate = bssamt > 0 ? (plnprc / bssamt) * 100 : 0;
+
+    const reservePrices: ReservePriceDetailResult['reservePrices'] = [];
+    for (let i = 1; i <= 15; i++) {
+      const price = Number(item[`rsrvPrc${i}`] || 0);
+      const isDrawn = String(item[`drwtYn${i}`] || '').toUpperCase() === 'Y';
+      if (price > 0) {
+        reservePrices.push({ index: i, price, isDrawn });
+      }
+    }
+
+    if (bssamt > 0) {
+      results.push({
+        bidNo,
+        bssamt,
+        plnprc,
+        assessmentRate: Math.round(assessmentRate * 10000) / 10000,
+        reservePrices,
+        openingDt: String(item.opengDt || item.rlOpengDt || ''),
+      });
+    }
+  }
+
+  return results;
+}

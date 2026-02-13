@@ -55,6 +55,7 @@ export default function AdminUsers() {
     credits: 0,
     phone: "",
     role: "USER",
+    syncTokensWithPlan: true, // 플랜 변경 시 토큰도 플랜 기준으로 동기화
   });
 
   useEffect(() => {
@@ -96,6 +97,7 @@ export default function AdminUsers() {
       credits: user.credits,
       phone: user.phone || "",
       role: user.role,
+      syncTokensWithPlan: true,
     });
   };
 
@@ -104,10 +106,22 @@ export default function AdminUsers() {
 
     try {
       setSaving(true);
+      // 플랜 변경 + 토큰 동기화인 경우, credits를 보내지 않아야 서버에서 tokenQuota로 설정
+      const payload: Record<string, unknown> = {
+        plan: editData.plan,
+        phone: editData.phone,
+        role: editData.role,
+      };
+      // 플랜이 변경되었고 토큰 동기화가 켜져있으면 credits 미포함 → 서버가 tokenQuota 적용
+      if (editData.plan !== selectedUser.plan && editData.syncTokensWithPlan) {
+        // credits를 보내지 않음 → 서버에서 해당 플랜의 tokenQuota로 자동 설정
+      } else {
+        payload.credits = editData.credits;
+      }
       const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editData),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -256,7 +270,7 @@ export default function AdminUsers() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">사용자</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">역할</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">플랜</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">크레딧</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">토큰</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">활동</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">가입일</th>
                     </tr>
@@ -299,7 +313,9 @@ export default function AdminUsers() {
                           <td className="px-4 py-3">{getRoleBadge(user.role)}</td>
                           <td className="px-4 py-3">{getPlanBadge(user.plan)}</td>
                           <td className="px-4 py-3">
-                            <span className="font-medium">{user.credits.toLocaleString()}</span>
+                            <span className={`font-medium ${user.credits === -1 ? "text-green-600" : user.credits < 1000 ? "text-red-600" : ""}`}>
+                              {user.credits === -1 ? "무제한" : user.credits.toLocaleString()}
+                            </span>
                           </td>
                           <td className="px-4 py-3 text-sm text-gray-500">
                             채팅 {user._count.chats}개 | 문서 {user._count.documents}개
@@ -401,13 +417,33 @@ export default function AdminUsers() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">크레딧</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  토큰 잔액
+                  {selectedUser.credits === -1 && (
+                    <span className="ml-1 text-xs text-green-600">(무제한)</span>
+                  )}
+                </label>
+                {editData.plan !== selectedUser.plan && (
+                  <label className="flex items-center gap-2 mb-2 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editData.syncTokensWithPlan}
+                      onChange={(e) => setEditData({ ...editData, syncTokensWithPlan: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded text-blue-600"
+                    />
+                    <span className="text-blue-600">플랜 변경 시 해당 플랜 기본 토큰으로 리셋</span>
+                  </label>
+                )}
                 <input
                   type="number"
                   value={editData.credits}
-                  onChange={(e) => setEditData({ ...editData, credits: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  onChange={(e) => setEditData({ ...editData, credits: parseInt(e.target.value) || 0, syncTokensWithPlan: false })}
+                  disabled={editData.plan !== selectedUser.plan && editData.syncTokensWithPlan}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-100 disabled:text-gray-400"
                 />
+                <p className="text-xs text-gray-400 mt-1">
+                  -1 = 무제한 | 현재: {selectedUser.credits === -1 ? "무제한" : selectedUser.credits.toLocaleString() + " 토큰"}
+                </p>
               </div>
 
               <div>

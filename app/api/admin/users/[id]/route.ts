@@ -133,7 +133,7 @@ export async function PATCH(
             amount: creditDiff,
             balance: credits,
             type: creditDiff > 0 ? "bonus" : "use",
-            description: `관리자 조정: ${creditDiff > 0 ? "+" : ""}${creditDiff} 크레딧`,
+            description: `관리자 조정: ${creditDiff > 0 ? "+" : ""}${creditDiff} 토큰`,
           },
         });
       }
