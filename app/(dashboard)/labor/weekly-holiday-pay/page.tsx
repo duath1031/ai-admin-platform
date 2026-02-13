@@ -336,7 +336,7 @@ export default function WeeklyHolidayPayPage() {
       <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
         <p className="text-xs text-gray-500">
           본 계산 결과는 참고용이며, 실제 급여 산정과 다를 수 있습니다.
-          정확한 안내는 관할 고용노동부 또는 전문 노무사/행정사에게 상담하세요.
+          정확한 안내는 행정사, 노무사, 변호사 또는 관할 노동청에 문의하시기 바랍니다.
           근로기준법 제55조, 근로기준법 시행령 제30조 기준.
         </p>
       </div>

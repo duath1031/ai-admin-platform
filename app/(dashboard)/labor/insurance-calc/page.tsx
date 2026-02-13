@@ -170,13 +170,16 @@ export default function InsuranceCalcPage() {
   const [hiExempt, setHiExempt] = useState(false);
   const [eiExempt, setEiExempt] = useState(false);
 
+  // Company profile for print
+  const [companyName, setCompanyName] = useState<string>("");
+
   // Result state
   const [result, setResult] = useState<InsuranceCalcResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [initLoading, setInitLoading] = useState(true);
 
-  // ── Fetch reference data on mount ──
+  // ── Fetch reference data + company profile on mount ──
   useEffect(() => {
     async function fetchReferenceData() {
       try {
@@ -192,7 +195,18 @@ export default function InsuranceCalcPage() {
         setInitLoading(false);
       }
     }
+    async function fetchCompanyProfile() {
+      try {
+        const res = await fetch("/api/user/company-profile");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && data.data?.companyName) {
+          setCompanyName(data.data.companyName);
+        }
+      } catch { /* silent */ }
+    }
     fetchReferenceData();
+    fetchCompanyProfile();
   }, []);
 
   // ── Calculate ──
@@ -274,6 +288,13 @@ export default function InsuranceCalcPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8 space-y-6 print:p-0">
+      {/* Print-only company header */}
+      {companyName && (
+        <div className="hidden print:block text-center mb-2">
+          <p className="text-lg font-bold text-gray-900">{companyName}</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="print:text-center">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
@@ -665,6 +686,14 @@ export default function InsuranceCalcPage() {
         <p>
           * 국민연금 기준소득월액 상한 6,370,000원 / 하한 400,000원이 적용됩니다.
         </p>
+        <p>
+          * 정확한 안내는 행정사, 노무사, 변호사 또는 관할 노동청에 문의하시기 바랍니다.
+        </p>
+      </div>
+
+      {/* Print-only 어드미니 branding */}
+      <div className="hidden print:block text-center mt-8 pt-4 border-t border-gray-200">
+        <p className="text-[10px] text-gray-400">어드미니(Admini) | aiadminplatform.vercel.app</p>
       </div>
     </div>
   );

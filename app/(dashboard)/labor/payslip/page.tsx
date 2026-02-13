@@ -122,6 +122,9 @@ export default function PayslipPage() {
   const [genError, setGenError] = useState("");
   const [genResult, setGenResult] = useState<Payslip | null>(null);
 
+  // ── 기업 프로필 (인쇄용) ──
+  const [companyName, setCompanyName] = useState<string>("");
+
   // ── 명세서 목록 state ──
   const [payslips, setPayslips] = useState<Payslip[]>([]);
   const [listLoading, setListLoading] = useState(false);
@@ -170,6 +173,17 @@ export default function PayslipPage() {
   // 초기 데이터 로드
   useEffect(() => {
     fetchEmployees();
+    // 기업 프로필 (인쇄용)
+    (async () => {
+      try {
+        const res = await fetch("/api/user/company-profile");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success && data.data?.companyName) {
+          setCompanyName(data.data.companyName);
+        }
+      } catch { /* silent */ }
+    })();
   }, [fetchEmployees]);
 
   // 탭 변경 시 데이터 로드
@@ -314,7 +328,7 @@ export default function PayslipPage() {
   return (
     <>
       {/* 인쇄 전용 뷰 */}
-      {printPayslip && <PrintView payslip={printPayslip} />}
+      {printPayslip && <PrintView payslip={printPayslip} companyName={companyName} />}
 
       {/* 메인 콘텐츠 */}
       <div className="max-w-7xl mx-auto space-y-6 print:hidden">
@@ -1084,7 +1098,7 @@ function PayslipPreview({ payslip, onPrint }: { payslip: Payslip; onPrint?: () =
 
 // ─── PrintView Component (print-optimized) ───
 
-function PrintView({ payslip }: { payslip: Payslip }) {
+function PrintView({ payslip, companyName }: { payslip: Payslip; companyName?: string }) {
   const deductions: Deductions = typeof payslip.deductions === "string"
     ? JSON.parse(payslip.deductions)
     : payslip.deductions;
@@ -1117,6 +1131,9 @@ function PrintView({ payslip }: { payslip: Payslip }) {
 
       {/* 인쇄용 헤더 */}
       <div className="text-center border-b-2 border-gray-800 pb-4 mb-6">
+        {companyName && (
+          <p className="text-lg font-bold text-gray-900 mb-1">{companyName}</p>
+        )}
         <h1 className="text-2xl font-bold text-gray-900">급여명세서</h1>
         <p className="text-sm text-gray-600 mt-1">
           {payslip.year}년 {payslip.month}월
@@ -1230,6 +1247,11 @@ function PrintView({ payslip }: { payslip: Payslip }) {
           <div className="w-32 border-b border-gray-400" />
           <p className="text-xs text-gray-500 mt-1">(인)</p>
         </div>
+      </div>
+
+      {/* 어드미니 브랜딩 */}
+      <div className="mt-8 text-center">
+        <p className="text-[10px] text-gray-400">어드미니(Admini) | aiadminplatform.vercel.app</p>
       </div>
     </div>
   );

@@ -309,8 +309,8 @@ export default function PayslipPdf({ payslip, company }: PayslipPdfProps) {
 
         {/* 푸터 */}
         <div className="footer" style={{ marginTop: 32, textAlign: "center", fontSize: "9pt", color: "#999" }}>
-          <p>본 급여명세서는 어드미니(Admini) 플랫폼에서 자동 생성되었습니다.</p>
           <p>발급일: {new Date().toLocaleDateString("ko-KR")}</p>
+          <p style={{ marginTop: 8, fontSize: "8pt" }}>어드미니(Admini) | aiadminplatform.vercel.app</p>
         </div>
       </div>
     </div>

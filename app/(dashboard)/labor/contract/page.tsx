@@ -212,7 +212,7 @@ export default function LaborContractPage() {
             <div>
               <h1 className="text-2xl font-bold text-gray-900">근로계약서 AI</h1>
               <p className="text-sm text-gray-500 mt-0.5">
-                AI가 근로기준법을 준수하는 표준근로계약서를 작성합니다
+                AI어드미니가 근로기준법을 준수하는 표준근로계약서를 작성합니다
               </p>
             </div>
           </div>
@@ -483,14 +483,14 @@ export default function LaborContractPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  <span>AI가 계약서를 작성 중입니다...</span>
+                  <span>AI어드미니가 계약서를 작성 중입니다...</span>
                 </>
               ) : (
                 <>
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span>AI 계약서 생성</span>
+                  <span>AI어드미니 계약서 생성</span>
                 </>
               )}
             </button>
@@ -555,6 +555,10 @@ export default function LaborContractPage() {
                   <div className="bg-white border border-gray-300 rounded p-6 sm:p-8 shadow-inner font-serif text-[15px] leading-relaxed text-gray-800 whitespace-pre-wrap">
                     {contractText}
                   </div>
+                  {/* 인쇄 시에만 보이는 어드미니 브랜딩 */}
+                  <div className="hidden print:block text-center mt-8 pt-4 border-t border-gray-200">
+                    <p className="text-[10px] text-gray-400">어드미니(Admini) | aiadminplatform.vercel.app</p>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -568,7 +572,7 @@ export default function LaborContractPage() {
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                         </svg>
                       </div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-2">AI가 계약서를 작성 중입니다...</h3>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-2">AI어드미니가 계약서를 작성 중입니다...</h3>
                       <p className="text-sm text-gray-500">
                         근로기준법 및 관련 법령을 검토하고 있습니다
                       </p>
