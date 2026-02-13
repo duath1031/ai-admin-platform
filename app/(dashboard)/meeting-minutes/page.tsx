@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 
 // ─── Types ───
 
-type MeetingType = "board" | "shareholders" | "general" | "transcript";
+type MeetingType = "board" | "shareholders" | "general" | "transcript" | "nonprofit_members" | "nonprofit_board" | "nonprofit_directors";
 
 interface FormData {
   meetingType: MeetingType;
@@ -40,6 +40,9 @@ const MEETING_TYPE_TABS: { value: MeetingType; label: string; icon: string }[] =
   { value: "board", label: "이사회 회의록", icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" },
   { value: "shareholders", label: "주주총회 회의록", icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" },
   { value: "general", label: "일반 회의록", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" },
+  { value: "nonprofit_members", label: "회원총회(비영리)", icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
+  { value: "nonprofit_board", label: "사원총회(비영리)", icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" },
+  { value: "nonprofit_directors", label: "이사회(비영리)", icon: "M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" },
   { value: "transcript", label: "녹취록", icon: "M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" },
 ];
 
@@ -69,6 +72,34 @@ const TIP_MAP: Record<MeetingType, { title: string; tips: string[] }> = {
       "안건(의제)을 번호로 구분하여 입력하면 체계적인 회의록이 생성됩니다.",
       "각 안건별 담당자와 이행 기한이 있으면 결정사항에 포함해주세요.",
       "차기 회의 일정이 있으면 추가사항에 기재해주세요.",
+    ],
+  },
+  nonprofit_members: {
+    title: "비영리 사단법인 회원총회 작성 가이드",
+    tips: [
+      "민법 제68~76조에 따라 사단법인 총회는 최고 의사결정 기관입니다.",
+      "정관에 정한 정족수(보통 재적회원 과반수 출석, 출석회원 과반수 찬성)를 확인하세요.",
+      "회원 명부 대비 출석 회원 수, 위임장 접수 현황을 안건에 포함하면 정족수 검증이 가능합니다.",
+      "정기총회(사업보고, 결산승인, 임원선출), 임시총회(긴급안건) 구분을 명시해주세요.",
+      "주무관청 제출용 회의록은 의장·출석회원 기명날인이 필요합니다.",
+    ],
+  },
+  nonprofit_board: {
+    title: "비영리 법인 사원총회 작성 가이드",
+    tips: [
+      "재단법인의 사원총회 또는 사단법인의 특별결의가 필요한 안건에 적합합니다.",
+      "정관 변경(총사원 2/3 이상 동의), 해산결의(총사원 3/4 이상) 등 특별결의 요건을 확인하세요.",
+      "사원(출연자/설립자)의 명부와 출석 여부를 정확히 기재해주세요.",
+      "주무관청 보고/인가 대상 안건인 경우 해당 사항을 추가사항에 기재하세요.",
+    ],
+  },
+  nonprofit_directors: {
+    title: "비영리 법인 이사회 작성 가이드",
+    tips: [
+      "민법 제58조에 따라 법인의 사무는 이사의 과반수로 결정합니다.",
+      "재적이사 과반수 출석, 출석이사 과반수 찬성이 기본 의결 요건입니다.",
+      "대표이사(이사장) 선임, 사업계획 승인, 예산 편성 등 이사회 고유 권한 사항을 확인하세요.",
+      "감사의 출석 여부와 의견을 별도 기재하면 주무관청 제출 시 유리합니다.",
     ],
   },
   transcript: {
@@ -166,6 +197,9 @@ export default function MeetingMinutesPage() {
       board: "이사회 회의록",
       shareholders: "주주총회 회의록",
       general: "일반 회의록",
+      nonprofit_members: "회원총회 회의록",
+      nonprofit_board: "사원총회 회의록",
+      nonprofit_directors: "이사회 회의록 (비영리법인)",
       transcript: "녹취록",
     };
 

@@ -10,7 +10,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,6 +47,9 @@ export async function POST(request: NextRequest) {
       shareholders: "주주총회 회의록",
       general: "일반 회의록",
       transcript: "녹취록",
+      nonprofit_members: "회원총회 회의록 (비영리법인)",
+      nonprofit_board: "사원총회 회의록 (비영리법인)",
+      nonprofit_directors: "이사회 회의록 (비영리법인)",
     };
 
     const typeInstructions: Record<string, string> = {
@@ -72,6 +75,35 @@ export async function POST(request: NextRequest) {
 4. 회의 결론 및 차기 회의 일정 기재
 5. 작성자와 참석자 확인란 포함
 6. 비즈니스 표준 형식 준수`,
+      nonprofit_members: `비영리 사단법인 회원총회 회의록 작성 규칙:
+1. 민법 제68~76조에 따른 사단법인 총회 의사록 형식을 따를 것
+2. 총회 종류 구분: 정기총회(사업보고, 결산승인, 임원선출) / 임시총회(긴급안건)
+3. 재적회원 수, 출석회원 수, 위임장 접수 수를 기재하고 정족수 충족 여부 확인
+4. 정관에 정한 의결 정족수 기재 (보통: 재적회원 과반수 출석, 출석회원 과반수 찬성)
+5. 특별결의(정관변경: 총사원 2/3 이상, 해산: 총사원 3/4 이상) 해당 시 별도 기재
+6. 의장(이사장 또는 선출의장) 개회선언, 성원보고, 폐회선언 포함
+7. 의장 및 출석회원 대표 기명날인/서명란 포함
+8. 주무관청 제출용인 경우 안내문구 추가
+9. "위 결의사항을 증명하기 위하여 이 회의록을 작성하고 의장 및 출석한 회원이 기명날인한다" 형식 사용`,
+      nonprofit_board: `비영리 법인 사원총회 회의록 작성 규칙:
+1. 민법 제68~76조에 따른 사원총회(社員總會) 의사록 형식을 따를 것
+2. 사원(출연자/설립자) 명부와 출석 현황을 정확히 기재
+3. 재적사원 수, 출석사원 수를 기재하고 정족수 충족 여부 확인
+4. 정관변경(총사원 2/3 이상 동의), 해산결의(총사원 3/4 이상) 등 특별결의 요건 기재
+5. 의안별 찬성/반대/기권 표결 결과 상세 기재
+6. 주무관청 보고/인가 대상 안건인 경우 해당 사항 명시
+7. 의장 및 출석사원 기명날인/서명란 포함
+8. "위 결의사항을 증명하기 위하여 이 회의록을 작성하고 의장 및 출석한 사원이 기명날인한다" 형식 사용`,
+      nonprofit_directors: `비영리 법인 이사회 회의록 작성 규칙:
+1. 민법 제58조에 따라 법인의 사무는 이사의 과반수로 결정함을 전제
+2. 재적이사 수, 출석이사 수, 감사 출석 여부를 기재하고 의결 정족수(재적이사 과반수 출석, 출석이사 과반수 찬성) 확인
+3. 이사장(의장) 선출 및 성원보고 포함
+4. 안건별 논의 내용과 찬성/반대/기권 의결 결과 기재
+5. 예산·결산 승인, 사업계획, 정관변경 추진, 임원 추천 등 주요 안건별 상세 기재
+6. 감사의 의견 진술이 있는 경우 별도 기재
+7. 출석이사 및 감사의 기명날인/서명란 포함
+8. 주무관청 제출용인 경우 안내문구 추가
+9. "의장은 위 의안이 원안대로 가결되었음을 선포하고, 이를 증명하기 위하여 의사록을 작성한다" 형식 사용`,
       transcript: `녹취록 작성 규칙:
 1. 발언자별로 발언 내용을 시간순으로 정리
 2. 발언자 식별이 어려운 경우 "참석자A", "참석자B" 등으로 표기

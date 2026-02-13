@@ -13,7 +13,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export const dynamic = "force-dynamic";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "");
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || "");
 
 interface RootCompanyCheckInput {
   companyName: string;
