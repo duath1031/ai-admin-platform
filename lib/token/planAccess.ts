@@ -18,6 +18,9 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     fund_matching: false,
     subsidy_matching: false,
     template_download: false,
+    land_use_check: false,
+    law_search: false,
+    contract_analysis: false,
   },
   standard: {
     ai_chat: true,
@@ -32,6 +35,9 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     fund_matching: false,
     subsidy_matching: true,
     template_download: true,
+    land_use_check: true,
+    law_search: true,
+    contract_analysis: false,
   },
   pro: {
     ai_chat: true,
@@ -47,6 +53,9 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     fund_matching: true,
     subsidy_matching: true,
     template_download: true,
+    land_use_check: true,
+    law_search: true,
+    contract_analysis: true,
   },
   pro_plus: {
     ai_chat: true,
@@ -66,6 +75,9 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     client_document_box: true,
     client_dashboard: true,
     batch_subsidy_matching: true,
+    land_use_check: true,
+    law_search: true,
+    contract_analysis: true,
   },
 };
 
