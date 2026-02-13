@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { Card, CardContent, Button } from "@/components/ui";
 import Link from "next/link";
@@ -19,6 +19,32 @@ interface RecentActivity {
   createdAt: string;
 }
 
+interface OverageData {
+  overage: {
+    enabled: boolean;
+    monthlyLimit: number;
+    spentThisMonth: number;
+    remainingBudget: number;
+    batchTokens: number;
+    batchPrice: number;
+  };
+  plan: {
+    name: string;
+    planCode: string;
+    tokenQuota: number;
+    currentBalance: number;
+  };
+  billing: {
+    hasBillingKey: boolean;
+    card: { name: string; number: string } | null;
+  };
+  history: {
+    billingMonth: string;
+    overageTokens: number;
+    totalCharge: number;
+  } | null;
+}
+
 export default function MyPage() {
   const { data: session } = useSession();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -30,10 +56,16 @@ export default function MyPage() {
   const [doc24Password, setDoc24Password] = useState('');
   const [doc24AccountType, setDoc24AccountType] = useState('personal');
   const [doc24Linking, setDoc24Linking] = useState(false);
+  // 초과과금 설정
+  const [overageData, setOverageData] = useState<OverageData | null>(null);
+  const [overageLoading, setOverageLoading] = useState(false);
+  const [overageSaving, setOverageSaving] = useState(false);
+  const [editMonthlyLimit, setEditMonthlyLimit] = useState<number>(50000);
 
   useEffect(() => {
     fetchUserData();
     fetchDoc24Account();
+    fetchOverageSettings();
   }, []);
 
   const fetchUserData = async () => {
@@ -97,6 +129,66 @@ export default function MyPage() {
       alert('연동 중 오류가 발생했습니다.');
     } finally {
       setDoc24Linking(false);
+    }
+  };
+
+  const fetchOverageSettings = useCallback(async () => {
+    setOverageLoading(true);
+    try {
+      const res = await fetch("/api/user/overage");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setOverageData(data);
+          setEditMonthlyLimit(data.overage.monthlyLimit);
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setOverageLoading(false);
+    }
+  }, []);
+
+  const toggleOverage = async (enabled: boolean) => {
+    setOverageSaving(true);
+    try {
+      const res = await fetch("/api/user/overage", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchOverageSettings();
+      } else {
+        alert(data.error || "설정 변경 실패");
+      }
+    } catch {
+      alert("네트워크 오류");
+    } finally {
+      setOverageSaving(false);
+    }
+  };
+
+  const updateMonthlyLimit = async () => {
+    setOverageSaving(true);
+    try {
+      const res = await fetch("/api/user/overage", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlyLimit: editMonthlyLimit }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchOverageSettings();
+      } else {
+        alert(data.error || "설정 변경 실패");
+      }
+    } catch {
+      alert("네트워크 오류");
+    } finally {
+      setOverageSaving(false);
     }
   };
 
@@ -380,6 +472,172 @@ export default function MyPage() {
                   <p className="text-sm text-gray-500">영수증 조회 및 결제 관리</p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 초과과금 설정 */}
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-gray-900">토큰 초과과금</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    플랜 토큰 소진 시 자동으로 추가 결제
+                  </p>
+                </div>
+                {overageData && (
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={overageData.overage.enabled}
+                      onChange={(e) => toggleOverage(e.target.checked)}
+                      disabled={overageSaving}
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:ring-4 peer-focus:ring-indigo-100 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                )}
+              </div>
+
+              {overageLoading ? (
+                <div className="flex justify-center py-4">
+                  <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : overageData ? (
+                <div className="space-y-4">
+                  {/* 현재 플랜 정보 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-indigo-50 rounded-lg p-3">
+                      <p className="text-xs text-indigo-600 font-medium">현재 플랜</p>
+                      <p className="text-lg font-bold text-indigo-800">{overageData.plan.name}</p>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <p className="text-xs text-blue-600 font-medium">토큰 잔액</p>
+                      <p className="text-lg font-bold text-blue-800">
+                        {overageData.plan.currentBalance === -1
+                          ? "무제한"
+                          : `${overageData.plan.currentBalance.toLocaleString()}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {overageData.overage.enabled ? (
+                    <>
+                      {/* 초과과금 현황 */}
+                      <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">이번 달 초과과금</span>
+                          <span className="font-semibold text-gray-900">
+                            {overageData.overage.spentThisMonth.toLocaleString()}원
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">월 한도</span>
+                          <span className="font-semibold text-gray-900">
+                            {overageData.overage.monthlyLimit.toLocaleString()}원
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">남은 한도</span>
+                          <span className="font-semibold text-green-700">
+                            {overageData.overage.remainingBudget.toLocaleString()}원
+                          </span>
+                        </div>
+                        {/* 진행률 바 */}
+                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden mt-1">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              overageData.overage.spentThisMonth / overageData.overage.monthlyLimit > 0.8
+                                ? "bg-red-500"
+                                : overageData.overage.spentThisMonth / overageData.overage.monthlyLimit > 0.5
+                                  ? "bg-yellow-500"
+                                  : "bg-indigo-500"
+                            }`}
+                            style={{
+                              width: `${Math.min(100, (overageData.overage.spentThisMonth / overageData.overage.monthlyLimit) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* 월 한도 설정 */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                          월 최대 초과과금 한도
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            value={editMonthlyLimit}
+                            onChange={(e) => setEditMonthlyLimit(Number(e.target.value))}
+                            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                          >
+                            <option value={15000}>15,000원 (10만 토큰)</option>
+                            <option value={30000}>30,000원 (20만 토큰)</option>
+                            <option value={50000}>50,000원 (약 33만 토큰)</option>
+                            <option value={100000}>100,000원 (약 66만 토큰)</option>
+                            <option value={200000}>200,000원 (약 133만 토큰)</option>
+                            <option value={500000}>500,000원 (약 333만 토큰)</option>
+                          </select>
+                          <Button
+                            onClick={updateMonthlyLimit}
+                            disabled={overageSaving || editMonthlyLimit === overageData.overage.monthlyLimit}
+                            size="sm"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4"
+                          >
+                            저장
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* 결제수단 */}
+                      <div className="text-sm text-gray-500">
+                        결제수단: {overageData.billing.card
+                          ? `${overageData.billing.card.name} ${overageData.billing.card.number}`
+                          : "등록된 카드 없음"}
+                      </div>
+
+                      {/* 과금 안내 */}
+                      <div className="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700">
+                        <p className="font-medium mb-1">자동 초과과금 안내</p>
+                        <ul className="space-y-0.5 text-indigo-600">
+                          <li>토큰 소진 시 {overageData.overage.batchTokens.toLocaleString()}토큰 단위로 자동 충전</li>
+                          <li>1회 충전금액: {overageData.overage.batchPrice.toLocaleString()}원</li>
+                          <li>월 한도 초과 시 서비스 일시 정지 (다음 달 자동 리셋)</li>
+                        </ul>
+                      </div>
+
+                      {/* 이번 달 초과과금 내역 */}
+                      {overageData.history && (
+                        <div className="text-xs text-gray-400 pt-2 border-t border-gray-100">
+                          {overageData.history.billingMonth} 초과과금:{" "}
+                          {overageData.history.overageTokens.toLocaleString()}토큰 /{" "}
+                          {overageData.history.totalCharge.toLocaleString()}원
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="bg-gray-50 rounded-lg p-4">
+                      <p className="text-sm text-gray-600 mb-2">
+                        초과과금을 활성화하면 플랜 토큰을 모두 사용한 후에도 자동으로 추가 결제되어
+                        서비스를 계속 이용할 수 있습니다.
+                      </p>
+                      <ul className="text-xs text-gray-500 space-y-1">
+                        <li>- 등록된 결제수단(빌링키)이 필요합니다</li>
+                        <li>- Starter 플랜은 사용 불가 (Standard 이상)</li>
+                        <li>- 월 최대 한도 직접 설정 가능</li>
+                      </ul>
+                      {!overageData.billing.hasBillingKey && (
+                        <Link
+                          href="/subscription"
+                          className="inline-block mt-3 px-4 py-2 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+                        >
+                          결제수단 등록하기
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 

@@ -55,10 +55,10 @@ export async function GET(request: NextRequest) {
 
       const quota = sub.plan?.tokenQuota ?? 1000;
 
-      // 토큰 리셋
+      // 토큰 리셋 + 초과과금 누적 초기화
       await prisma.user.update({
         where: { id: sub.userId },
-        data: { credits: quota },
+        data: { credits: quota, overageSpentThisMonth: 0 },
       });
 
       // 리셋 트랜잭션 기록

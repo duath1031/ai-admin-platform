@@ -203,8 +203,8 @@ const menuItems = [
     ),
   },
   {
-    name: "토큰 충전",
-    href: "/token-charge",
+    name: "토큰 관리",
+    href: "/mypage",
     icon: (
       <svg
         className="w-5 h-5"
