@@ -34,16 +34,16 @@ const MODEL_CONFIGS: Record<UserTier, ModelConfig> = {
     description: '기본 사용자용 - 확장된 응답'
   },
   professional: {
-    modelName: 'gemini-2.0-flash',
+    modelName: 'gemini-2.5-flash-preview-05-20',
     temperature: 0.4,
     maxOutputTokens: 16384,
-    description: '전문가용 (행정사, 정부기관) - 상세하고 정확한 응답'
+    description: '전문가용 (행정사, 정부기관) - Gemini 2.5 Flash 상세 응답'
   },
   pro_plus: {
-    modelName: 'gemini-2.0-flash',
+    modelName: 'gemini-2.5-flash-preview-05-20',
     temperature: 0.3,
     maxOutputTokens: 32768,
-    description: 'Pro Plus - 최대 성능, 최대 출력'
+    description: 'Pro Plus - Gemini 2.5 Flash 최대 성능'
   },
 };
 

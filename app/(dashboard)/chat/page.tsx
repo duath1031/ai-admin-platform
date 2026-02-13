@@ -24,7 +24,7 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { messages, isLoading, addMessage, setLoading, setUploadedFileData, rpaState, setRpaState, resetRpaState, doc24State, setDoc24State, resetDoc24State } = useChatStore();
+  const { messages, isLoading, addMessage, setLoading, setUploadedFileData, rpaState, setRpaState, resetRpaState, doc24State, setDoc24State, resetDoc24State, pendingInput, setPendingInput } = useChatStore();
   const [showHumanModal, setShowHumanModal] = useState(false);
   const [showDelegateModal, setShowDelegateModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -68,6 +68,19 @@ export default function ChatPage() {
       handleSubmit(new Event("submit") as unknown as React.FormEvent);
     }
   }, [initialQuestion]);
+
+  // 후속 질문 클릭 처리
+  useEffect(() => {
+    if (pendingInput && !isLoading) {
+      setInput(pendingInput);
+      setPendingInput(null);
+      // 다음 틱에서 자동 제출
+      setTimeout(() => {
+        const form = document.querySelector('form[data-chat-form]') as HTMLFormElement;
+        if (form) form.requestSubmit();
+      }, 50);
+    }
+  }, [pendingInput]);
 
   // 수신기관 목록 로드 (캐시)
   const loadOrgList = async () => {
@@ -718,7 +731,7 @@ export default function ChatPage() {
       )}
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="flex gap-2 md:gap-3">
+      <form data-chat-form onSubmit={handleSubmit} className="flex gap-2 md:gap-3">
         {/* File Upload Button */}
         <input
           ref={fileInputRef}

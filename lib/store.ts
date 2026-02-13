@@ -47,6 +47,8 @@ interface ChatState {
   rpaState: RpaState;
   /** 문서24 발송 상태 */
   doc24State: Doc24State;
+  /** 후속 질문 클릭 시 전달할 입력값 */
+  pendingInput: string | null;
   addMessage: (message: Omit<Message, "createdAt" | "id"> & { id?: string }) => void;
   updateMessage: (id: string, content: string) => void;
   setMessages: (messages: Message[]) => void;
@@ -58,6 +60,7 @@ interface ChatState {
   resetRpaState: () => void;
   setDoc24State: (state: Partial<Doc24State>) => void;
   resetDoc24State: () => void;
+  setPendingInput: (input: string | null) => void;
 }
 
 const DEFAULT_RPA_STATE: RpaState = { status: 'idle', message: '', submissionId: null };
@@ -70,6 +73,7 @@ export const useChatStore = create<ChatState>((set) => ({
   uploadedFileData: {},
   rpaState: { ...DEFAULT_RPA_STATE },
   doc24State: { ...DEFAULT_DOC24_STATE },
+  pendingInput: null,
   addMessage: (message) =>
     set((state) => ({
       messages: [
@@ -105,6 +109,7 @@ export const useChatStore = create<ChatState>((set) => ({
       doc24State: { ...state.doc24State, ...partial },
     })),
   resetDoc24State: () => set({ doc24State: { ...DEFAULT_DOC24_STATE } }),
+  setPendingInput: (pendingInput) => set({ pendingInput }),
 }));
 
 interface Document {

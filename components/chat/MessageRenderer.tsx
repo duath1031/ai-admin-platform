@@ -503,6 +503,59 @@ function RpaSubmitCard({ filePath }: { filePath: string }) {
   );
 }
 
+// 후속 질문 제안 섹션 (AI가 "관련 질문" 섹션을 포함한 경우)
+function FollowUpQuestions({ questions }: { questions: string[] }) {
+  const handleClick = (question: string) => {
+    useChatStore.getState().setPendingInput(question);
+  };
+
+  if (questions.length === 0) return null;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-200">
+      <p className="text-xs text-gray-500 mb-2 font-medium">관련 질문</p>
+      <div className="flex flex-col gap-1.5">
+        {questions.map((q, i) => (
+          <button
+            key={i}
+            onClick={() => handleClick(q)}
+            className="text-left px-3 py-2 text-sm text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 hover:border-blue-300 transition-colors"
+          >
+            {q}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// "관련 질문" 섹션 파싱: "---" 이후 "**관련 질문**" 헤더 + 불릿 리스트
+function parseFollowUpQuestions(text: string): { mainContent: string; questions: string[] } {
+  // "---" 구분선 + "관련 질문" 패턴 찾기
+  const separatorIdx = text.lastIndexOf('---');
+  if (separatorIdx === -1) return { mainContent: text, questions: [] };
+
+  const afterSeparator = text.slice(separatorIdx);
+  if (!/관련\s*질문/.test(afterSeparator)) return { mainContent: text, questions: [] };
+
+  const mainContent = text.slice(0, separatorIdx).trimEnd();
+  const lines = afterSeparator.split('\n');
+  const questions: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // 불릿/번호 리스트 항목 추출 (-, *, 1. 등)
+    const match = trimmed.match(/^[-*•]\s+(.+)$/) || trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if (match) {
+      // 마크다운 볼드 제거
+      const clean = match[1].replace(/\*\*/g, '').trim();
+      if (clean.length > 3) questions.push(clean);
+    }
+  }
+
+  return { mainContent, questions };
+}
+
 // 접수대행/대리의뢰 버튼 섹션
 function SubmissionButtons({ content }: { content: string }) {
   const router = useRouter();
@@ -719,22 +772,25 @@ export default function MessageRenderer({ content, isUser = false, fileAttachmen
     return elements;
   };
 
+  // 후속 질문 파싱
+  const { mainContent: displayContent, questions: followUpQuestions } = parseFollowUpQuestions(contentWithoutCards);
+
   // 서식 다운로드 또는 법령 서식 링크가 있는지 확인
-  const hasFormDownload = LAW_DOWNLOAD_PATTERN.test(contentWithoutCards) || LAW_PAGE_PATTERN.test(contentWithoutCards);
+  const hasFormDownload = LAW_DOWNLOAD_PATTERN.test(displayContent) || LAW_PAGE_PATTERN.test(displayContent);
 
   // 서류 작성 관련 키워드가 있는지 확인 (솔루션 카드가 없을 때만)
   const hasDocumentKeywords = solutionCards.length === 0 &&
-    /서식|신청서|신고서|등록신청|허가신청|인가신청|위임장|첨부서류|구비서류/.test(contentWithoutCards);
+    /서식|신청서|신고서|등록신청|허가신청|인가신청|위임장|첨부서류|구비서류/.test(displayContent);
 
   // 민원/인허가 관련 키워드가 있는지 확인
-  const hasServiceKeywords = Object.keys(SERVICE_LINKS).some(keyword => contentWithoutCards.includes(keyword));
+  const hasServiceKeywords = Object.keys(SERVICE_LINKS).some(keyword => displayContent.includes(keyword));
 
   const showSubmissionButtons = hasFormDownload || hasDocumentKeywords;
   const showServiceLinks = hasServiceKeywords && solutionCards.length === 0;
 
   return (
     <div className="text-sm leading-relaxed">
-      {contentWithoutCards && renderContent(contentWithoutCards)}
+      {displayContent && renderContent(displayContent)}
 
       {/* 솔루션 카드 렌더링 */}
       {solutionCards.map((card, index) => (
@@ -750,8 +806,11 @@ export default function MessageRenderer({ content, isUser = false, fileAttachmen
         <RpaSubmitCard key={`rpa-${index}`} filePath={filePath} />
       ))}
 
-      {showServiceLinks && <ServiceLinks content={contentWithoutCards} />}
-      {showSubmissionButtons && <SubmissionButtons content={contentWithoutCards} />}
+      {showServiceLinks && <ServiceLinks content={displayContent} />}
+      {showSubmissionButtons && <SubmissionButtons content={displayContent} />}
+
+      {/* 후속 질문 제안 */}
+      {followUpQuestions.length > 0 && <FollowUpQuestions questions={followUpQuestions} />}
     </div>
   );
 }
