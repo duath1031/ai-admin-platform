@@ -850,6 +850,256 @@ async function startTransfer(data) {
 
                   loginPageDump.step3Dump = step3Dump;
                   authStatus = 'step3_loaded';
+
+                  // ★ Step 3 본인인증 진행 (step3Dump 스코프 내에서 처리)
+                  log('본인인증 진행 시작...');
+
+                  // 3-1. "실명확인 되었습니다" 팝업 확인 버튼 클릭
+                  await humanDelay(1000, 2000);
+                  try {
+                    const popupDismissed = await page.evaluate(() => {
+                      const confirmBtns = document.querySelectorAll('.jconfirm-box button, .modal button, .popup button, [class*="layer"] button, .btn-area button, button.btn');
+                      for (const btn of confirmBtns) {
+                        const text = (btn.textContent || '').trim();
+                        if (text === '확인' && btn.offsetParent !== null) {
+                          btn.click();
+                          return { clicked: true, text };
+                        }
+                      }
+                      return { clicked: false };
+                    });
+                    log(`팝업 확인 버튼: ${popupDismissed.clicked ? '클릭 성공' : '미발견'}`);
+                  } catch (e) { log(`팝업 처리: ${e.message}`); }
+
+                  await humanDelay(1500, 2500);
+
+                  // 3-2. "휴대폰 본인인증" 선택 (certTypeCd='02')
+                  log('"휴대폰 본인인증" 선택 시도...');
+                  const phoneAuthSelected = await page.evaluate(() => {
+                    // 방법1: 텍스트로 링크/버튼 찾기
+                    const allClickables = document.querySelectorAll('a, button, [role="button"], li, [onclick]');
+                    for (const el of allClickables) {
+                      const text = (el.textContent || '').trim();
+                      if (text.includes('휴대폰') && (text.includes('본인인증') || text.includes('인증')) && el.offsetParent !== null) {
+                        el.click();
+                        return { clicked: true, text: text.substring(0, 40), method: 'text_match' };
+                      }
+                    }
+
+                    // 방법2: data-bind에 certLogin/'02' 포함 요소
+                    const certBtns = document.querySelectorAll('[data-bind*="certLogin"], [data-bind*="cert"]');
+                    for (const btn of certBtns) {
+                      const text = (btn.textContent || '').trim();
+                      const dataBind = btn.getAttribute('data-bind') || '';
+                      if ((text.includes('휴대폰') || dataBind.includes("'02'") || dataBind.includes('"02"')) && btn.offsetParent !== null) {
+                        btn.click();
+                        return { clicked: true, text: text.substring(0, 40), method: 'data_bind' };
+                      }
+                    }
+
+                    // 방법3: KO VM certLogin 직접 호출 (certTypeCd='02')
+                    const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                    let vm = null;
+                    try { vm = ko.contextFor(rootEl)?.$root; } catch (e) {}
+                    if (vm && typeof vm.certLogin === 'function') {
+                      try {
+                        const fakeLink = document.createElement('a');
+                        fakeLink.setAttribute('data-cert-type', '02');
+                        fakeLink.textContent = '휴대폰 본인인증';
+                        const fakeEvent = { target: fakeLink };
+                        vm.certLogin(null, fakeEvent);
+                        return { clicked: true, text: 'VM직접호출', method: 'vm_call' };
+                      } catch (e) { return { clicked: false, error: e.message, method: 'vm_call_failed' }; }
+                    }
+
+                    // 방법4: model.certTypeCd 직접 설정 후 관련 함수 호출
+                    if (vm) {
+                      const model = ko.isObservable(vm.model) ? vm.model() : vm.model;
+                      if (model && model.certTypeCd && ko.isObservable(model.certTypeCd)) {
+                        model.certTypeCd('02');
+                        return { clicked: true, text: 'certTypeCd=02 직접설정', method: 'model_set' };
+                      }
+                    }
+
+                    return { clicked: false, method: 'not_found' };
+                  });
+
+                  log(`휴대폰 본인인증 선택: ${phoneAuthSelected.clicked ? '성공' : '실패'} (${phoneAuthSelected.method})`);
+                  if (phoneAuthSelected.error) log(`에러: ${phoneAuthSelected.error}`);
+
+                  await humanDelay(2000, 3000);
+                  await stealthScreenshot(page, `car365_phone_auth_${taskId.slice(0, 8)}`);
+
+                  // 3-3. 폰 인증 폼 분석
+                  const phoneAuthForm = await page.evaluate(() => {
+                    const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
+                      tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+                      placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+                      label: e.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent?.trim()?.substring(0, 40) || '',
+                      dataBind: e.getAttribute('data-bind')?.substring(0, 80) || '',
+                      options: e.tagName === 'SELECT' ? Array.from(e.options).map(o => ({ v: o.value, t: o.textContent?.trim() })).slice(0, 10) : [],
+                    })).filter(i => i.visible);
+
+                    const buttons = Array.from(document.querySelectorAll('button, a[class*="btn"]')).map(e => ({
+                      id: e.id, text: (e.textContent || '').trim().substring(0, 60),
+                      visible: e.offsetParent !== null,
+                      dataBind: e.getAttribute('data-bind')?.substring(0, 80) || '',
+                    })).filter(b => b.visible && b.text);
+
+                    const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
+                      id: f.id, name: f.name, src: f.src?.substring(0, 200), visible: f.offsetParent !== null,
+                    })).filter(f => f.visible && !f.src?.includes('hwpctrl'));
+
+                    // model 상태
+                    let modelState = {};
+                    try {
+                      const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                      const vm = ko.contextFor(rootEl)?.$root;
+                      const model = ko.isObservable(vm.model) ? vm.model() : vm.model;
+                      for (const k of Object.keys(model)) {
+                        if (ko.isObservable(model[k])) {
+                          const v = model[k]();
+                          modelState[k] = v !== null && v !== undefined ? String(v).substring(0, 30) : 'null';
+                        }
+                      }
+                    } catch (e) {}
+
+                    return { inputs, buttons: buttons.slice(0, 20), iframes, modelState, bodySnippet: document.body?.innerText?.substring(0, 1500) || '' };
+                  });
+
+                  log(`폰인증 폼 - 입력: ${phoneAuthForm.inputs?.length || 0}개`);
+                  for (const inp of (phoneAuthForm.inputs || [])) {
+                    log(`  [input] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" dataBind="${inp.dataBind}"`);
+                    if (inp.options?.length > 0) log(`    options: ${inp.options.map(o => `${o.v}=${o.t}`).join(', ')}`);
+                  }
+                  log(`폰인증 폼 - 버튼: ${phoneAuthForm.buttons?.length || 0}개`);
+                  for (const btn of (phoneAuthForm.buttons || []).slice(0, 15)) {
+                    log(`  [btn] id=${btn.id} text="${btn.text}" dataBind="${btn.dataBind}"`);
+                  }
+                  if (phoneAuthForm.iframes?.length > 0) {
+                    for (const f of phoneAuthForm.iframes) log(`  [iframe] id=${f.id} src="${f.src}"`);
+                  }
+                  log(`model 상태: ${JSON.stringify(phoneAuthForm.modelState || {})}`);
+                  log(`본문 (500자): ${phoneAuthForm.bodySnippet?.substring(0, 500)}`);
+
+                  // 3-4. 통신사 + 전화번호 입력 (page.evaluate 내에서 한번에)
+                  const formFillResult = await page.evaluate(({ carrierVal, phoneVal }) => {
+                    const results = { carrier: false, phone: false };
+                    const carrierMap = {
+                      'SK': ['SKT', 'SK텔레콤', 'SK', '01'],
+                      'KT': ['KT', 'KT', '02'],
+                      'LG': ['LG', 'LGU+', 'LG유플러스', '03'],
+                    };
+                    const aliases = carrierMap[carrierVal?.toUpperCase()] || [carrierVal];
+
+                    // 통신사 select 찾기
+                    if (carrierVal) {
+                      const selects = document.querySelectorAll('select');
+                      for (const sel of selects) {
+                        if (sel.offsetParent === null) continue;
+                        for (const opt of sel.options) {
+                          const optText = opt.textContent?.trim() || '';
+                          if (aliases.some(a => optText.includes(a) || opt.value === a)) {
+                            sel.value = opt.value;
+                            sel.dispatchEvent(new Event('change', { bubbles: true }));
+                            // KO observable 업데이트
+                            try {
+                              const binding = sel.getAttribute('data-bind') || '';
+                              const match = binding.match(/value:\s*(?:model\.)?(\w+)/);
+                              if (match && typeof ko !== 'undefined') {
+                                const ctx = ko.contextFor(sel);
+                                const model = ko.isObservable(ctx.$root.model) ? ctx.$root.model() : ctx.$root.model;
+                                if (model?.[match[1]] && ko.isObservable(model[match[1]])) model[match[1]](opt.value);
+                              }
+                            } catch (e) {}
+                            results.carrier = { value: opt.value, text: optText };
+                            break;
+                          }
+                        }
+                        if (results.carrier) break;
+                      }
+                    }
+
+                    // 전화번호 입력 필드 찾기
+                    if (phoneVal) {
+                      const inputs = document.querySelectorAll('input');
+                      for (const inp of inputs) {
+                        if (inp.offsetParent === null) continue;
+                        const id = (inp.id || '').toLowerCase();
+                        const name = (inp.name || '').toLowerCase();
+                        const ph = (inp.placeholder || '').toLowerCase();
+                        const label = (inp.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent || '').trim();
+                        const dataBind = (inp.getAttribute('data-bind') || '').toLowerCase();
+
+                        if (id.match(/tel|phone|hp|mbtlnum/) || name.match(/tel|phone|hp|mbtlnum/) ||
+                            ph.includes('전화') || ph.includes('휴대') || ph.includes('연락') ||
+                            label.includes('전화') || label.includes('휴대폰') || label.includes('연락처') ||
+                            dataBind.match(/tel|phone|hp|mbtlnum/) || inp.type === 'tel') {
+                          const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+                          if (nativeSetter) nativeSetter.call(inp, phoneVal);
+                          else inp.value = phoneVal;
+                          inp.dispatchEvent(new Event('input', { bubbles: true }));
+                          inp.dispatchEvent(new Event('change', { bubbles: true }));
+                          inp.dispatchEvent(new Event('keyup', { bubbles: true }));
+                          // KO observable 업데이트
+                          try {
+                            const binding = inp.getAttribute('data-bind') || '';
+                            const match = binding.match(/(?:textInput|value):\s*(?:model\.)?(\w+)/);
+                            if (match && typeof ko !== 'undefined') {
+                              const ctx = ko.contextFor(inp);
+                              const model = ko.isObservable(ctx.$root.model) ? ctx.$root.model() : ctx.$root.model;
+                              if (model?.[match[1]] && ko.isObservable(model[match[1]])) model[match[1]](phoneVal);
+                            }
+                          } catch (e) {}
+                          results.phone = { id: inp.id, name: inp.name };
+                          break;
+                        }
+                      }
+                    }
+
+                    return results;
+                  }, { carrierVal: carrier, phoneVal: phoneNumber?.replace(/-/g, '') });
+
+                  log(`통신사 선택: ${formFillResult.carrier ? `성공 (${formFillResult.carrier.text})` : '실패'}`);
+                  log(`전화번호 입력: ${formFillResult.phone ? `성공 (#${formFillResult.phone.id || formFillResult.phone.name})` : '실패'}`);
+
+                  await humanDelay(1000, 2000);
+                  await stealthScreenshot(page, `car365_auth_filled_${taskId.slice(0, 8)}`);
+
+                  // 3-5. 인증번호 요청 버튼 클릭
+                  const authRequestResult = await page.evaluate(() => {
+                    const btns = document.querySelectorAll('button, a, input[type="button"]');
+                    for (const btn of btns) {
+                      if (btn.offsetParent === null) continue;
+                      const text = (btn.textContent || btn.value || '').trim();
+                      if (text.includes('인증번호') || text.includes('인증요청') || text.includes('인증 요청') || text === '인증') {
+                        btn.click();
+                        return { clicked: true, text };
+                      }
+                    }
+                    // VM에서 관련 함수 찾기
+                    try {
+                      const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                      const vm = ko.contextFor(rootEl)?.$root;
+                      const certFns = Object.keys(vm).filter(k => typeof vm[k] === 'function' && k.match(/cert|auth|sms|verify|request/i));
+                      return { clicked: false, certFunctions: certFns };
+                    } catch (e) {}
+                    return { clicked: false };
+                  });
+
+                  if (authRequestResult.clicked) {
+                    authTriggered = true;
+                    authStatus = 'auth_requested';
+                    log(`인증번호 요청 성공: "${authRequestResult.text}"`);
+                  } else {
+                    log('인증번호 요청 버튼 미발견');
+                    if (authRequestResult.certFunctions) log(`관련 VM 함수: ${authRequestResult.certFunctions.join(', ')}`);
+                    authStatus = 'step3_form_loaded';
+                  }
+
+                  await humanDelay(2000, 3000);
+                  await stealthScreenshot(page, `car365_auth_requested_${taskId.slice(0, 8)}`);
+
                 } else {
                   // 실명인증 실패
                   authStatus = 'identity_verification_failed';
@@ -863,139 +1113,7 @@ async function startTransfer(data) {
             }
 
             await humanDelay(500, 1000);
-            await stealthScreenshot(page, `car365_step3_filled_${taskId.slice(0, 8)}`);
-
-            // Step 3 본인인증 - 통신사/전화번호 입력 + 인증요청
-            // (step3Dump이 있으면 = 실명인증 성공 후 Step 3에 도달한 상태)
-            if (authStatus === 'step3_loaded') {
-              log('본인인증 폼 입력 시작...');
-
-              // KO VM을 통해 certLogin 관련 함수들 분석
-              const certFunctions = await page.evaluate(() => {
-                const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
-                let vm = null;
-                try { vm = ko.contextFor(rootEl)?.$root; } catch (e) {}
-                if (!vm) return { error: 'VM not found' };
-
-                const model = ko.isObservable(vm.model) ? vm.model() : vm.model;
-                if (!model) return { error: 'model not found' };
-
-                // model의 모든 observable 키와 값
-                const modelState = {};
-                for (const k of Object.keys(model)) {
-                  if (ko.isObservable(model[k])) {
-                    const v = model[k]();
-                    modelState[k] = v !== null && v !== undefined ? String(v).substring(0, 30) : 'null';
-                  }
-                }
-
-                // certLogin 소스
-                let certLoginSource = '';
-                if (typeof vm.certLogin === 'function') {
-                  certLoginSource = vm.certLogin.toString().substring(0, 1500);
-                }
-
-                return { modelState, certLoginSource };
-              });
-
-              log(`Step3 model 상태: ${JSON.stringify(certFunctions.modelState || {})}`);
-              if (certFunctions.certLoginSource) {
-                log(`certLogin 소스 (300자): ${certFunctions.certLoginSource.substring(0, 300)}`);
-              }
-
-              // 통신사 선택
-              if (carrier) {
-                const selectEls = await page.$$('select');
-                for (const sel of selectEls) {
-                  if (await sel.isVisible()) {
-                    const options = await sel.evaluate(el => {
-                      return Array.from(el.options).map(o => ({ value: o.value, text: o.textContent?.trim() }));
-                    });
-                    const carrierMap = {
-                      'SK': ['SKT', 'SK텔레콤', 'SK', '01'],
-                      'KT': ['KT', 'KT', '02'],
-                      'LG': ['LG', 'LGU+', 'LG유플러스', '03'],
-                    };
-                    const aliases = carrierMap[carrier.toUpperCase()] || [carrier];
-                    const match = options.find(o => aliases.some(a => o.text?.includes(a) || o.value === a));
-                    if (match) {
-                      await sel.selectOption(match.value);
-                      log(`통신사 선택 성공: ${carrier} → ${match.text} (${match.value})`);
-                      break;
-                    }
-                  }
-                }
-              }
-
-              // 전화번호 입력
-              if (phoneNumber) {
-                const phoneClean = phoneNumber.replace(/-/g, '');
-                const phoneInputSel = step3Dump.inputs.find(inp =>
-                  inp.name?.includes('tel') || inp.name?.includes('phone') || inp.name?.includes('hp') ||
-                  inp.id?.includes('tel') || inp.id?.includes('phone') || inp.id?.includes('hp') ||
-                  inp.label?.includes('전화') || inp.label?.includes('휴대폰') || inp.label?.includes('연락처') ||
-                  inp.placeholder?.includes('전화') || inp.placeholder?.includes('휴대') ||
-                  inp.type === 'tel'
-                );
-                if (phoneInputSel) {
-                  try {
-                    const el = phoneInputSel.id
-                      ? await page.$(`#${phoneInputSel.id}`)
-                      : await page.$(`input[name="${phoneInputSel.name}"]`);
-                    if (el && await el.isVisible()) {
-                      await el.fill('');
-                      await el.type(phoneClean, { delay: 60 });
-                      log(`전화번호 입력 성공: #${phoneInputSel.id || phoneInputSel.name}`);
-                    }
-                  } catch (e) { log(`전화번호 입력 실패: ${e.message}`); }
-                }
-              }
-
-              await humanDelay(1000, 2000);
-              await stealthScreenshot(page, `car365_auth_filled_${taskId.slice(0, 8)}`);
-
-              // 인증번호 요청 버튼 클릭
-              const authRequestSelectors = [
-                'button:has-text("인증번호 요청")',
-                'button:has-text("인증번호요청")',
-                'button:has-text("인증요청")',
-                'button:has-text("인증 요청")',
-                'button:has-text("인증번호")',
-                'button:has-text("본인인증")',
-                'a:has-text("인증번호")',
-                'a:has-text("인증요청")',
-                'input[type="button"][value*="인증"]',
-              ];
-
-              let authRequested = false;
-              for (const sel of authRequestSelectors) {
-                try {
-                  const btns = await page.$$(sel);
-                  for (const btn of btns) {
-                    if (await btn.isVisible()) {
-                      await btn.click();
-                      authRequested = true;
-                      log(`인증번호 요청 버튼 클릭: ${sel}`);
-                      break;
-                    }
-                  }
-                  if (authRequested) break;
-                } catch (e) { /* continue */ }
-              }
-
-              if (authRequested) {
-                authTriggered = true;
-                authStatus = 'auth_requested';
-                await humanDelay(2000, 3000);
-                await stealthScreenshot(page, `car365_auth_requested_${taskId.slice(0, 8)}`);
-              } else {
-                log('인증번호 요청 버튼을 찾지 못함');
-                authStatus = 'step3_form_loaded';
-              }
-            } else {
-              log('Step 3 로딩 안됨 - 실명인증 확인 필요');
-              authStatus = 'step3_not_loaded';
-            }
+            await stealthScreenshot(page, `car365_final_${taskId.slice(0, 8)}`);
           }
         } else {
           log('동의 버튼을 찾지 못함');
