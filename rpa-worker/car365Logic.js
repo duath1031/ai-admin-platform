@@ -605,10 +605,20 @@ async function startTransfer(data) {
                   }
                   if (!model) return { ...results, error: 'vm.model not found' };
 
-                  // ★ checkRlnmCert 소스코드 분석 (어디서 값을 읽는지 파악)
+                  // ★ checkRlnmCert 전체 소스코드 + decryptTranskey 소스 분석
                   if (typeof vm.checkRlnmCert === 'function') {
-                    results.checkRlnmCertSource = vm.checkRlnmCert.toString().substring(0, 1500);
+                    results.checkRlnmCertSource = vm.checkRlnmCert.toString().substring(0, 3000);
                   }
+                  // prtl.cmmbiz.decryptTranskey 소스 분석
+                  try {
+                    if (typeof prtl !== 'undefined' && prtl.cmmbiz && prtl.cmmbiz.decryptTranskey) {
+                      results.decryptTranskeySource = prtl.cmmbiz.decryptTranskey.toString().substring(0, 2000);
+                    }
+                    // prtl.cmmbiz 전체 함수 목록
+                    if (typeof prtl !== 'undefined' && prtl.cmmbiz) {
+                      results.cmmbizFunctions = Object.keys(prtl.cmmbiz).filter(k => typeof prtl.cmmbiz[k] === 'function').slice(0, 30);
+                    }
+                  } catch (e) { results.prtlError = e.message; }
 
                   // model의 키 목록 (설정 전 상태)
                   const modelKeys = [];
@@ -680,63 +690,87 @@ async function startTransfer(data) {
                 }
                 if (koModelResult.error) log(`오류: ${koModelResult.error}`);
 
-                // Phase 2: AJAX 요청 가로채기 설정 후 checkRlnmCert 호출
-                log('AJAX 가로채기 설정 + checkRlnmCert 호출...');
+                // Phase 2: decryptTranskey 우회 → 평문값 직접 반환 + checkRlnmCert 재호출
+                log('TransKey 우회: decryptTranskey를 평문 반환으로 교체...');
 
-                // XHR/fetch 가로채기로 실제 전송 데이터 확인
-                const ajaxResult = await page.evaluate(() => {
-                  return new Promise((resolve) => {
-                    const captured = { requests: [] };
+                const phase2Result = await page.evaluate(({ ssnBackVal }) => {
+                  const results = { requests: [] };
 
-                    // XMLHttpRequest 가로채기
-                    const origOpen = XMLHttpRequest.prototype.open;
-                    const origSend = XMLHttpRequest.prototype.send;
-                    XMLHttpRequest.prototype.open = function(method, url) {
-                      this._rpaUrl = url;
-                      this._rpaMethod = method;
-                      return origOpen.apply(this, arguments);
-                    };
-                    XMLHttpRequest.prototype.send = function(body) {
-                      captured.requests.push({
-                        type: 'xhr',
-                        method: this._rpaMethod,
-                        url: this._rpaUrl,
-                        body: typeof body === 'string' ? body.substring(0, 500) : (body ? 'non-string' : 'null'),
-                      });
-                      return origSend.apply(this, arguments);
-                    };
-
-                    // checkRlnmCert 호출
-                    const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
-                    let vm = null;
-                    try {
-                      const ctx = ko.contextFor(rootEl);
-                      vm = ctx?.$root;
-                    } catch (e) {}
-
-                    if (vm && typeof vm.checkRlnmCert === 'function') {
-                      try {
-                        vm.checkRlnmCert();
-                        captured.checkCalled = true;
-                      } catch (e) {
-                        captured.checkError = e.message;
+                  // ★ 핵심: prtl.cmmbiz.decryptTranskey를 오버라이드
+                  // 원래: TransKey 암호화값을 서버로 보내서 복호화
+                  // 우회: 평문값을 직접 반환 (서버 복호화 불필요)
+                  if (typeof prtl !== 'undefined' && prtl.cmmbiz) {
+                    prtl.cmmbiz.decryptTranskey = function(fieldId) {
+                      results.decryptCalled = fieldId;
+                      // stkhIdntfNo2 필드면 평문 주민번호 뒷자리 반환
+                      if (fieldId === 'stkhIdntfNo2') {
+                        return { rsltCd: 'S', rsltMsg: ssnBackVal };
                       }
-                    }
+                      return { rsltCd: 'S', rsltMsg: '' };
+                    };
+                    results.overrideSet = true;
+                  }
 
-                    // 200ms 대기 후 캡처된 요청 반환
+                  // AJAX 가로채기
+                  const origOpen = XMLHttpRequest.prototype.open;
+                  const origSend = XMLHttpRequest.prototype.send;
+                  XMLHttpRequest.prototype.open = function(method, url) {
+                    this._rpaUrl = url;
+                    this._rpaMethod = method;
+                    return origOpen.apply(this, arguments);
+                  };
+                  XMLHttpRequest.prototype.send = function(body) {
+                    results.requests.push({
+                      type: 'xhr',
+                      method: this._rpaMethod,
+                      url: this._rpaUrl,
+                      body: typeof body === 'string' ? body.substring(0, 500) : (body ? 'non-string' : 'null'),
+                    });
+                    return origSend.apply(this, arguments);
+                  };
+
+                  // checkRlnmCert 호출
+                  const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                  let vm = null;
+                  try {
+                    const ctx = ko.contextFor(rootEl);
+                    vm = ctx?.$root;
+                  } catch (e) {}
+
+                  if (vm && typeof vm.checkRlnmCert === 'function') {
+                    try {
+                      vm.checkRlnmCert();
+                      results.checkCalled = true;
+                    } catch (e) {
+                      results.checkError = e.message;
+                    }
+                  }
+
+                  return new Promise((resolve) => {
                     setTimeout(() => {
-                      // 원복
                       XMLHttpRequest.prototype.open = origOpen;
                       XMLHttpRequest.prototype.send = origSend;
-                      resolve(captured);
-                    }, 500);
-                  });
-                });
 
-                log(`checkRlnmCert 호출: ${ajaxResult.checkCalled ? '성공' : '실패'}`);
-                if (ajaxResult.checkError) log(`checkRlnmCert 에러: ${ajaxResult.checkError}`);
-                log(`가로챈 AJAX 요청: ${ajaxResult.requests?.length || 0}건`);
-                for (const req of (ajaxResult.requests || [])) {
+                      // 호출 후 model 상태 재확인
+                      let model = null;
+                      try {
+                        model = ko.isObservable(vm.model) ? vm.model() : vm.model;
+                        results.afterRlnmCert = model.rlnmCert ? model.rlnmCert() : 'N/A';
+                        results.afterStep = model.step ? model.step() : 'N/A';
+                      } catch (e) { results.modelError = e.message; }
+
+                      resolve(results);
+                    }, 3000);
+                  });
+                }, { ssnBackVal: idNumberBack });
+
+                log(`TransKey 우회 설정: ${phase2Result.overrideSet ? '성공' : '실패'}`);
+                if (phase2Result.decryptCalled) log(`decryptTranskey 호출됨: fieldId=${phase2Result.decryptCalled}`);
+                log(`checkRlnmCert 호출: ${phase2Result.checkCalled ? '성공' : '실패'}`);
+                if (phase2Result.checkError) log(`checkRlnmCert 에러: ${phase2Result.checkError}`);
+                log(`실명인증 후 rlnmCert=${phase2Result.afterRlnmCert}, step=${phase2Result.afterStep}`);
+                log(`가로챈 AJAX 요청: ${phase2Result.requests?.length || 0}건`);
+                for (const req of (phase2Result.requests || [])) {
                   log(`  [${req.type}] ${req.method} ${req.url}`);
                   if (req.body && req.body !== 'null') log(`    body: ${req.body}`);
                 }
