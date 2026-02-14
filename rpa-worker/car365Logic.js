@@ -151,10 +151,17 @@ async function startTransfer(data) {
     // ★ 핵심: DevTools 감지 우회 설정 (페이지 로드 전에!)
     await setupDevToolsBypass(page, context, log);
 
-    // 다이얼로그 자동 수락
+    // 다이얼로그 처리 - 보안 프로그램 설치 다이얼로그는 dismiss
     page.on('dialog', async (dialog) => {
-      log(`다이얼로그: ${dialog.type()} - ${dialog.message()}`);
-      await dialog.accept();
+      const msg = dialog.message();
+      log(`다이얼로그: ${dialog.type()} - ${msg}`);
+      // 보안 프로그램 설치 관련 다이얼로그는 dismiss (설치 페이지 이동 방지)
+      if (msg.includes('키보드보안') || msg.includes('보안 프로그램') || msg.includes('라온시큐어') || msg.includes('설치페이지') || msg.includes('TouchEn')) {
+        log('보안 프로그램 설치 다이얼로그 dismiss');
+        await dialog.dismiss();
+      } else {
+        await dialog.accept();
+      }
     });
 
     // Step 1: car365.go.kr 메인페이지 접속
@@ -218,11 +225,31 @@ async function startTransfer(data) {
       });
     }
 
-    await humanDelay(3000, 5000);
+    // 보안 다이얼로그 dismiss 후 페이지 안정화 대기
+    await humanDelay(5000, 8000);
+
+    // 네비게이션 완료 대기 (보안 다이얼로그 dismiss 후 로그인 페이지가 로드될 수 있음)
+    try {
+      await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
+    } catch (e) {
+      log(`loadState 대기 타임아웃 (무시): ${e.message}`);
+    }
+
     await stealthScreenshot(page, `car365_login_${taskId.slice(0, 8)}`);
 
     const loginUrl = page.url();
     log(`로그인 페이지 URL: ${loginUrl}`);
+
+    // about:blank 체크 (보안 프로그램 리다이렉트 실패 시)
+    if (loginUrl === 'about:blank' || loginUrl.includes('raonsecure') || loginUrl.includes('download')) {
+      log('보안 프로그램 설치 페이지로 이동됨, 로그인 페이지로 재이동...');
+      await page.goto(CAR365_URLS.login, {
+        waitUntil: 'domcontentloaded',
+        timeout: TIMEOUTS.navigation,
+      });
+      await humanDelay(5000, 8000);
+      log(`재이동 후 URL: ${page.url()}`);
+    }
 
     // Step 3: AnyID 간편인증 팝업/페이지 구조 분석
     const loginPageDump = await page.evaluate(() => {
@@ -599,8 +626,13 @@ async function debugCar365Page(url) {
     await setupDevToolsBypass(page, context, log);
 
     page.on('dialog', async (dialog) => {
-      log(`다이얼로그: ${dialog.message()}`);
-      await dialog.accept();
+      const msg = dialog.message();
+      log(`다이얼로그: ${msg}`);
+      if (msg.includes('키보드보안') || msg.includes('보안 프로그램') || msg.includes('라온시큐어') || msg.includes('설치페이지') || msg.includes('TouchEn')) {
+        await dialog.dismiss();
+      } else {
+        await dialog.accept();
+      }
     });
 
     const targetUrl = url || CAR365_URLS.main;
