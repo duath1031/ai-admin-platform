@@ -193,8 +193,30 @@ model ClientCompany {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   employees     Employee[]
   vehicles      Vehicle[]
+  documents     ClientDocument[]
 
   @@index([userId])
+}
+
+model ClientDocument {
+  id              String   @id @default(cuid())
+  clientCompanyId String
+  userId          String
+  category        String   // insurance_report, payslip, contract, permit, transfer, etc.
+  documentType    String   // acquisition, loss, salary_change, employment_contract, etc.
+  title           String
+  description     String?
+  fileUrl         String?  // HWPX/PDF 파일 URL (optional)
+  fileType        String?  // hwpx, pdf, docx
+  metadata        String?  // JSON (추가 데이터: employeeId, reportId 등)
+  status          String   @default("active") // active, archived
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  clientCompany   ClientCompany @relation(fields: [clientCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([clientCompanyId])
+  @@index([userId])
+  @@index([category])
 }
 
 // 기업 마스터 프로필 (AI 비서의 기억 저장소)
