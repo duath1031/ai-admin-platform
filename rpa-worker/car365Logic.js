@@ -425,240 +425,329 @@ async function startTransfer(data) {
 
         loginPageDump.nonMemberDump = nonMemberDump;
         loginPageDump.htmlDump = { contentSectionTag: htmlDump.contentSectionTag, loginAreaTag: htmlDump.loginAreaTag };
-        authStatus = 'non_member_tab_loaded';
+
+        // Step 4-3: 비회원 로그인 1단계 - 이용약관 모두 동의
+        log('1단계: 이용약관 동의 진행...');
+
+        // "모두 동의" 체크박스 클릭
+        const allAgreeCheck = await page.$('#chk_01_02');
+        if (allAgreeCheck && await allAgreeCheck.isVisible()) {
+          await allAgreeCheck.click();
+          log('모두 동의 체크박스 클릭');
+          await humanDelay(500, 1000);
+        } else {
+          // 개별 동의 라디오 버튼 클릭 (동의함 = 짝수 번호)
+          for (const radioId of ['#radio_02_02', '#radio_02_04', '#radio_02_06', '#radio_02_08']) {
+            const radio = await page.$(radioId);
+            if (radio && await radio.isVisible()) {
+              await radio.click();
+              log(`동의 라디오 클릭: ${radioId}`);
+              await humanDelay(200, 400);
+            }
+          }
+        }
+
+        await humanDelay(500, 1000);
+
+        // "동의" 버튼 클릭 (다음 단계로)
+        const agreeSelectors = [
+          'button:has-text("동의")',
+          'a:has-text("동의")',
+          'button.btn-primary:has-text("동의")',
+          '#btnAgree',
+          'button[class*="agree"]',
+        ];
+
+        let agreedNext = false;
+        for (const sel of agreeSelectors) {
+          try {
+            const btns = await page.$$(sel);
+            for (const btn of btns) {
+              if (await btn.isVisible()) {
+                const btnText = await btn.textContent();
+                // "동의안함"은 제외, "동의"만 클릭
+                if (btnText && btnText.trim() === '동의') {
+                  await btn.click();
+                  agreedNext = true;
+                  log(`동의 버튼 클릭: ${sel} - "${btnText.trim()}"`);
+                  break;
+                }
+              }
+            }
+            if (agreedNext) break;
+          } catch (e) { /* continue */ }
+        }
+
+        if (!agreedNext) {
+          // 폴백: 페이지 하단의 "다음" 또는 "동의" 버튼 찾기
+          const nextBtn = await page.$('button:has-text("다음")') || await page.$('a:has-text("다음")');
+          if (nextBtn && await nextBtn.isVisible()) {
+            await nextBtn.click();
+            agreedNext = true;
+            log('다음 버튼 클릭');
+          }
+        }
+
+        if (agreedNext) {
+          await humanDelay(3000, 5000);
+          await stealthScreenshot(page, `car365_step2_${taskId.slice(0, 8)}`);
+
+          // Step 4-4: 2단계 실명확인 페이지 분석
+          log('2단계: 실명확인 페이지...');
+          const step2Dump = await page.evaluate(() => {
+            const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
+              tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+              placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+              label: e.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent?.trim()?.substring(0, 40) || '',
+            })).filter(i => i.visible);
+
+            const buttons = Array.from(document.querySelectorAll('button, a[class*="btn"], input[type="submit"]')).map(e => ({
+              id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
+              cls: e.className?.toString()?.substring(0, 60) || '',
+              visible: e.offsetParent !== null,
+            })).filter(b => b.visible && b.text);
+
+            return {
+              inputs,
+              buttons: buttons.slice(0, 20),
+              bodySnippet: document.body?.innerText?.substring(0, 2000) || '',
+              hash: window.location.hash,
+            };
+          });
+
+          log(`2단계 입력 필드: ${step2Dump.inputs?.length || 0}개`);
+          for (const inp of (step2Dump.inputs || [])) {
+            log(`  [input] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" placeholder="${inp.placeholder}"`);
+          }
+          log(`2단계 버튼: ${step2Dump.buttons?.length || 0}개`);
+          for (const btn of (step2Dump.buttons || []).slice(0, 10)) {
+            log(`  [btn] id=${btn.id} text="${btn.text}"`);
+          }
+
+          loginPageDump.step2Dump = step2Dump;
+          authStatus = 'step2_loaded';
+
+          // Step 4-5: 2단계 실명확인 정보 입력 (이름 + 주민번호 앞자리)
+          if (step2Dump.inputs?.length > 0) {
+            log('실명확인 정보 입력 시도...');
+
+            // 이름 입력
+            const nameInputSel = step2Dump.inputs.find(inp =>
+              inp.name?.includes('nm') || inp.name?.includes('name') || inp.id?.includes('nm') ||
+              inp.id?.includes('name') || inp.label?.includes('이름') || inp.label?.includes('성명') ||
+              inp.placeholder?.includes('이름') || inp.placeholder?.includes('성명')
+            );
+            if (nameInputSel) {
+              try {
+                const el = nameInputSel.id
+                  ? await page.$(`#${nameInputSel.id}`)
+                  : await page.$(`input[name="${nameInputSel.name}"]`);
+                if (el && await el.isVisible()) {
+                  await el.fill('');
+                  await el.type(name, { delay: 80 });
+                  log(`이름 입력 성공: #${nameInputSel.id || nameInputSel.name}`);
+                }
+              } catch (e) { log(`이름 입력 실패: ${e.message}`); }
+            }
+
+            // 주민등록번호 앞자리 (생년월일 6자리) 입력
+            const birthDateStr = birthDate?.length === 8 ? birthDate.substring(2) : birthDate; // YYYYMMDD → YYMMDD
+            if (birthDateStr) {
+              const ssnInputSel = step2Dump.inputs.find(inp =>
+                inp.name?.includes('ihidnum') || inp.name?.includes('ssn') || inp.name?.includes('brdt') ||
+                inp.name?.includes('birth') || inp.id?.includes('ihidnum') || inp.id?.includes('ssn') ||
+                inp.label?.includes('주민등록') || inp.label?.includes('생년월일') ||
+                inp.placeholder?.includes('주민') || inp.placeholder?.includes('생년') ||
+                (inp.type === 'text' && !nameInputSel?.id?.includes(inp.id) && inp.id !== nameInputSel?.id)
+              );
+              if (ssnInputSel) {
+                try {
+                  const el = ssnInputSel.id
+                    ? await page.$(`#${ssnInputSel.id}`)
+                    : await page.$(`input[name="${ssnInputSel.name}"]`);
+                  if (el && await el.isVisible()) {
+                    await el.fill('');
+                    await el.type(birthDateStr, { delay: 80 });
+                    log(`주민번호 앞자리 입력 성공: #${ssnInputSel.id || ssnInputSel.name} (${birthDateStr})`);
+                  }
+                } catch (e) { log(`주민번호 입력 실패: ${e.message}`); }
+              }
+            }
+
+            await humanDelay(500, 1000);
+
+            // "확인" 또는 "다음" 버튼 클릭 (Step 3으로 이동)
+            const step2NextSelectors = [
+              'button:has-text("확인")',
+              'button:has-text("다음")',
+              'a:has-text("확인")',
+              'a:has-text("다음")',
+              'button[class*="btn"]:has-text("확인")',
+              '#btnConfirm', '#btnNext',
+            ];
+
+            let step2Next = false;
+            for (const sel of step2NextSelectors) {
+              try {
+                const btns = await page.$$(sel);
+                for (const btn of btns) {
+                  if (await btn.isVisible()) {
+                    const txt = await btn.textContent();
+                    if (txt && !txt.includes('취소') && !txt.includes('이전')) {
+                      await btn.click();
+                      step2Next = true;
+                      log(`2단계 다음 버튼 클릭: ${sel} - "${txt.trim()}"`);
+                      break;
+                    }
+                  }
+                }
+                if (step2Next) break;
+              } catch (e) { /* continue */ }
+            }
+
+            if (step2Next) {
+              await humanDelay(3000, 5000);
+              await stealthScreenshot(page, `car365_step3_${taskId.slice(0, 8)}`);
+
+              // Step 4-6: 3단계 본인인증 페이지 분석 + 인증요청
+              log('3단계: 본인인증 페이지...');
+              const step3Dump = await page.evaluate(() => {
+                const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
+                  tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+                  placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+                  label: e.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent?.trim()?.substring(0, 40) || '',
+                })).filter(i => i.visible);
+
+                const buttons = Array.from(document.querySelectorAll('button, a[class*="btn"], input[type="submit"]')).map(e => ({
+                  id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
+                  cls: e.className?.toString()?.substring(0, 60) || '',
+                  visible: e.offsetParent !== null,
+                })).filter(b => b.visible && b.text);
+
+                return {
+                  inputs,
+                  buttons: buttons.slice(0, 20),
+                  bodySnippet: document.body?.innerText?.substring(0, 2000) || '',
+                  hash: window.location.hash,
+                };
+              });
+
+              log(`3단계 입력 필드: ${step3Dump.inputs?.length || 0}개`);
+              for (const inp of (step3Dump.inputs || [])) {
+                log(`  [input] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" placeholder="${inp.placeholder}"`);
+              }
+              log(`3단계 버튼: ${step3Dump.buttons?.length || 0}개`);
+              for (const btn of (step3Dump.buttons || []).slice(0, 10)) {
+                log(`  [btn] id=${btn.id} text="${btn.text}"`);
+              }
+
+              loginPageDump.step3Dump = step3Dump;
+              authStatus = 'step3_loaded';
+
+              // 통신사 선택
+              if (carrier) {
+                const selectEls = await page.$$('select');
+                for (const sel of selectEls) {
+                  if (await sel.isVisible()) {
+                    const options = await sel.evaluate(el => {
+                      return Array.from(el.options).map(o => ({ value: o.value, text: o.textContent?.trim() }));
+                    });
+                    const carrierMap = {
+                      'SK': ['SKT', 'SK텔레콤', 'SK', '01'],
+                      'KT': ['KT', 'KT', '02'],
+                      'LG': ['LG', 'LGU+', 'LG유플러스', '03'],
+                    };
+                    const aliases = carrierMap[carrier.toUpperCase()] || [carrier];
+                    const match = options.find(o => aliases.some(a => o.text?.includes(a) || o.value === a));
+                    if (match) {
+                      await sel.selectOption(match.value);
+                      log(`통신사 선택 성공: ${carrier} → ${match.text} (${match.value})`);
+                      break;
+                    }
+                  }
+                }
+              }
+
+              // 전화번호 입력
+              if (phoneNumber) {
+                const phoneClean = phoneNumber.replace(/-/g, '');
+                const phoneInputSel = step3Dump.inputs.find(inp =>
+                  inp.name?.includes('tel') || inp.name?.includes('phone') || inp.name?.includes('hp') ||
+                  inp.id?.includes('tel') || inp.id?.includes('phone') || inp.id?.includes('hp') ||
+                  inp.label?.includes('전화') || inp.label?.includes('휴대폰') || inp.label?.includes('연락처') ||
+                  inp.placeholder?.includes('전화') || inp.placeholder?.includes('휴대') ||
+                  inp.type === 'tel'
+                );
+                if (phoneInputSel) {
+                  try {
+                    const el = phoneInputSel.id
+                      ? await page.$(`#${phoneInputSel.id}`)
+                      : await page.$(`input[name="${phoneInputSel.name}"]`);
+                    if (el && await el.isVisible()) {
+                      await el.fill('');
+                      await el.type(phoneClean, { delay: 60 });
+                      log(`전화번호 입력 성공: #${phoneInputSel.id || phoneInputSel.name}`);
+                    }
+                  } catch (e) { log(`전화번호 입력 실패: ${e.message}`); }
+                }
+              }
+
+              await humanDelay(1000, 2000);
+              await stealthScreenshot(page, `car365_auth_filled_${taskId.slice(0, 8)}`);
+
+              // 인증번호 요청 버튼 클릭
+              const authRequestSelectors = [
+                'button:has-text("인증번호 요청")',
+                'button:has-text("인증번호요청")',
+                'button:has-text("인증요청")',
+                'button:has-text("인증 요청")',
+                'button:has-text("인증번호")',
+                'button:has-text("본인인증")',
+                'a:has-text("인증번호")',
+                'a:has-text("인증요청")',
+                'input[type="button"][value*="인증"]',
+              ];
+
+              let authRequested = false;
+              for (const sel of authRequestSelectors) {
+                try {
+                  const btns = await page.$$(sel);
+                  for (const btn of btns) {
+                    if (await btn.isVisible()) {
+                      await btn.click();
+                      authRequested = true;
+                      log(`인증번호 요청 버튼 클릭: ${sel}`);
+                      break;
+                    }
+                  }
+                  if (authRequested) break;
+                } catch (e) { /* continue */ }
+              }
+
+              if (authRequested) {
+                authTriggered = true;
+                authStatus = 'auth_requested';
+                await humanDelay(3000, 5000);
+                await stealthScreenshot(page, `car365_auth_requested_${taskId.slice(0, 8)}`);
+              } else {
+                log('인증번호 요청 버튼을 찾지 못함');
+                authStatus = 'step3_form_loaded';
+              }
+            } else {
+              log('2단계 다음 버튼을 찾지 못함');
+              authStatus = 'step2_next_failed';
+            }
+          }
+        } else {
+          log('동의 버튼을 찾지 못함');
+          authStatus = 'agreement_failed';
+        }
       } else {
-        log('비회원 로그인 탭(tab_0102) 없음. AnyID SPA 구조를 HTML에서 분석...');
+        log('비회원 로그인 탭(tab_0102) 없음');
         loginPageDump.htmlDump = htmlDump;
       }
 
       await stealthScreenshot(page, `car365_auth_${taskId.slice(0, 8)}`);
-
-      // AnyID SPA의 "정부 통합로그인" 영역 분석
-      const anyidDom = await page.evaluate(() => {
-        // 모든 가시적 요소에서 "인증" 관련 텍스트 찾기 (전체 document 대상)
-        const tabElements = [];
-        document.querySelectorAll('a, button, li, div, span').forEach(el => {
-          const text = (el.textContent || '').trim();
-          if (text.length > 0 && text.length < 50) {
-            const rect = el.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-              tabElements.push({
-                tag: el.tagName,
-                text: text.substring(0, 50),
-                cls: el.className?.toString()?.substring(0, 100) || '',
-                id: el.id || '',
-                role: el.getAttribute('role') || '',
-                href: el.href || '',
-                onclick: el.getAttribute('onclick')?.substring(0, 80) || '',
-                parentCls: el.parentElement?.className?.toString()?.substring(0, 60) || '',
-                x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height),
-              });
-            }
-          }
-        });
-
-        // "휴대폰" 또는 "본인인증" 포함 요소만 필터
-        const phoneAuthElements = tabElements.filter(e =>
-          e.text.includes('휴대폰') || e.text.includes('본인인증') || e.text.includes('간편인증') || e.text.includes('공동인증')
-        );
-
-        // AnyID 관련 iframe 체크
-        const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
-          id: f.id, name: f.name, src: f.src,
-          w: f.offsetWidth, h: f.offsetHeight,
-        }));
-
-        return {
-          contentAreaTag: contentArea.tagName,
-          contentAreaCls: contentArea.className?.toString()?.substring(0, 100) || '',
-          phoneAuthElements,
-          allTabCount: tabElements.length,
-          iframes,
-          urlHash: window.location.hash,
-        };
-      });
-
-      log(`컨텐츠 영역: ${anyidDom.contentAreaTag}.${anyidDom.contentAreaCls}`);
-      log(`URL 해시: ${anyidDom.urlHash}`);
-      log(`전체 탭 요소: ${anyidDom.allTabCount}개`);
-      log(`인증 관련 요소: ${anyidDom.phoneAuthElements?.length || 0}개`);
-      for (const el of (anyidDom.phoneAuthElements || [])) {
-        log(`  - [${el.tag}] text="${el.text}" cls="${el.cls}" id="${el.id}" role="${el.role}" (${el.x},${el.y} ${el.w}x${el.h})`);
-      }
-      log(`iframe: ${anyidDom.iframes?.length || 0}개`);
-      for (const f of (anyidDom.iframes || [])) {
-        log(`  - iframe: id=${f.id} name=${f.name} src=${f.src} ${f.w}x${f.h}`);
-      }
-
-      // 정확한 "휴대폰 본인인증" 탭 클릭
-      // evaluate 내에서 직접 클릭 (SPA 라우터 이벤트가 정상 전파되도록)
-      const clickResult = await page.evaluate(() => {
-        // 방법 1: AnyID SPA의 탭 링크 (정확한 텍스트 매칭)
-        const allLinks = document.querySelectorAll('a, button, div[role="button"], li, span');
-        for (const el of allLinks) {
-          const text = (el.textContent || '').trim();
-          // "휴대폰 본인인증"만 정확히 매칭 (부모 컨테이너의 긴 텍스트 제외)
-          if (text === '휴대폰 본인인증' || text === '휴대전화 본인인증 로그인') {
-            el.click();
-            return { clicked: true, text, tag: el.tagName, cls: el.className?.toString()?.substring(0, 80) };
-          }
-        }
-
-        // 방법 2: 내부 텍스트가 정확히 "휴대폰 본인인증"인 요소
-        const xpath = "//a[normalize-space(text())='휴대폰 본인인증'] | //button[normalize-space(text())='휴대폰 본인인증'] | //div[normalize-space(text())='휴대폰 본인인증'] | //span[normalize-space(text())='휴대폰 본인인증'] | //li[normalize-space(text())='휴대폰 본인인증']";
-        const xpathResult = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-        if (xpathResult.singleNodeValue) {
-          xpathResult.singleNodeValue.click();
-          return { clicked: true, text: 'xpath match', tag: xpathResult.singleNodeValue.tagName };
-        }
-
-        return { clicked: false };
-      });
-
-      log(`직접 클릭 결과: ${JSON.stringify(clickResult)}`);
-
-      if (clickResult.clicked) {
-        // SPA 라우터 전환 대기 (Vue/React는 비동기 렌더링)
-        await humanDelay(5000, 8000);
-
-        // URL 해시 변경 확인
-        const newHash = await page.evaluate(() => window.location.hash);
-        log(`탭 클릭 후 URL 해시: ${newHash}`);
-
-        await stealthScreenshot(page, `car365_phone_auth_tab_${taskId.slice(0, 8)}`);
-
-        // 인증 폼 구조 분석
-        const authFormDump = await page.evaluate(() => {
-          const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
-            tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
-            placeholder: e.placeholder || '', visible: e.offsetParent !== null,
-            label: e.closest('tr,div,label,li')?.querySelector('th,label,span')?.textContent?.trim()?.substring(0, 40) || '',
-            value: e.value || '',
-          })).filter(i => i.visible);
-
-          const buttons = Array.from(document.querySelectorAll('button, input[type="submit"], a.btn, a[class*="btn"]')).map(e => ({
-            id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
-            cls: e.className?.substring(0, 80) || '',
-            visible: e.offsetParent !== null,
-          })).filter(b => b.visible && b.text);
-
-          return { inputs, buttons, bodySnippet: document.body?.innerText?.substring(0, 3000) || '' };
-        });
-
-        log(`인증 폼 입력 필드: ${authFormDump.inputs?.length || 0}개`);
-        for (const inp of (authFormDump.inputs || [])) {
-          log(`  - [${inp.tag}] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" placeholder="${inp.placeholder}"`);
-        }
-        log(`인증 폼 버튼: ${authFormDump.buttons?.length || 0}개`);
-        for (const btn of (authFormDump.buttons || []).slice(0, 15)) {
-          log(`  - [btn] id=${btn.id} text="${btn.text}"`);
-        }
-
-        // 인증 정보 입력 시도
-        // 이름 입력
-        const nameSelectors = ['input[name*="name" i]', 'input[name*="nm" i]', 'input[id*="name" i]', 'input[placeholder*="이름"]', 'input[placeholder*="성명"]'];
-        for (const sel of nameSelectors) {
-          try {
-            const el = await page.$(sel);
-            if (el && await el.isVisible()) {
-              await el.fill('');
-              await el.type(name, { delay: 80 });
-              log(`이름 입력 성공: ${sel}`);
-              break;
-            }
-          } catch (e) { /* continue */ }
-        }
-
-        // 생년월일 입력
-        const birthSelectors = ['input[name*="birth" i]', 'input[name*="brdt" i]', 'input[id*="birth" i]', 'input[placeholder*="생년월일"]', 'input[placeholder*="YYMMDD"]'];
-        for (const sel of birthSelectors) {
-          try {
-            const el = await page.$(sel);
-            if (el && await el.isVisible()) {
-              await el.fill('');
-              await el.type(birthDate, { delay: 80 });
-              log(`생년월일 입력 성공: ${sel}`);
-              break;
-            }
-          } catch (e) { /* continue */ }
-        }
-
-        // 전화번호 입력
-        const phoneClean = phoneNumber.replace(/-/g, '');
-        const phoneSelectors = ['input[name*="phone" i]', 'input[name*="telno" i]', 'input[name*="mbtlnum" i]', 'input[id*="phone" i]', 'input[placeholder*="전화번호"]', 'input[placeholder*="휴대폰"]'];
-        for (const sel of phoneSelectors) {
-          try {
-            const el = await page.$(sel);
-            if (el && await el.isVisible()) {
-              await el.fill('');
-              await el.type(phoneClean, { delay: 80 });
-              log(`전화번호 입력 성공: ${sel}`);
-              break;
-            }
-          } catch (e) { /* continue */ }
-        }
-
-        // 통신사 선택
-        if (carrier) {
-          const selectEls = await page.$$('select');
-          for (const sel of selectEls) {
-            if (await sel.isVisible()) {
-              const options = await sel.evaluate(el => {
-                return Array.from(el.options).map(o => ({ value: o.value, text: o.textContent?.trim() }));
-              });
-              const carrierMap = { 'SK': ['SKT', 'SK텔레콤', 'SK', '01'], 'KT': ['KT', 'KT', '02'], 'LG': ['LG', 'LGU+', 'LG유플러스', '03'] };
-              const aliases = carrierMap[carrier.toUpperCase()] || [carrier];
-              const match = options.find(o => aliases.some(a => o.text?.includes(a) || o.value === a));
-              if (match) {
-                await sel.selectOption(match.value);
-                log(`통신사 선택 성공: ${carrier} → ${match.text} (${match.value})`);
-                break;
-              }
-            }
-          }
-        }
-
-        await humanDelay(1000, 2000);
-        await stealthScreenshot(page, `car365_auth_filled_${taskId.slice(0, 8)}`);
-
-        // 인증번호 요청 버튼 클릭
-        const authRequestSelectors = [
-          'button:has-text("인증번호")',
-          'button:has-text("인증 요청")',
-          'button:has-text("인증요청")',
-          'button:has-text("본인인증")',
-          'a:has-text("인증번호")',
-          'input[type="button"][value*="인증"]',
-          'button:has-text("확인")',
-          'button:has-text("요청")',
-        ];
-
-        let authRequested = false;
-        for (const sel of authRequestSelectors) {
-          try {
-            const el = await page.$(sel);
-            if (el && await el.isVisible()) {
-              await el.click();
-              authRequested = true;
-              log(`인증번호 요청 버튼 클릭: ${sel}`);
-              break;
-            }
-          } catch (e) { /* continue */ }
-        }
-
-        if (authRequested) {
-          authTriggered = true;
-          authStatus = 'auth_requested';
-          await humanDelay(3000, 5000);
-          await stealthScreenshot(page, `car365_auth_requested_${taskId.slice(0, 8)}`);
-        } else {
-          log('인증번호 요청 버튼을 찾지 못함');
-          authStatus = 'auth_form_loaded';
-        }
-
-        // 인증 폼 정보를 pageDump에 병합
-        loginPageDump.authFormDump = authFormDump;
-      }
     } catch (authError) {
       log(`인증 진행 중 오류: ${authError.message}`);
     }
