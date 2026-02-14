@@ -16,6 +16,7 @@ const serviceCategories = [
       { name: "저작권 등록", href: "/copyright", desc: "등록 가이드·신청서" },
       { name: "내용증명", href: "/legal-notice", desc: "내용증명 작성" },
       { name: "회의록 AI", href: "/meeting-minutes", desc: "녹취록 자동 요약" },
+      { name: "연구노트 (KOITA)", href: "/research-note", desc: "표준 양식·타임스탬프" },
     ],
   },
   {
@@ -42,6 +43,7 @@ const serviceCategories = [
       { name: "취등록세 계산기", href: "/fleet/transfer-cost", desc: "차종별 세금 계산" },
       { name: "이전등록 서류", href: "/fleet/transfer-documents", desc: "양도증명서·위임장" },
       { name: "운행일지", href: "/fleet/trip-log", desc: "법인차량 운행기록" },
+      { name: "법인차량 관리", href: "/fleet", desc: "차량 종합관리" },
     ],
   },
   {
@@ -56,11 +58,11 @@ const serviceCategories = [
     ],
   },
   {
-    title: "자금·컨설팅",
+    title: "정책자금/정부지원",
     emoji: "💰",
     color: "purple",
     items: [
-      { name: "정책자금 매칭", href: "/fund-matching", desc: "보조금24 통합 매칭" },
+      { name: "정책자금/정부지원", href: "/fund-matching", desc: "보조금24 통합 매칭" },
       { name: "인증 자가진단", href: "/certification-check", desc: "벤처·ISO·이노비즈" },
     ],
   },
@@ -75,13 +77,11 @@ const serviceCategories = [
     ],
   },
   {
-    title: "연구·관리",
-    emoji: "🔬",
+    title: "거래처 관리",
+    emoji: "👥",
     color: "indigo",
     items: [
-      { name: "연구노트 (KOITA)", href: "/research-note", desc: "표준 양식·타임스탬프" },
       { name: "거래처 관리", href: "/client-management", desc: "거래처별 서류함" },
-      { name: "법인차량 관리", href: "/fleet", desc: "차량·운행 종합관리" },
     ],
   },
 ];

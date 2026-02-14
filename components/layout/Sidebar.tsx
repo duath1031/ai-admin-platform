@@ -214,6 +214,7 @@ const sidebarItems: SidebarItem[] = [
       { name: "저작권 등록", href: "/copyright", icon: icons.copyright },
       { name: "내용증명", href: "/legal-notice", icon: icons.docWrite },
       { name: "회의록 AI", href: "/meeting-minutes", icon: icons.docReview },
+      { name: "연구노트 (KOITA)", href: "/research-note", icon: icons.researchNote },
     ],
   },
 
@@ -242,6 +243,7 @@ const sidebarItems: SidebarItem[] = [
       { name: "취등록세 계산기", href: "/fleet/transfer-cost", icon: icons.insurance },
       { name: "이전등록 서류", href: "/fleet/transfer-documents", icon: icons.docWrite },
       { name: "운행일지", href: "/fleet/trip-log", icon: icons.calendar },
+      { name: "법인차량 관리", href: "/fleet", icon: icons.car },
     ],
   },
 
@@ -257,12 +259,12 @@ const sidebarItems: SidebarItem[] = [
     ],
   },
 
-  // 자금·컨설팅
+  // 정책자금/정부지원
   {
-    name: "자금·컨설팅",
+    name: "정책자금/정부지원",
     emoji: "\uD83D\uDCB0",
     children: [
-      { name: "정책자금 매칭", href: "/fund-matching", icon: icons.fund },
+      { name: "정책자금/정부지원", href: "/fund-matching", icon: icons.fund },
       { name: "인증 자가진단", href: "/certification-check", icon: icons.certification },
       { name: "사업계획서 AI", href: "/chat?q=사업계획서 작성을 도와주세요", icon: icons.bizplan, badge: "준비 중" },
     ],
@@ -279,14 +281,12 @@ const sidebarItems: SidebarItem[] = [
     ],
   },
 
-  // 연구·관리
+  // 거래처 관리
   {
-    name: "연구·관리",
-    emoji: "\uD83D\uDD2C",
+    name: "거래처 관리",
+    emoji: "\uD83D\uDC65",
     children: [
-      { name: "연구노트 (KOITA)", href: "/research-note", icon: icons.researchNote },
       { name: "거래처 관리", href: "/client-management", icon: icons.user },
-      { name: "법인차량 관리", href: "/fleet", icon: icons.car },
     ],
   },
 ];
