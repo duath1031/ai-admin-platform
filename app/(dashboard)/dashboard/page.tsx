@@ -60,9 +60,8 @@ const serviceCategories = [
     emoji: "📊",
     color: "orange",
     items: [
-      { name: "나라장터 검색", href: "/procurement", desc: "스마트 입찰 필터" },
-      { name: "사정률 시뮬레이터", href: "/bid-simulation", desc: "투찰금액 분석" },
-      { name: "입찰 분석", href: "/bid-analysis", desc: "경쟁사 패턴 인사이트" },
+      { name: "입찰 검색/분석", href: "/procurement", desc: "나라장터 검색·경쟁사·A값" },
+      { name: "사정률 시뮬레이터", href: "/bid-simulation", desc: "투찰금액·MC 시뮬레이션" },
       { name: "직접생산확인 진단", href: "/direct-production-check", desc: "37업종 자가진단" },
     ],
   },

@@ -269,9 +269,8 @@ const sidebarItems: SidebarItem[] = [
     name: "입찰·조달",
     emoji: "\uD83D\uDCCA",
     children: [
-      { name: "나라장터 검색", href: "/procurement", icon: icons.search },
+      { name: "입찰 검색/분석", href: "/procurement", icon: icons.search },
       { name: "사정률 시뮬레이터", href: "/bid-simulation", icon: icons.simulator },
-      { name: "입찰 분석", href: "/bid-analysis", icon: icons.simulator },
       { name: "직접생산확인 진단", href: "/direct-production-check", icon: icons.certification },
     ],
   },
