@@ -350,53 +350,107 @@ async function startTransfer(data) {
     log(`모달: ${loginPageDump.modals?.length || 0}개`);
     log(`버튼/링크: ${loginPageDump.elements?.length || 0}개`);
 
-    // Step 4: 휴대폰 본인인증 진행
+    // Step 4: AnyID 로그인 영역 DOM 분석 + 휴대폰 본인인증 진행
     let authTriggered = false;
     let authStatus = 'login_page_loaded';
 
     try {
-      // "휴대폰 본인인증" 탭/링크 클릭
-      log('휴대폰 본인인증 탭 클릭 시도...');
+      // AnyID 로그인 섹션의 정확한 DOM 구조 덤프
+      log('AnyID 로그인 영역 DOM 분석...');
+      const anyidDom = await page.evaluate(() => {
+        // 로그인 컨텐츠 영역 찾기 (container, content-section, login-area 등)
+        const contentArea = document.querySelector('#content-section, .content, .login-wrap, [class*="login"], [class*="content"]') || document.body;
 
-      // AnyID 로그인 페이지에서 "휴대폰 본인인증" 찾기
-      const phoneAuthSelectors = [
-        'a:has-text("휴대폰 본인인증")',
-        'button:has-text("휴대폰 본인인증")',
-        'li:has-text("휴대폰 본인인증") a',
-        'div:has-text("휴대폰 본인인증")',
-        '[class*="tab"]:has-text("휴대폰")',
-      ];
-
-      let phoneAuthClicked = false;
-      for (const sel of phoneAuthSelectors) {
-        try {
-          const el = await page.$(sel);
-          if (el && await el.isVisible()) {
-            await el.click();
-            phoneAuthClicked = true;
-            log(`휴대폰 본인인증 탭 클릭 성공: ${sel}`);
-            break;
+        // 모든 탭/링크 요소 (CSS 클래스에 tab, menu, link 포함)
+        const tabElements = [];
+        contentArea.querySelectorAll('a, button, li, div, span').forEach(el => {
+          const text = (el.textContent || '').trim();
+          if (text.length > 0 && text.length < 50) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              tabElements.push({
+                tag: el.tagName,
+                text: text.substring(0, 50),
+                cls: el.className?.toString()?.substring(0, 100) || '',
+                id: el.id || '',
+                role: el.getAttribute('role') || '',
+                href: el.href || '',
+                onclick: el.getAttribute('onclick')?.substring(0, 80) || '',
+                parentCls: el.parentElement?.className?.toString()?.substring(0, 60) || '',
+                x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height),
+              });
+            }
           }
-        } catch (e) { /* continue */ }
+        });
+
+        // "휴대폰" 또는 "본인인증" 포함 요소만 필터
+        const phoneAuthElements = tabElements.filter(e =>
+          e.text.includes('휴대폰') || e.text.includes('본인인증') || e.text.includes('간편인증') || e.text.includes('공동인증')
+        );
+
+        // AnyID 관련 iframe 체크
+        const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
+          id: f.id, name: f.name, src: f.src,
+          w: f.offsetWidth, h: f.offsetHeight,
+        }));
+
+        return {
+          contentAreaTag: contentArea.tagName,
+          contentAreaCls: contentArea.className?.toString()?.substring(0, 100) || '',
+          phoneAuthElements,
+          allTabCount: tabElements.length,
+          iframes,
+          urlHash: window.location.hash,
+        };
+      });
+
+      log(`컨텐츠 영역: ${anyidDom.contentAreaTag}.${anyidDom.contentAreaCls}`);
+      log(`URL 해시: ${anyidDom.urlHash}`);
+      log(`전체 탭 요소: ${anyidDom.allTabCount}개`);
+      log(`인증 관련 요소: ${anyidDom.phoneAuthElements?.length || 0}개`);
+      for (const el of (anyidDom.phoneAuthElements || [])) {
+        log(`  - [${el.tag}] text="${el.text}" cls="${el.cls}" id="${el.id}" role="${el.role}" (${el.x},${el.y} ${el.w}x${el.h})`);
+      }
+      log(`iframe: ${anyidDom.iframes?.length || 0}개`);
+      for (const f of (anyidDom.iframes || [])) {
+        log(`  - iframe: id=${f.id} name=${f.name} src=${f.src} ${f.w}x${f.h}`);
       }
 
-      if (!phoneAuthClicked) {
-        log('휴대폰 본인인증 탭을 찾지 못함. 페이지 텍스트로 검색 시도...');
-        // 텍스트 기반 클릭
-        const allElements = await page.$$('a, button, div[role="tab"], li');
-        for (const el of allElements) {
-          const text = await el.textContent().catch(() => '');
-          if (text && text.includes('휴대폰') && text.includes('인증')) {
-            await el.click();
-            phoneAuthClicked = true;
-            log(`휴대폰 본인인증 탭 텍스트 매칭 클릭 성공`);
-            break;
+      // 정확한 "휴대폰 본인인증" 탭 클릭
+      // evaluate 내에서 직접 클릭 (SPA 라우터 이벤트가 정상 전파되도록)
+      const clickResult = await page.evaluate(() => {
+        // 방법 1: AnyID SPA의 탭 링크 (정확한 텍스트 매칭)
+        const allLinks = document.querySelectorAll('a, button, div[role="button"], li, span');
+        for (const el of allLinks) {
+          const text = (el.textContent || '').trim();
+          // "휴대폰 본인인증"만 정확히 매칭 (부모 컨테이너의 긴 텍스트 제외)
+          if (text === '휴대폰 본인인증' || text === '휴대전화 본인인증 로그인') {
+            el.click();
+            return { clicked: true, text, tag: el.tagName, cls: el.className?.toString()?.substring(0, 80) };
           }
         }
-      }
 
-      if (phoneAuthClicked) {
-        await humanDelay(3000, 5000);
+        // 방법 2: 내부 텍스트가 정확히 "휴대폰 본인인증"인 요소
+        const xpath = "//a[normalize-space(text())='휴대폰 본인인증'] | //button[normalize-space(text())='휴대폰 본인인증'] | //div[normalize-space(text())='휴대폰 본인인증'] | //span[normalize-space(text())='휴대폰 본인인증'] | //li[normalize-space(text())='휴대폰 본인인증']";
+        const xpathResult = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        if (xpathResult.singleNodeValue) {
+          xpathResult.singleNodeValue.click();
+          return { clicked: true, text: 'xpath match', tag: xpathResult.singleNodeValue.tagName };
+        }
+
+        return { clicked: false };
+      });
+
+      log(`직접 클릭 결과: ${JSON.stringify(clickResult)}`);
+
+      if (clickResult.clicked) {
+        // SPA 라우터 전환 대기 (Vue/React는 비동기 렌더링)
+        await humanDelay(5000, 8000);
+
+        // URL 해시 변경 확인
+        const newHash = await page.evaluate(() => window.location.hash);
+        log(`탭 클릭 후 URL 해시: ${newHash}`);
+
         await stealthScreenshot(page, `car365_phone_auth_tab_${taskId.slice(0, 8)}`);
 
         // 인증 폼 구조 분석
