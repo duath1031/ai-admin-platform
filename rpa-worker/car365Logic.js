@@ -350,24 +350,192 @@ async function startTransfer(data) {
     log(`모달: ${loginPageDump.modals?.length || 0}개`);
     log(`버튼/링크: ${loginPageDump.elements?.length || 0}개`);
 
-    // Step 4: 간편인증 방식 선택 (PASS/카카오/네이버 등)
-    // AnyID는 정부통합인증으로, iframe 또는 팝업을 통해 인증 진행
+    // Step 4: 휴대폰 본인인증 진행
     let authTriggered = false;
+    let authStatus = 'login_page_loaded';
 
-    // iframe 안에 인증 폼이 있는지 확인
-    const authFrames = page.frames().filter(f => {
-      const url = f.url();
-      return url.includes('anyid') || url.includes('cert') || url.includes('sso') || url.includes('pass');
-    });
+    try {
+      // "휴대폰 본인인증" 탭/링크 클릭
+      log('휴대폰 본인인증 탭 클릭 시도...');
 
-    if (authFrames.length > 0) {
-      log(`인증 iframe 발견: ${authFrames.length}개`);
-      for (const frame of authFrames) {
-        log(`  - iframe URL: ${frame.url()}`);
+      // AnyID 로그인 페이지에서 "휴대폰 본인인증" 찾기
+      const phoneAuthSelectors = [
+        'a:has-text("휴대폰 본인인증")',
+        'button:has-text("휴대폰 본인인증")',
+        'li:has-text("휴대폰 본인인증") a',
+        'div:has-text("휴대폰 본인인증")',
+        '[class*="tab"]:has-text("휴대폰")',
+      ];
+
+      let phoneAuthClicked = false;
+      for (const sel of phoneAuthSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el && await el.isVisible()) {
+            await el.click();
+            phoneAuthClicked = true;
+            log(`휴대폰 본인인증 탭 클릭 성공: ${sel}`);
+            break;
+          }
+        } catch (e) { /* continue */ }
       }
+
+      if (!phoneAuthClicked) {
+        log('휴대폰 본인인증 탭을 찾지 못함. 페이지 텍스트로 검색 시도...');
+        // 텍스트 기반 클릭
+        const allElements = await page.$$('a, button, div[role="tab"], li');
+        for (const el of allElements) {
+          const text = await el.textContent().catch(() => '');
+          if (text && text.includes('휴대폰') && text.includes('인증')) {
+            await el.click();
+            phoneAuthClicked = true;
+            log(`휴대폰 본인인증 탭 텍스트 매칭 클릭 성공`);
+            break;
+          }
+        }
+      }
+
+      if (phoneAuthClicked) {
+        await humanDelay(3000, 5000);
+        await stealthScreenshot(page, `car365_phone_auth_tab_${taskId.slice(0, 8)}`);
+
+        // 인증 폼 구조 분석
+        const authFormDump = await page.evaluate(() => {
+          const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
+            tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+            placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+            label: e.closest('tr,div,label,li')?.querySelector('th,label,span')?.textContent?.trim()?.substring(0, 40) || '',
+            value: e.value || '',
+          })).filter(i => i.visible);
+
+          const buttons = Array.from(document.querySelectorAll('button, input[type="submit"], a.btn, a[class*="btn"]')).map(e => ({
+            id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
+            cls: e.className?.substring(0, 80) || '',
+            visible: e.offsetParent !== null,
+          })).filter(b => b.visible && b.text);
+
+          return { inputs, buttons, bodySnippet: document.body?.innerText?.substring(0, 3000) || '' };
+        });
+
+        log(`인증 폼 입력 필드: ${authFormDump.inputs?.length || 0}개`);
+        for (const inp of (authFormDump.inputs || [])) {
+          log(`  - [${inp.tag}] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" placeholder="${inp.placeholder}"`);
+        }
+        log(`인증 폼 버튼: ${authFormDump.buttons?.length || 0}개`);
+        for (const btn of (authFormDump.buttons || []).slice(0, 15)) {
+          log(`  - [btn] id=${btn.id} text="${btn.text}"`);
+        }
+
+        // 인증 정보 입력 시도
+        // 이름 입력
+        const nameSelectors = ['input[name*="name" i]', 'input[name*="nm" i]', 'input[id*="name" i]', 'input[placeholder*="이름"]', 'input[placeholder*="성명"]'];
+        for (const sel of nameSelectors) {
+          try {
+            const el = await page.$(sel);
+            if (el && await el.isVisible()) {
+              await el.fill('');
+              await el.type(name, { delay: 80 });
+              log(`이름 입력 성공: ${sel}`);
+              break;
+            }
+          } catch (e) { /* continue */ }
+        }
+
+        // 생년월일 입력
+        const birthSelectors = ['input[name*="birth" i]', 'input[name*="brdt" i]', 'input[id*="birth" i]', 'input[placeholder*="생년월일"]', 'input[placeholder*="YYMMDD"]'];
+        for (const sel of birthSelectors) {
+          try {
+            const el = await page.$(sel);
+            if (el && await el.isVisible()) {
+              await el.fill('');
+              await el.type(birthDate, { delay: 80 });
+              log(`생년월일 입력 성공: ${sel}`);
+              break;
+            }
+          } catch (e) { /* continue */ }
+        }
+
+        // 전화번호 입력
+        const phoneClean = phoneNumber.replace(/-/g, '');
+        const phoneSelectors = ['input[name*="phone" i]', 'input[name*="telno" i]', 'input[name*="mbtlnum" i]', 'input[id*="phone" i]', 'input[placeholder*="전화번호"]', 'input[placeholder*="휴대폰"]'];
+        for (const sel of phoneSelectors) {
+          try {
+            const el = await page.$(sel);
+            if (el && await el.isVisible()) {
+              await el.fill('');
+              await el.type(phoneClean, { delay: 80 });
+              log(`전화번호 입력 성공: ${sel}`);
+              break;
+            }
+          } catch (e) { /* continue */ }
+        }
+
+        // 통신사 선택
+        if (carrier) {
+          const selectEls = await page.$$('select');
+          for (const sel of selectEls) {
+            if (await sel.isVisible()) {
+              const options = await sel.evaluate(el => {
+                return Array.from(el.options).map(o => ({ value: o.value, text: o.textContent?.trim() }));
+              });
+              const carrierMap = { 'SK': ['SKT', 'SK텔레콤', 'SK', '01'], 'KT': ['KT', 'KT', '02'], 'LG': ['LG', 'LGU+', 'LG유플러스', '03'] };
+              const aliases = carrierMap[carrier.toUpperCase()] || [carrier];
+              const match = options.find(o => aliases.some(a => o.text?.includes(a) || o.value === a));
+              if (match) {
+                await sel.selectOption(match.value);
+                log(`통신사 선택 성공: ${carrier} → ${match.text} (${match.value})`);
+                break;
+              }
+            }
+          }
+        }
+
+        await humanDelay(1000, 2000);
+        await stealthScreenshot(page, `car365_auth_filled_${taskId.slice(0, 8)}`);
+
+        // 인증번호 요청 버튼 클릭
+        const authRequestSelectors = [
+          'button:has-text("인증번호")',
+          'button:has-text("인증 요청")',
+          'button:has-text("인증요청")',
+          'button:has-text("본인인증")',
+          'a:has-text("인증번호")',
+          'input[type="button"][value*="인증"]',
+          'button:has-text("확인")',
+          'button:has-text("요청")',
+        ];
+
+        let authRequested = false;
+        for (const sel of authRequestSelectors) {
+          try {
+            const el = await page.$(sel);
+            if (el && await el.isVisible()) {
+              await el.click();
+              authRequested = true;
+              log(`인증번호 요청 버튼 클릭: ${sel}`);
+              break;
+            }
+          } catch (e) { /* continue */ }
+        }
+
+        if (authRequested) {
+          authTriggered = true;
+          authStatus = 'auth_requested';
+          await humanDelay(3000, 5000);
+          await stealthScreenshot(page, `car365_auth_requested_${taskId.slice(0, 8)}`);
+        } else {
+          log('인증번호 요청 버튼을 찾지 못함');
+          authStatus = 'auth_form_loaded';
+        }
+
+        // 인증 폼 정보를 pageDump에 병합
+        loginPageDump.authFormDump = authFormDump;
+      }
+    } catch (authError) {
+      log(`인증 진행 중 오류: ${authError.message}`);
     }
 
-    // 세션 저장 (브라우저 세션 유지)
+    // 세션 저장 (브라우저 세션 유지 - 인증번호 입력/확인용)
     saveSession(taskId, {
       browser,
       page,
@@ -379,10 +547,12 @@ async function startTransfer(data) {
     return {
       success: true,
       taskId,
-      status: authTriggered ? 'auth_requested' : 'login_page_loaded',
+      status: authStatus,
       message: authTriggered
-        ? '간편인증 요청이 발송되었습니다. 휴대폰에서 인증을 완료해 주세요.'
-        : '자동차365 로그인 페이지가 로드되었습니다. 사이트 구조를 확인해 주세요.',
+        ? '휴대폰 본인인증 요청이 발송되었습니다. 인증번호를 확인해 주세요.'
+        : authStatus === 'auth_form_loaded'
+          ? '인증 폼이 로드되었습니다. 폼 구조를 확인해 주세요.'
+          : '자동차365 로그인 페이지가 로드되었습니다.',
       pageDump: loginPageDump,
       logs,
     };
