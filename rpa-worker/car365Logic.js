@@ -555,14 +555,74 @@ async function startTransfer(data) {
             }
 
             // 주민등록번호 뒷자리 7자리 입력 (id=stkhIdntfNo2, password 필드)
+            // ★ TouchEn nxKey 보안 키보드가 필드를 readonly로 만들므로 JS로 직접 주입
             if (idNumberBack) {
               try {
-                const ssnBackEl = await page.$('#stkhIdntfNo2');
-                if (ssnBackEl && await ssnBackEl.isVisible()) {
-                  await ssnBackEl.fill('');
-                  await ssnBackEl.type(idNumberBack, { delay: 80 });
-                  log(`주민번호 뒷자리 입력 성공: stkhIdntfNo2`);
+                // 방법 1: JS evaluate로 필드 속성 해제 + 값 직접 설정 + KnockoutJS 바인딩 트리거
+                const ssnBackResult = await page.evaluate((val) => {
+                  const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
+                  if (!el) return { success: false, error: 'element not found' };
+
+                  // TouchEn 보안 키보드 속성 해제
+                  el.removeAttribute('readonly');
+                  el.removeAttribute('disabled');
+                  el.readOnly = false;
+                  el.disabled = false;
+
+                  // 값 직접 설정
+                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                  nativeInputValueSetter.call(el, val);
+
+                  // React/KnockoutJS 이벤트 트리거 (바인딩 업데이트)
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                  el.dispatchEvent(new Event('keyup', { bubbles: true }));
+                  el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+                  el.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true }));
+
+                  // KnockoutJS valueUpdate 트리거
+                  if (typeof ko !== 'undefined') {
+                    try {
+                      const context = ko.contextFor(el);
+                      if (context) {
+                        const observable = ko.dataFor(el);
+                        if (observable && observable.stkhIdntfNo2) {
+                          observable.stkhIdntfNo2(val);
+                        }
+                      }
+                    } catch (e) { /* ko not bound */ }
+                  }
+
+                  return { success: true, value: el.value };
+                }, idNumberBack);
+
+                if (ssnBackResult.success) {
+                  log(`주민번호 뒷자리 JS 주입 성공: stkhIdntfNo2 (value=${ssnBackResult.value ? 'SET' : 'EMPTY'})`);
+                } else {
+                  log(`주민번호 뒷자리 JS 주입 실패: ${ssnBackResult.error}`);
                 }
+
+                // 방법 2: 폴백 - dispatchEvent로 키보드 이벤트 시뮬레이션
+                if (!ssnBackResult.success || !ssnBackResult.value) {
+                  log('폴백: keyboard dispatch 시도...');
+                  await page.evaluate((val) => {
+                    const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
+                    if (!el) return;
+                    el.focus();
+                    el.readOnly = false;
+                    el.disabled = false;
+                    for (const char of val) {
+                      el.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: `Digit${char}`, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), bubbles: true }));
+                      el.dispatchEvent(new KeyboardEvent('keypress', { key: char, code: `Digit${char}`, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), bubbles: true }));
+                      el.value += char;
+                      el.dispatchEvent(new Event('input', { bubbles: true }));
+                      el.dispatchEvent(new KeyboardEvent('keyup', { key: char, code: `Digit${char}`, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), bubbles: true }));
+                    }
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                  }, idNumberBack);
+                  log('폴백 keyboard dispatch 완료');
+                }
+
               } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
             } else {
               log('⚠️ 주민번호 뒷자리(idNumberBack) 미제공 - 실명인증 불가능');
@@ -602,7 +662,44 @@ async function startTransfer(data) {
 
             if (step2Next) {
               await humanDelay(2000, 3000);
-              await stealthScreenshot(page, `car365_step3_${taskId.slice(0, 8)}`);
+              await stealthScreenshot(page, `car365_step2_result_${taskId.slice(0, 8)}`);
+
+              // 실명인증 결과 확인 - 에러 모달 감지
+              const step2Result = await page.evaluate(() => {
+                const bodyText = document.body?.innerText || '';
+                // 에러 모달 감지 (_btn_error_modify 버튼 존재 여부)
+                const errorModal = document.querySelector('#_btn_error_modify');
+                const hasError = errorModal && errorModal.offsetParent !== null;
+                // 3단계(본인인증) 진입 여부 - "본인인증" step이 current인지
+                const stepText = bodyText.match(/현재스텝\s*(\d)단계/) || bodyText.match(/(\d)단계\s*\/\s*3단계/);
+                const currentStep = stepText ? parseInt(stepText[1]) : 0;
+                // 에러 메시지 추출
+                const errorMsg = bodyText.match(/(주의[^\n]*)/g) || [];
+                return {
+                  hasError,
+                  currentStep,
+                  errorMessages: errorMsg,
+                  hasPhoneInput: !!document.querySelector('input[name*="tel"], input[name*="phone"], input[name*="hp"], input[type="tel"]'),
+                  bodySnippet: bodyText.substring(0, 500),
+                };
+              });
+
+              log(`실명인증 결과: 에러=${step2Result.hasError}, 현재단계=${step2Result.currentStep}`);
+              if (step2Result.errorMessages?.length > 0) {
+                log(`에러 메시지: ${step2Result.errorMessages.join(', ')}`);
+              }
+
+              if (step2Result.hasError) {
+                // 에러 모달 닫기
+                const closeBtn = await page.$('#_btn_error_modify') || await page.$('.close-layer');
+                if (closeBtn) {
+                  await closeBtn.click();
+                  log('에러 모달 닫기 버튼 클릭');
+                  await humanDelay(500, 1000);
+                }
+                authStatus = 'identity_verification_failed';
+                log('⚠️ 실명인증 실패 - 주민번호 검증 에러');
+              }
 
               // Step 4-6: 3단계 본인인증 페이지 분석 + 인증요청
               log('3단계: 본인인증 페이지...');
