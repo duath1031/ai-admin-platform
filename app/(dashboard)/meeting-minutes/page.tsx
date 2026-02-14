@@ -119,6 +119,7 @@ export default function MeetingMinutesPage() {
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [isLoading, setIsLoading] = useState(false);
   const [resultContent, setResultContent] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -164,7 +165,18 @@ export default function MeetingMinutesPage() {
         throw new Error(data.error || "회의록 생성에 실패했습니다.");
       }
 
-      setResultContent(data.content);
+      // AI 플레이스홀더 라인 제거 (추가 정보 필요, 기재 필요 등)
+      const cleaned = data.content
+        .split("\n")
+        .filter((line: string) => {
+          const trimmed = line.trim();
+          if (/^\|?\s*\(추가.+필요\)\s*\|?\s*$/.test(trimmed)) return false;
+          if (/^\|?\s*\(.+정보\s*필요\)\s*\|?\s*$/.test(trimmed)) return false;
+          if (/^\|?\s*\(.+기재\s*필요\)\s*\|?\s*$/.test(trimmed)) return false;
+          return true;
+        })
+        .join("\n");
+      setResultContent(cleaned);
     } catch (e) {
       setError(e instanceof Error ? e.message : "오류가 발생했습니다.");
     } finally {
@@ -555,6 +567,19 @@ ${resultContent}
                   </div>
                   <div className="flex items-center gap-2 print:hidden">
                     <button
+                      onClick={() => setIsEditing(!isEditing)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                        isEditing
+                          ? "text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100"
+                          : "text-gray-700 bg-gray-50 border border-gray-200 hover:bg-gray-100"
+                      }`}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+                      </svg>
+                      {isEditing ? "미리보기" : "편집"}
+                    </button>
+                    <button
                       onClick={handleCopy}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
                     >
@@ -594,14 +619,23 @@ ${resultContent}
                     </button>
                   </div>
                 </div>
-                {/* Document Preview */}
+                {/* Document Preview / Edit */}
                 <div
                   ref={previewRef}
                   className="p-6 sm:p-8 max-h-[80vh] overflow-y-auto"
                 >
-                  <div className="bg-white border border-gray-300 rounded p-6 sm:p-8 shadow-inner font-serif text-[15px] leading-relaxed text-gray-800 whitespace-pre-wrap">
-                    {resultContent}
-                  </div>
+                  {isEditing ? (
+                    <textarea
+                      value={resultContent}
+                      onChange={(e) => setResultContent(e.target.value)}
+                      className="w-full min-h-[500px] p-6 border border-blue-300 rounded font-serif text-[15px] leading-relaxed text-gray-800 resize-y focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="생성된 회의록을 편집하세요..."
+                    />
+                  ) : (
+                    <div className="bg-white border border-gray-300 rounded p-6 sm:p-8 shadow-inner font-serif text-[15px] leading-relaxed text-gray-800 whitespace-pre-wrap">
+                      {resultContent}
+                    </div>
+                  )}
                   <div className="hidden print:block text-center mt-8 pt-4 border-t border-gray-200">
                     <p className="text-[10px] text-gray-400">어드미니(Admini) | aiadminplatform.vercel.app</p>
                   </div>
