@@ -577,89 +577,141 @@ async function startTransfer(data) {
             }
 
             // 주민등록번호 뒷자리 7자리 입력 (id=stkhIdntfNo2, password 필드)
-            // ★ TouchEn nxKey 보안 키보드가 필드를 readonly로 만듦
-            // → MutationObserver + JS로 readonly 해제 → Playwright type()로 실제 키입력
+            // ★ TouchEn nxKey 보안 키보드 때문에 KO 바인딩이 DOM 이벤트를 감지 못함
+            // → KnockoutJS ViewModel에 직접 값을 설정하는 방식 사용
             if (idNumberBack) {
               try {
-                // Step A: JS로 필드 editable 강제 전환 + focus
-                await page.evaluate(() => {
-                  const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
-                  if (!el) return;
-                  // readonly/disabled 해제
-                  el.removeAttribute('readonly');
-                  el.removeAttribute('disabled');
-                  el.readOnly = false;
-                  el.disabled = false;
-                  // type을 text로 변경 (password 보안 해제) 후 다시 password로
-                  // 일부 보안 프로그램은 password type에 대해 추가 잠금
-                  el.setAttribute('type', 'text');
-                  el.type = 'text';
-                  el.focus();
-                  el.click();
-                });
-                await humanDelay(300, 500);
+                // ★ 핵심: KnockoutJS ViewModel을 찾아서 모든 필드를 직접 설정
+                const koSetResult = await page.evaluate(({ nameVal, ssnFront, ssnBack }) => {
+                  const results = { koFound: false, vmKeys: [], setResults: {} };
 
-                // Step B: Playwright의 실제 키보드 타이핑 (KO textInput 바인딩이 감지)
-                log('주민번호 뒷자리: type=text 전환 후 Playwright 키보드 입력 시도...');
-                const ssnBackEl = await page.$('#stkhIdntfNo2') || await page.$('input[name="stkhIdntfNo2"]');
-                if (ssnBackEl) {
-                  try {
-                    await ssnBackEl.fill('');
-                    await ssnBackEl.type(idNumberBack, { delay: 100 });
-                    log('주민번호 뒷자리 Playwright type() 성공');
-                  } catch (fillErr) {
-                    log(`Playwright type 실패: ${fillErr.message}, 폴백 시도...`);
-                    // Step C 폴백: 필드 클릭 후 page.keyboard 사용
-                    await ssnBackEl.click();
-                    await humanDelay(200, 300);
-                    await page.keyboard.type(idNumberBack, { delay: 100 });
-                    log('주민번호 뒷자리 page.keyboard.type() 성공');
+                  if (typeof ko === 'undefined') {
+                    results.error = 'ko is undefined';
+                    return results;
+                  }
+
+                  // KO ViewModel 탐색 - 여러 컨테이너에서 시도
+                  const containers = [
+                    document.querySelector('.tab-area'),
+                    document.querySelector('#content-section'),
+                    document.querySelector('[data-bind]'),
+                    document.querySelector('.tab-content'),
+                    document.body,
+                  ].filter(Boolean);
+
+                  let vm = null;
+                  let vmContext = null;
+
+                  for (const container of containers) {
+                    try {
+                      vmContext = ko.contextFor(container);
+                      if (vmContext && vmContext.$root) {
+                        vm = vmContext.$root;
+                        results.koFound = true;
+                        break;
+                      }
+                    } catch (e) { /* continue */ }
+                    try {
+                      const data = ko.dataFor(container);
+                      if (data) {
+                        vm = data;
+                        results.koFound = true;
+                        break;
+                      }
+                    } catch (e) { /* continue */ }
+                  }
+
+                  if (!vm) {
+                    // 폴백: data-bind 속성이 있는 모든 요소에서 VM 찾기
+                    const bindEls = document.querySelectorAll('[data-bind]');
+                    for (const el of bindEls) {
+                      try {
+                        const data = ko.dataFor(el);
+                        if (data && (typeof data.stkhIdntfNo2 === 'function' || typeof data.mbrNm === 'function')) {
+                          vm = data;
+                          results.koFound = true;
+                          break;
+                        }
+                      } catch (e) { /* continue */ }
+                    }
+                  }
+
+                  if (!vm) {
+                    results.error = 'KO ViewModel not found';
+                    return results;
+                  }
+
+                  // VM의 키 목록 (디버그용)
+                  results.vmKeys = Object.keys(vm).filter(k => typeof vm[k] === 'function').slice(0, 30);
+
+                  // 모든 관련 observable 설정 시도
+                  const setObservable = (name, val) => {
+                    if (vm[name] && typeof vm[name] === 'function') {
+                      try {
+                        vm[name](val);
+                        results.setResults[name] = { success: true, value: vm[name]() };
+                        return true;
+                      } catch (e) {
+                        results.setResults[name] = { success: false, error: e.message };
+                      }
+                    }
+                    // $root에서도 시도
+                    if (vmContext && vmContext.$root && vmContext.$root[name] && typeof vmContext.$root[name] === 'function') {
+                      try {
+                        vmContext.$root[name](val);
+                        results.setResults[name + '_root'] = { success: true, value: vmContext.$root[name]() };
+                        return true;
+                      } catch (e) { /* continue */ }
+                    }
+                    return false;
+                  };
+
+                  // 이름 설정
+                  setObservable('mbrNm', nameVal);
+                  // 주민번호 앞자리
+                  setObservable('stkhIdntfNo1', ssnFront);
+                  // 주민번호 뒷자리 (핵심!)
+                  setObservable('stkhIdntfNo2', ssnBack);
+                  // 내국인/외국인 구분 (01=내국인)
+                  setObservable('stkhIdntfNoTypeCd', '01');
+
+                  // 값 설정 확인
+                  results.verifyMbrNm = vm.mbrNm ? vm.mbrNm() : 'N/A';
+                  results.verifyNo1 = vm.stkhIdntfNo1 ? vm.stkhIdntfNo1() : 'N/A';
+                  results.verifyNo2 = vm.stkhIdntfNo2 ? vm.stkhIdntfNo2() : 'N/A';
+
+                  return results;
+                }, { nameVal: name, ssnFront: birthDate?.length === 8 ? birthDate.substring(2) : birthDate, ssnBack: idNumberBack });
+
+                log(`KO ViewModel 결과: found=${koSetResult.koFound}`);
+                if (koSetResult.vmKeys?.length > 0) {
+                  log(`VM 키: ${koSetResult.vmKeys.join(', ')}`);
+                }
+                if (koSetResult.setResults) {
+                  for (const [key, val] of Object.entries(koSetResult.setResults)) {
+                    log(`  KO.${key}: success=${val.success}${val.value ? ', value=SET' : ''}${val.error ? ', err=' + val.error : ''}`);
                   }
                 }
+                log(`검증: mbrNm=${koSetResult.verifyMbrNm}, No1=${koSetResult.verifyNo1}, No2=${koSetResult.verifyNo2 ? 'SET' : 'EMPTY'}`);
 
-                // Step D: type을 다시 password로 복원 (보안) + KO observable 직접 설정
-                const koResult = await page.evaluate((val) => {
+                if (koSetResult.error) {
+                  log(`KO 오류: ${koSetResult.error}`);
+                }
+
+                // DOM 값도 동기화 (실명인증 버튼의 클라이언트 검증 통과용)
+                await page.evaluate(({ ssnBack }) => {
                   const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
-                  if (!el) return { found: false };
-
-                  // KnockoutJS observable 직접 설정
-                  let koSet = false;
-                  if (typeof ko !== 'undefined') {
-                    try {
-                      const data = ko.dataFor(el);
-                      if (data) {
-                        // stkhIdntfNo2 observable 직접 업데이트
-                        if (typeof data.stkhIdntfNo2 === 'function') {
-                          data.stkhIdntfNo2(val);
-                          koSet = true;
-                        }
-                        // 다른 가능한 이름들
-                        if (typeof data.idNo2 === 'function') { data.idNo2(val); koSet = true; }
-                        if (typeof data.ssnBack === 'function') { data.ssnBack(val); koSet = true; }
-                      }
-                    } catch (e) { /* KO binding error */ }
+                  if (el) {
+                    el.removeAttribute('readonly');
+                    el.removeAttribute('disabled');
+                    el.readOnly = false;
+                    el.disabled = false;
+                    el.type = 'text';
+                    el.value = ssnBack;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
                   }
-
-                  // 값 확인
-                  return {
-                    found: true,
-                    domValue: el.value,
-                    koSet,
-                    fieldType: el.type,
-                  };
-                }, idNumberBack);
-
-                log(`뒷자리 결과: DOM값=${koResult.domValue ? 'SET' : 'EMPTY'}, KO설정=${koResult.koSet}, type=${koResult.fieldType}`);
-
-                // Step E: password 필드의 모의검수 통과를 위해 blur + change 이벤트 발생
-                await page.evaluate(() => {
-                  const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
-                  if (!el) return;
-                  // type 복원은 하지 않음 (text 상태에서 검증이 더 잘 됨)
-                  el.dispatchEvent(new Event('input', { bubbles: true }));
-                  el.dispatchEvent(new Event('change', { bubbles: true }));
-                  el.dispatchEvent(new Event('blur', { bubbles: true }));
-                });
+                }, { ssnBack: idNumberBack });
 
               } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
             } else {
