@@ -53,21 +53,28 @@ const REGIONS = [
 export default function TransferOnlinePage() {
   const router = useRouter();
   const [serviceType, setServiceType] = useState<ServiceType>(null);
-  const [step, setStep] = useState(1); // 1: 양도인/양수인, 2: 차량/거래, 3: 확인
+  const [step, setStep] = useState(1); // 1: 양도인/양수인, 2: 차량/거래, 3: 확인, 4: 본인인증
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{ requestNumber: string; requestId: string } | null>(null);
   const [error, setError] = useState("");
+  // RPA 본인인증 상태
+  const [authStep, setAuthStep] = useState<"idle" | "requesting" | "waiting" | "confirming" | "done">("idle");
+  const [rpaTaskId, setRpaTaskId] = useState("");
+  const [carrier, setCarrier] = useState("SKT");
 
   const updateForm = (key: keyof FormData, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = async () => {
+  // Step 1: DB 접수 + RPA 본인인증 요청
+  const handleStartAuth = async () => {
     setIsSubmitting(true);
     setError("");
+    setAuthStep("requesting");
     try {
-      const res = await fetch("/api/fleet/transfer-online", {
+      // DB에 접수 먼저 저장
+      const dbRes = await fetch("/api/fleet/transfer-online", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -90,11 +97,81 @@ export default function TransferOnlinePage() {
           agencyFee: 16500,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "접수 실패");
-      setResult({ requestNumber: data.data.requestNumber, requestId: data.data.requestId });
+      const dbData = await dbRes.json();
+      if (!dbRes.ok) throw new Error(dbData.error || "접수 실패");
+
+      // RPA 본인인증 요청
+      const rpaRes = await fetch("/api/rpa/car365-transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "start",
+          name: form.buyerName,
+          phoneNumber: form.buyerPhone,
+          carrier,
+          birthDate: form.buyerIdNumber, // 생년월일 6자리
+          sellerName: form.sellerName,
+          sellerPhone: form.sellerPhone,
+          buyerName: form.buyerName,
+          buyerPhone: form.buyerPhone,
+          buyerAddress: form.buyerAddress,
+          vehicleName: form.vehicleName,
+          plateNumber: form.plateNumber,
+          modelYear: form.modelYear,
+          mileage: form.mileage,
+          salePrice: form.salePrice,
+          transferDate: form.transferDate,
+          region: form.region,
+        }),
+      });
+      const rpaData = await rpaRes.json();
+
+      if (rpaData.taskId) {
+        setRpaTaskId(rpaData.taskId);
+        setAuthStep("waiting");
+        setStep(4);
+      } else {
+        // RPA 실패 시에도 DB 접수는 완료됨
+        setResult({ requestNumber: dbData.data.requestNumber, requestId: dbData.data.requestId });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "접수 중 오류가 발생했습니다.");
+      setAuthStep("idle");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 2: 인증 완료 후 RPA로 이전등록 제출
+  const handleConfirmAuth = async () => {
+    setIsSubmitting(true);
+    setError("");
+    setAuthStep("confirming");
+    try {
+      const res = await fetch("/api/rpa/car365-transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "confirm",
+          taskId: rpaTaskId,
+          autoSubmit: true,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setAuthStep("done");
+        setResult({
+          requestNumber: data.receiptNumber || rpaTaskId.slice(0, 12),
+          requestId: rpaTaskId,
+        });
+      } else {
+        setError(data.error || "이전등록 제출에 실패했습니다.");
+        setAuthStep("waiting");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "제출 중 오류가 발생했습니다.");
+      setAuthStep("waiting");
     } finally {
       setIsSubmitting(false);
     }
@@ -369,8 +446,9 @@ export default function TransferOnlinePage() {
       <div className="flex items-center gap-2">
         {[
           { num: 1, label: "당사자 정보" },
-          { num: 2, label: "차량·거래 정보" },
-          { num: 3, label: "확인·접수" },
+          { num: 2, label: "차량·거래" },
+          { num: 3, label: "확인" },
+          { num: 4, label: "본인인증" },
         ].map((s, i) => (
           <div key={s.num} className="flex items-center gap-2 flex-1">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
@@ -381,7 +459,7 @@ export default function TransferOnlinePage() {
               ) : s.num}
             </div>
             <span className={`text-xs font-medium hidden sm:inline ${step >= s.num ? "text-blue-600" : "text-gray-400"}`}>{s.label}</span>
-            {i < 2 && <div className={`flex-1 h-0.5 ${step > s.num ? "bg-blue-600" : "bg-gray-200"}`} />}
+            {i < 3 && <div className={`flex-1 h-0.5 ${step > s.num ? "bg-blue-600" : "bg-gray-200"}`} />}
           </div>
         ))}
       </div>
@@ -605,21 +683,112 @@ export default function TransferOnlinePage() {
             </div>
           )}
 
+          {/* 본인인증 수단 */}
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+            <h4 className="text-sm font-bold text-gray-800 mb-3">본인인증 (양수인)</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">통신사</label>
+                <select value={carrier} onChange={(e) => setCarrier(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                  <option value="SKT">SKT</option>
+                  <option value="KT">KT</option>
+                  <option value="LGU+">LG U+</option>
+                  <option value="SKT_MVNO">SKT 알뜰폰</option>
+                  <option value="KT_MVNO">KT 알뜰폰</option>
+                  <option value="LGU+_MVNO">LG 알뜰폰</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <p className="text-xs text-gray-500 pb-2">
+                  자동차365에서 휴대폰 본인인증이 진행됩니다.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+
           <div className="flex justify-between">
             <button onClick={() => setStep(2)} className="px-6 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors">
               이전
             </button>
             <button
-              onClick={handleSubmit}
+              onClick={handleStartAuth}
               disabled={isSubmitting}
               className="px-8 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
             >
               {isSubmitting ? (
                 <>
                   <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
-                  접수 중...
+                  인증 요청 중...
                 </>
-              ) : "이전등록 접수하기"}
+              ) : "본인인증 후 접수하기"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Step 4: 본인인증 대기 ─── */}
+      {step === 4 && (
+        <div className="space-y-5">
+          <div className="bg-white rounded-xl border-2 border-blue-200 p-8 text-center">
+            <div className="w-20 h-20 mx-auto bg-blue-50 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-10 h-10 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">휴대폰 본인인증</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              <strong>{form.buyerName}</strong>님의 휴대폰으로 인증 요청이 발송되었습니다.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              휴대폰에서 인증을 완료한 후 아래 버튼을 눌러주세요.
+            </p>
+
+            <div className="bg-blue-50 rounded-xl p-4 mb-6 max-w-sm mx-auto">
+              <div className="flex items-center gap-3 justify-center">
+                {authStep === "waiting" && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-yellow-400 rounded-full animate-pulse" />
+                    <span className="text-sm font-medium text-yellow-700">인증 대기 중</span>
+                  </div>
+                )}
+                {authStep === "confirming" && (
+                  <div className="flex items-center gap-2">
+                    <svg className="animate-spin w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+                    <span className="text-sm font-medium text-blue-700">이전등록 처리 중...</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 mb-4 max-w-sm mx-auto">
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={handleConfirmAuth}
+              disabled={isSubmitting || authStep === "confirming"}
+              className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-lg"
+            >
+              {authStep === "confirming" ? "처리 중..." : "인증 완료 - 이전등록 진행"}
+            </button>
+
+            <p className="text-xs text-gray-400 mt-4">
+              인증이 오지 않으면 이전 단계로 돌아가 다시 시도해 주세요.
+            </p>
+            <button
+              onClick={() => { setStep(3); setAuthStep("idle"); setError(""); }}
+              className="text-sm text-gray-500 underline mt-2 hover:text-gray-700"
+            >
+              이전 단계로 돌아가기
             </button>
           </div>
         </div>

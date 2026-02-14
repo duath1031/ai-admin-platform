@@ -27,6 +27,12 @@ const {
   searchDoc24Orgs,
 } = require('./doc24Logic');
 
+const {
+  startTransfer,
+  confirmTransfer,
+  debugCar365Page,
+} = require('./car365Logic');
+
 // BullMQ 큐 시스템
 const { addJob, getJobStatus, isQueueAvailable, jobs: jobsMap } = require('./src/queue');
 const { startWorker, stopWorker } = require('./src/queueWorker');
@@ -92,7 +98,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     version: '2.0.0-doc24',
-    features: ['gov24-rpa', 'doc24-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
+    features: ['gov24-rpa', 'doc24-rpa', 'car365-rpa', 'rag-pipeline', 'in-memory-queue', 'stealth-browser'],
     queue: 'in-memory',
   });
 });
@@ -528,6 +534,85 @@ app.get('/screenshots/:filename', validateApiKey, (req, res) => {
       });
     }
   });
+});
+
+// =============================================================================
+// 자동차365 이전등록 엔드포인트
+// =============================================================================
+
+/**
+ * 자동차365 이전등록 시작 (본인인증 요청)
+ * POST /car365/transfer/start
+ * Body: { name, phoneNumber, carrier, birthDate, ...transferData }
+ */
+app.post('/car365/transfer/start', validateApiKey, async (req, res) => {
+  const { name, phoneNumber, carrier, birthDate } = req.body;
+
+  if (!name || !phoneNumber || !birthDate) {
+    return res.status(400).json({
+      success: false,
+      error: '이름, 전화번호, 생년월일은 필수입니다.',
+    });
+  }
+
+  console.log(`[Car365 Transfer Start] 시작: name=${name}, phone=***`);
+
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(504).json({ success: false, error: '작업 시간 초과 (60초)' });
+    }
+  }, 60000);
+
+  try {
+    const result = await startTransfer(req.body);
+    clearTimeout(timeout);
+    if (!res.headersSent) res.json(result);
+  } catch (error) {
+    clearTimeout(timeout);
+    console.error('[Car365 Transfer Start] Error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+/**
+ * 자동차365 이전등록 확인 (인증 완료 후 폼 제출)
+ * POST /car365/transfer/confirm
+ * Body: { taskId, autoSubmit? }
+ */
+app.post('/car365/transfer/confirm', validateApiKey, async (req, res) => {
+  const { taskId } = req.body;
+
+  if (!taskId) {
+    return res.status(400).json({ success: false, error: 'taskId is required' });
+  }
+
+  console.log(`[Car365 Transfer Confirm] taskId=${taskId}`);
+
+  try {
+    const result = await confirmTransfer(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('[Car365 Transfer Confirm] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * 자동차365 디버그: 페이지 구조 덤프
+ * GET /car365/debug
+ */
+app.get('/car365/debug', validateApiKey, async (req, res) => {
+  const url = req.query.url;
+
+  try {
+    const result = await debugCar365Page(url);
+    res.json(result);
+  } catch (error) {
+    console.error('[Car365 Debug] Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // =============================================================================
