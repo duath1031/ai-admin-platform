@@ -191,48 +191,22 @@ async function startTransfer(data) {
 
     await stealthScreenshot(page, `car365_main_${taskId.slice(0, 8)}`);
 
-    // Step 2: 로그인 버튼 클릭 → AnyID 인증 페이지
-    log('로그인 버튼 클릭 시도...');
-
-    // AnyID SSO 로그인 트리거
-    const loginTriggered = await page.evaluate(() => {
-      // 방법 1: 로그인 버튼 직접 클릭
-      const loginBtn = document.querySelector('.h-btn-login');
-      if (loginBtn) {
-        const link = loginBtn.querySelector('a');
-        if (link) { link.click(); return { method: 'btn-link', found: true }; }
-        loginBtn.click();
-        return { method: 'btn-direct', found: true };
-      }
-
-      // 방법 2: anyidAdaptor.ssoLoginPage 직접 호출
-      if (typeof anyidAdaptor !== 'undefined' && anyidAdaptor.ssoLoginPage) {
-        anyidAdaptor.ssoLoginPage('', '');
-        return { method: 'anyid-api', found: true };
-      }
-
-      // 방법 3: 로그인 페이지 직접 이동
-      return { method: 'none', found: false };
+    // Step 2: 로그인 페이지 직접 이동 (버튼 클릭 대신 goto로 안정적 이동)
+    // 버튼 클릭 시 보안 프로그램 다이얼로그 + SPA 라우팅으로 컨텍스트 파괴 발생
+    log('로그인 페이지 직접 이동...');
+    await page.goto(CAR365_URLS.login, {
+      waitUntil: 'domcontentloaded',
+      timeout: TIMEOUTS.navigation,
     });
 
-    log(`로그인 트리거 결과: ${JSON.stringify(loginTriggered)}`);
+    // AnyID SPA 페이지 안정화 대기 (Vue/React 라우터 초기화)
+    await humanDelay(8000, 12000);
 
-    if (!loginTriggered.found) {
-      log('로그인 버튼을 찾지 못함, 로그인 페이지 직접 이동...');
-      await page.goto(CAR365_URLS.login, {
-        waitUntil: 'domcontentloaded',
-        timeout: TIMEOUTS.navigation,
-      });
-    }
-
-    // 보안 다이얼로그 dismiss 후 페이지 안정화 대기
-    await humanDelay(5000, 8000);
-
-    // 네비게이션 완료 대기 (보안 다이얼로그 dismiss 후 로그인 페이지가 로드될 수 있음)
+    // 네비게이션 완료 대기
     try {
-      await page.waitForLoadState('domcontentloaded', { timeout: 15000 });
+      await page.waitForLoadState('networkidle', { timeout: 20000 });
     } catch (e) {
-      log(`loadState 대기 타임아웃 (무시): ${e.message}`);
+      log(`networkidle 대기 타임아웃 (무시): ${e.message}`);
     }
 
     await stealthScreenshot(page, `car365_login_${taskId.slice(0, 8)}`);
@@ -240,66 +214,71 @@ async function startTransfer(data) {
     const loginUrl = page.url();
     log(`로그인 페이지 URL: ${loginUrl}`);
 
-    // about:blank 체크 (보안 프로그램 리다이렉트 실패 시)
-    if (loginUrl === 'about:blank' || loginUrl.includes('raonsecure') || loginUrl.includes('download')) {
-      log('보안 프로그램 설치 페이지로 이동됨, 로그인 페이지로 재이동...');
-      await page.goto(CAR365_URLS.login, {
-        waitUntil: 'domcontentloaded',
-        timeout: TIMEOUTS.navigation,
-      });
-      await humanDelay(5000, 8000);
-      log(`재이동 후 URL: ${page.url()}`);
+    // Step 3: AnyID 간편인증 페이지 구조 분석 (재시도 포함)
+    let loginPageDump = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        loginPageDump = await page.evaluate(() => {
+          const body = document.body;
+          if (!body) return { error: 'no body' };
+
+          // 모든 버튼, 링크 수집
+          const elements = [];
+          document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [onclick]').forEach(el => {
+            const text = (el.textContent || el.value || '').trim();
+            if (text.length > 0 && text.length < 100) {
+              elements.push({
+                tag: el.tagName,
+                id: el.id,
+                cls: el.className?.substring(0, 80) || '',
+                text: text.substring(0, 60),
+                onclick: el.getAttribute('onclick')?.substring(0, 100) || '',
+                href: el.href || '',
+              });
+            }
+          });
+
+          // input 필드
+          const inputs = Array.from(document.querySelectorAll('input, select, textarea')).map(e => ({
+            tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+            placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+          })).filter(i => i.visible);
+
+          // iframe 확인
+          const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
+            id: f.id, name: f.name, src: f.src, visible: f.offsetParent !== null,
+          }));
+
+          // 팝업/모달 확인
+          const modals = Array.from(document.querySelectorAll('[role="dialog"], .modal, .popup, .layer-modal, [class*="layer"]')).map(m => ({
+            id: m.id, cls: m.className?.substring(0, 80) || '',
+            visible: m.offsetParent !== null,
+            text: m.textContent?.trim()?.substring(0, 200) || '',
+          })).filter(m => m.visible);
+
+          return {
+            title: document.title,
+            url: window.location.href,
+            bodySnippet: body.innerText?.substring(0, 2000) || '',
+            elements: elements.slice(0, 50),
+            inputs,
+            iframes,
+            modals,
+          };
+        });
+        break; // 성공 시 루프 탈출
+      } catch (evalError) {
+        log(`페이지 분석 시도 ${attempt + 1}/3 실패: ${evalError.message}`);
+        if (attempt < 2) {
+          await humanDelay(3000, 5000);
+          try { await page.waitForLoadState('domcontentloaded', { timeout: 10000 }); } catch (e) { /* ignore */ }
+        }
+      }
     }
 
-    // Step 3: AnyID 간편인증 팝업/페이지 구조 분석
-    const loginPageDump = await page.evaluate(() => {
-      const body = document.body;
-      if (!body) return { error: 'no body' };
-
-      // 모든 버튼, 링크 수집
-      const elements = [];
-      document.querySelectorAll('button, a, input[type="button"], input[type="submit"], [onclick]').forEach(el => {
-        const text = (el.textContent || el.value || '').trim();
-        if (text.length > 0 && text.length < 100) {
-          elements.push({
-            tag: el.tagName,
-            id: el.id,
-            cls: el.className?.substring(0, 80) || '',
-            text: text.substring(0, 60),
-            onclick: el.getAttribute('onclick')?.substring(0, 100) || '',
-            href: el.href || '',
-          });
-        }
-      });
-
-      // input 필드
-      const inputs = Array.from(document.querySelectorAll('input, select, textarea')).map(e => ({
-        tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
-        placeholder: e.placeholder || '', visible: e.offsetParent !== null,
-      })).filter(i => i.visible);
-
-      // iframe 확인 (AnyID가 iframe으로 인증창을 열 수 있음)
-      const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
-        id: f.id, name: f.name, src: f.src, visible: f.offsetParent !== null,
-      }));
-
-      // 팝업/모달 확인
-      const modals = Array.from(document.querySelectorAll('[role="dialog"], .modal, .popup, .layer-modal, [class*="layer"]')).map(m => ({
-        id: m.id, cls: m.className?.substring(0, 80) || '',
-        visible: m.offsetParent !== null,
-        text: m.textContent?.trim()?.substring(0, 200) || '',
-      })).filter(m => m.visible);
-
-      return {
-        title: document.title,
-        url: window.location.href,
-        bodySnippet: body.innerText?.substring(0, 2000) || '',
-        elements: elements.slice(0, 50),
-        inputs,
-        iframes,
-        modals,
-      };
-    });
+    if (!loginPageDump) {
+      loginPageDump = { error: 'evaluate 3회 실패', title: '', inputs: [], iframes: [], modals: [], elements: [], bodySnippet: '' };
+    }
 
     log(`로그인 페이지 제목: ${loginPageDump.title}`);
     log(`입력 필드: ${loginPageDump.inputs?.length || 0}개`);
