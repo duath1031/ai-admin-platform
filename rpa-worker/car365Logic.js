@@ -577,12 +577,13 @@ async function startTransfer(data) {
             }
 
             // ★ 핵심: KnockoutJS data-bind="textInput: model.stkhIdntfNo2"
-            // → vm.model 서브모델에 직접 값 설정 + checkRlnmCert 호출
+            // → vm.model 서브모델에 직접 값 설정 + DOM 직접 설정 + checkRlnmCert 분석
             let koModelResult = null;
             if (idNumberBack) {
               try {
                 const birthDateStr6 = birthDate?.length === 8 ? birthDate.substring(2) : birthDate;
 
+                // Phase 1: checkRlnmCert 소스코드 분석 + KO model 설정 (checkRlnmCert 호출 안함)
                 koModelResult = await page.evaluate(({ nameVal, ssnFront, ssnBack }) => {
                   const results = { success: false, setFields: {} };
 
@@ -597,14 +598,19 @@ async function startTransfer(data) {
                   } catch (e) {}
                   if (!vm) return { ...results, error: 'root VM not found' };
 
-                  // ★ model 서브모델에 접근 (data-bind="textInput: model.stkhIdntfNo2")
+                  // ★ model 서브모델에 접근
                   let model = null;
                   if (vm.model) {
                     model = ko.isObservable(vm.model) ? vm.model() : vm.model;
                   }
-                  if (!model) return { ...results, error: 'vm.model not found', vmKeys: Object.keys(vm).slice(0, 20) };
+                  if (!model) return { ...results, error: 'vm.model not found' };
 
-                  // model의 키 목록
+                  // ★ checkRlnmCert 소스코드 분석 (어디서 값을 읽는지 파악)
+                  if (typeof vm.checkRlnmCert === 'function') {
+                    results.checkRlnmCertSource = vm.checkRlnmCert.toString().substring(0, 1500);
+                  }
+
+                  // model의 키 목록 (설정 전 상태)
                   const modelKeys = [];
                   for (const k of Object.keys(model)) {
                     if (ko.isObservable(model[k])) {
@@ -614,7 +620,7 @@ async function startTransfer(data) {
                   }
                   results.modelKeys = modelKeys;
 
-                  // ★ model에 값 설정
+                  // ★ model에 값 설정 (stkhIdntfNoTypeCd는 기존값 유지!)
                   const setField = (key, val) => {
                     if (model[key] && ko.isObservable(model[key])) {
                       model[key](val);
@@ -628,31 +634,112 @@ async function startTransfer(data) {
                   setField('mbrNm', nameVal);
                   setField('stkhIdntfNo1', ssnFront);
                   setField('stkhIdntfNo2', ssnBack);
-                  setField('stkhIdntfNoTypeCd', '01');
+                  // stkhIdntfNoTypeCd는 기존값 '11' (내국인) 유지 - 덮어쓰지 않음
 
-                  results.success = true;
-
-                  // ★ checkRlnmCert 직접 호출 (실명인증 버튼 클릭 대신)
-                  if (typeof vm.checkRlnmCert === 'function') {
-                    try {
-                      vm.checkRlnmCert();
-                      results.checkCalled = true;
-                    } catch (e) {
-                      results.checkError = e.message;
+                  // ★ DOM 요소에도 직접 값 설정 + 이벤트 디스패치
+                  const pwInput = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
+                  if (pwInput) {
+                    // nativeInputValueSetter로 React/KO 바인딩 우회하여 DOM 값 설정
+                    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+                    if (nativeSetter) {
+                      nativeSetter.call(pwInput, ssnBack);
+                    } else {
+                      pwInput.value = ssnBack;
                     }
+                    // 이벤트 디스패치 (KO textInput 바인딩이 DOM 변경을 감지하도록)
+                    pwInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    pwInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    pwInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+                    results.domValueSet = true;
+                    results.domValue = pwInput.value ? pwInput.value.length + '자리' : 'EMPTY';
                   }
 
+                  // 설정 후 model 값 재확인
+                  const afterKeys = [];
+                  for (const k of ['mbrNm', 'stkhIdntfNo1', 'stkhIdntfNo2', 'stkhIdntfNoTypeCd']) {
+                    if (model[k] && ko.isObservable(model[k])) {
+                      const v = model[k]();
+                      afterKeys.push(k + '=' + (v !== null && v !== undefined ? String(v).substring(0, 15) : 'null'));
+                    }
+                  }
+                  results.afterModelKeys = afterKeys;
+
+                  results.success = true;
                   return results;
                 }, { nameVal: name, ssnFront: birthDateStr6, ssnBack: idNumberBack });
 
                 log(`KO model 설정: success=${koModelResult.success}`);
-                if (koModelResult.modelKeys) log(`model 키: ${koModelResult.modelKeys.join(', ')}`);
+                if (koModelResult.modelKeys) log(`model 키 (설정전): ${koModelResult.modelKeys.join(', ')}`);
+                if (koModelResult.afterModelKeys) log(`model 키 (설정후): ${koModelResult.afterModelKeys.join(', ')}`);
                 for (const [key, val] of Object.entries(koModelResult.setFields || {})) {
                   log(`  model.${key}: set=${val.set}, verify=${val.verify || 'N/A'}`);
                 }
-                if (koModelResult.checkCalled) log('✅ checkRlnmCert() 직접 호출 성공');
-                if (koModelResult.checkError) log(`checkRlnmCert 에러: ${koModelResult.checkError}`);
+                if (koModelResult.domValueSet) log(`DOM 직접 설정: ${koModelResult.domValue}`);
+                if (koModelResult.checkRlnmCertSource) {
+                  log(`checkRlnmCert 소스 (500자): ${koModelResult.checkRlnmCertSource.substring(0, 500)}`);
+                }
                 if (koModelResult.error) log(`오류: ${koModelResult.error}`);
+
+                // Phase 2: AJAX 요청 가로채기 설정 후 checkRlnmCert 호출
+                log('AJAX 가로채기 설정 + checkRlnmCert 호출...');
+
+                // XHR/fetch 가로채기로 실제 전송 데이터 확인
+                const ajaxResult = await page.evaluate(() => {
+                  return new Promise((resolve) => {
+                    const captured = { requests: [] };
+
+                    // XMLHttpRequest 가로채기
+                    const origOpen = XMLHttpRequest.prototype.open;
+                    const origSend = XMLHttpRequest.prototype.send;
+                    XMLHttpRequest.prototype.open = function(method, url) {
+                      this._rpaUrl = url;
+                      this._rpaMethod = method;
+                      return origOpen.apply(this, arguments);
+                    };
+                    XMLHttpRequest.prototype.send = function(body) {
+                      captured.requests.push({
+                        type: 'xhr',
+                        method: this._rpaMethod,
+                        url: this._rpaUrl,
+                        body: typeof body === 'string' ? body.substring(0, 500) : (body ? 'non-string' : 'null'),
+                      });
+                      return origSend.apply(this, arguments);
+                    };
+
+                    // checkRlnmCert 호출
+                    const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                    let vm = null;
+                    try {
+                      const ctx = ko.contextFor(rootEl);
+                      vm = ctx?.$root;
+                    } catch (e) {}
+
+                    if (vm && typeof vm.checkRlnmCert === 'function') {
+                      try {
+                        vm.checkRlnmCert();
+                        captured.checkCalled = true;
+                      } catch (e) {
+                        captured.checkError = e.message;
+                      }
+                    }
+
+                    // 200ms 대기 후 캡처된 요청 반환
+                    setTimeout(() => {
+                      // 원복
+                      XMLHttpRequest.prototype.open = origOpen;
+                      XMLHttpRequest.prototype.send = origSend;
+                      resolve(captured);
+                    }, 500);
+                  });
+                });
+
+                log(`checkRlnmCert 호출: ${ajaxResult.checkCalled ? '성공' : '실패'}`);
+                if (ajaxResult.checkError) log(`checkRlnmCert 에러: ${ajaxResult.checkError}`);
+                log(`가로챈 AJAX 요청: ${ajaxResult.requests?.length || 0}건`);
+                for (const req of (ajaxResult.requests || [])) {
+                  log(`  [${req.type}] ${req.method} ${req.url}`);
+                  if (req.body && req.body !== 'null') log(`    body: ${req.body}`);
+                }
 
               } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
             } else {
