@@ -6,17 +6,26 @@ import { Card, CardContent } from "@/components/ui";
 
 const serviceCategories = [
   {
-    title: "기업행정 AI",
+    title: "행정 AI",
     emoji: "📋",
     color: "blue",
     items: [
-      { name: "AI 행정 상담", href: "/chat", desc: "인허가·절차 AI 상담" },
       { name: "민원 자동접수", href: "/submission", desc: "정부24·문서24 접수" },
       { name: "인허가 자가진단", href: "/permit-check", desc: "건축행정 GIS 진단" },
       { name: "저작권 등록", href: "/copyright", desc: "등록 가이드·신청서" },
       { name: "내용증명", href: "/legal-notice", desc: "내용증명 작성" },
       { name: "회의록 AI", href: "/meeting-minutes", desc: "녹취록 자동 요약" },
+    ],
+  },
+  {
+    title: "기업행정 AI",
+    emoji: "🏢",
+    color: "slate",
+    items: [
       { name: "연구노트 (KOITA)", href: "/research-note", desc: "표준 양식·타임스탬프" },
+      { name: "정책자금/정부지원", href: "/fund-matching", desc: "보조금24 통합 매칭" },
+      { name: "인증 자가진단", href: "/certification-check", desc: "벤처·ISO·이노비즈" },
+      { name: "사업계획서 AI", href: "/chat?q=사업계획서 작성을 도와주세요", desc: "AI 대필·검토" },
     ],
   },
   {
@@ -58,15 +67,6 @@ const serviceCategories = [
     ],
   },
   {
-    title: "정책자금/정부지원",
-    emoji: "💰",
-    color: "purple",
-    items: [
-      { name: "정책자금/정부지원", href: "/fund-matching", desc: "보조금24 통합 매칭" },
-      { name: "인증 자가진단", href: "/certification-check", desc: "벤처·ISO·이노비즈" },
-    ],
-  },
-  {
     title: "서류 AI",
     emoji: "📄",
     color: "teal",
@@ -88,6 +88,7 @@ const serviceCategories = [
 
 const colorMap: Record<string, { bg: string; text: string; border: string; iconBg: string }> = {
   blue: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-100", iconBg: "bg-blue-100" },
+  slate: { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-200", iconBg: "bg-slate-100" },
   green: { bg: "bg-green-50", text: "text-green-700", border: "border-green-100", iconBg: "bg-green-100" },
   cyan: { bg: "bg-cyan-50", text: "text-cyan-700", border: "border-cyan-100", iconBg: "bg-cyan-100" },
   purple: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-100", iconBg: "bg-purple-100" },

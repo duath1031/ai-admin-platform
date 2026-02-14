@@ -203,18 +203,35 @@ const sidebarItems: SidebarItem[] = [
     icon: icons.home,
   },
 
-  // 기업행정 AI
+  // AI 행정 상담 (top-level)
   {
-    name: "기업행정 AI",
+    name: "AI 행정 상담",
+    href: "/chat",
+    icon: icons.chat,
+  },
+
+  // 행정 AI
+  {
+    name: "행정 AI",
     emoji: "\uD83D\uDCCB",
     children: [
-      { name: "AI 행정 상담", href: "/chat", icon: icons.chat },
       { name: "민원 자동접수", href: "/submission", icon: icons.submission },
       { name: "인허가 자가진단", href: "/permit-check", icon: icons.permit },
       { name: "저작권 등록", href: "/copyright", icon: icons.copyright },
       { name: "내용증명", href: "/legal-notice", icon: icons.docWrite },
       { name: "회의록 AI", href: "/meeting-minutes", icon: icons.docReview },
+    ],
+  },
+
+  // 기업행정 AI
+  {
+    name: "기업행정 AI",
+    emoji: "\uD83C\uDFE2",
+    children: [
       { name: "연구노트 (KOITA)", href: "/research-note", icon: icons.researchNote },
+      { name: "정책자금/정부지원", href: "/fund-matching", icon: icons.fund },
+      { name: "인증 자가진단", href: "/certification-check", icon: icons.certification },
+      { name: "사업계획서 AI", href: "/chat?q=사업계획서 작성을 도와주세요", icon: icons.bizplan, badge: "준비 중" },
     ],
   },
 
@@ -256,17 +273,6 @@ const sidebarItems: SidebarItem[] = [
       { name: "사정률 시뮬레이터", href: "/bid-simulation", icon: icons.simulator },
       { name: "입찰 분석", href: "/bid-analysis", icon: icons.simulator },
       { name: "직접생산확인 진단", href: "/direct-production-check", icon: icons.certification },
-    ],
-  },
-
-  // 정책자금/정부지원
-  {
-    name: "정책자금/정부지원",
-    emoji: "\uD83D\uDCB0",
-    children: [
-      { name: "정책자금/정부지원", href: "/fund-matching", icon: icons.fund },
-      { name: "인증 자가진단", href: "/certification-check", icon: icons.certification },
-      { name: "사업계획서 AI", href: "/chat?q=사업계획서 작성을 도와주세요", icon: icons.bizplan, badge: "준비 중" },
     ],
   },
 
