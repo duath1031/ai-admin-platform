@@ -802,8 +802,58 @@ async function startTransfer(data) {
                     }
                   }
 
-                  await humanDelay(2000, 3000);
+                  await humanDelay(3000, 5000);
                   await stealthScreenshot(page, `car365_step3_${taskId.slice(0, 8)}`);
+
+                  // ★ Step 3 페이지 분석 (본인인증)
+                  log('3단계: 본인인증 페이지 분석...');
+                  const step3Dump = await page.evaluate(() => {
+                    const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
+                      tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+                      placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+                      value: e.tagName === 'SELECT' ? e.value : '',
+                      label: e.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent?.trim()?.substring(0, 40) || '',
+                      dataBind: e.getAttribute('data-bind')?.substring(0, 80) || '',
+                    })).filter(i => i.visible);
+
+                    const buttons = Array.from(document.querySelectorAll('button, a[class*="btn"], input[type="submit"]')).map(e => ({
+                      id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
+                      cls: e.className?.toString()?.substring(0, 60) || '',
+                      visible: e.offsetParent !== null,
+                      dataBind: e.getAttribute('data-bind')?.substring(0, 80) || '',
+                    })).filter(b => b.visible && b.text);
+
+                    // 본문 텍스트에서 현재 스텝 확인
+                    const bodyText = document.body?.innerText || '';
+                    const stepMatch = bodyText.match(/(\d)단계\s*\/\s*3단계/) || bodyText.match(/현재스텝\s*(\d)단계/);
+
+                    return {
+                      inputs,
+                      buttons: buttons.slice(0, 20),
+                      bodySnippet: bodyText.substring(0, 1500),
+                      hash: window.location.hash,
+                      currentStep: stepMatch ? parseInt(stepMatch[1]) : 0,
+                    };
+                  });
+
+                  log(`현재 화면 스텝: ${step3Dump.currentStep}`);
+                  log(`3단계 입력 필드: ${step3Dump.inputs?.length || 0}개`);
+                  for (const inp of (step3Dump.inputs || [])) {
+                    log(`  [input] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" placeholder="${inp.placeholder}" dataBind="${inp.dataBind}"`);
+                  }
+                  log(`3단계 버튼: ${step3Dump.buttons?.length || 0}개`);
+                  for (const btn of (step3Dump.buttons || []).slice(0, 15)) {
+                    log(`  [btn] id=${btn.id} text="${btn.text}" dataBind="${btn.dataBind}"`);
+                  }
+                  // 본문 500자 로그
+                  log(`Step3 본문: ${step3Dump.bodySnippet?.substring(0, 800)}`);
+
+                  loginPageDump.step3Dump = step3Dump;
+                  authStatus = 'step3_loaded';
+                } else {
+                  // 실명인증 실패
+                  authStatus = 'identity_verification_failed';
+                  log('⚠️ 실명인증 실패 - rlnmCert=false');
                 }
 
               } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
@@ -813,83 +863,45 @@ async function startTransfer(data) {
             }
 
             await humanDelay(500, 1000);
-            await stealthScreenshot(page, `car365_step2_filled_${taskId.slice(0, 8)}`);
+            await stealthScreenshot(page, `car365_step3_filled_${taskId.slice(0, 8)}`);
 
-            // 실명인증 결과 대기 (AJAX 호출 완료 대기)
-            await humanDelay(3000, 5000);
-            await stealthScreenshot(page, `car365_step2_result_${taskId.slice(0, 8)}`);
+            // Step 3 본인인증 - 통신사/전화번호 입력 + 인증요청
+            // (step3Dump이 있으면 = 실명인증 성공 후 Step 3에 도달한 상태)
+            if (authStatus === 'step3_loaded') {
+              log('본인인증 폼 입력 시작...');
 
-              // 실명인증 결과 확인 - 에러 모달 감지
-              const step2Result = await page.evaluate(() => {
-                const bodyText = document.body?.innerText || '';
-                // 에러 모달 감지 (_btn_error_modify 버튼 존재 여부)
-                const errorModal = document.querySelector('#_btn_error_modify');
-                const hasError = errorModal && errorModal.offsetParent !== null;
-                // 3단계(본인인증) 진입 여부 - "본인인증" step이 current인지
-                const stepText = bodyText.match(/현재스텝\s*(\d)단계/) || bodyText.match(/(\d)단계\s*\/\s*3단계/);
-                const currentStep = stepText ? parseInt(stepText[1]) : 0;
-                // 에러 메시지 추출
-                const errorMsg = bodyText.match(/(주의[^\n]*)/g) || [];
-                return {
-                  hasError,
-                  currentStep,
-                  errorMessages: errorMsg,
-                  hasPhoneInput: !!document.querySelector('input[name*="tel"], input[name*="phone"], input[name*="hp"], input[type="tel"]'),
-                  bodySnippet: bodyText.substring(0, 500),
-                };
-              });
+              // KO VM을 통해 certLogin 관련 함수들 분석
+              const certFunctions = await page.evaluate(() => {
+                const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                let vm = null;
+                try { vm = ko.contextFor(rootEl)?.$root; } catch (e) {}
+                if (!vm) return { error: 'VM not found' };
 
-              log(`실명인증 결과: 에러=${step2Result.hasError}, 현재단계=${step2Result.currentStep}`);
-              if (step2Result.errorMessages?.length > 0) {
-                log(`에러 메시지: ${step2Result.errorMessages.join(', ')}`);
-              }
+                const model = ko.isObservable(vm.model) ? vm.model() : vm.model;
+                if (!model) return { error: 'model not found' };
 
-              if (step2Result.hasError) {
-                // 에러 모달 닫기
-                const closeBtn = await page.$('#_btn_error_modify') || await page.$('.close-layer');
-                if (closeBtn) {
-                  await closeBtn.click();
-                  log('에러 모달 닫기 버튼 클릭');
-                  await humanDelay(500, 1000);
+                // model의 모든 observable 키와 값
+                const modelState = {};
+                for (const k of Object.keys(model)) {
+                  if (ko.isObservable(model[k])) {
+                    const v = model[k]();
+                    modelState[k] = v !== null && v !== undefined ? String(v).substring(0, 30) : 'null';
+                  }
                 }
-                authStatus = 'identity_verification_failed';
-                log('⚠️ 실명인증 실패 - 주민번호 검증 에러');
-              }
 
-              // Step 4-6: 3단계 본인인증 페이지 분석 + 인증요청
-              log('3단계: 본인인증 페이지...');
-              const step3Dump = await page.evaluate(() => {
-                const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
-                  tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
-                  placeholder: e.placeholder || '', visible: e.offsetParent !== null,
-                  label: e.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent?.trim()?.substring(0, 40) || '',
-                })).filter(i => i.visible);
+                // certLogin 소스
+                let certLoginSource = '';
+                if (typeof vm.certLogin === 'function') {
+                  certLoginSource = vm.certLogin.toString().substring(0, 1500);
+                }
 
-                const buttons = Array.from(document.querySelectorAll('button, a[class*="btn"], input[type="submit"]')).map(e => ({
-                  id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
-                  cls: e.className?.toString()?.substring(0, 60) || '',
-                  visible: e.offsetParent !== null,
-                })).filter(b => b.visible && b.text);
-
-                return {
-                  inputs,
-                  buttons: buttons.slice(0, 20),
-                  bodySnippet: document.body?.innerText?.substring(0, 2000) || '',
-                  hash: window.location.hash,
-                };
+                return { modelState, certLoginSource };
               });
 
-              log(`3단계 입력 필드: ${step3Dump.inputs?.length || 0}개`);
-              for (const inp of (step3Dump.inputs || [])) {
-                log(`  [input] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" placeholder="${inp.placeholder}"`);
+              log(`Step3 model 상태: ${JSON.stringify(certFunctions.modelState || {})}`);
+              if (certFunctions.certLoginSource) {
+                log(`certLogin 소스 (300자): ${certFunctions.certLoginSource.substring(0, 300)}`);
               }
-              log(`3단계 버튼: ${step3Dump.buttons?.length || 0}개`);
-              for (const btn of (step3Dump.buttons || []).slice(0, 10)) {
-                log(`  [btn] id=${btn.id} text="${btn.text}"`);
-              }
-
-              loginPageDump.step3Dump = step3Dump;
-              authStatus = 'step3_loaded';
 
               // 통신사 선택
               if (carrier) {
@@ -981,9 +993,10 @@ async function startTransfer(data) {
                 authStatus = 'step3_form_loaded';
               }
             } else {
-              log('2단계 다음 버튼을 찾지 못함');
-              authStatus = 'step2_next_failed';
+              log('Step 3 로딩 안됨 - 실명인증 확인 필요');
+              authStatus = 'step3_not_loaded';
             }
+          }
         } else {
           log('동의 버튼을 찾지 못함');
           authStatus = 'agreement_failed';
