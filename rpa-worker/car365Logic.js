@@ -350,20 +350,94 @@ async function startTransfer(data) {
     log(`모달: ${loginPageDump.modals?.length || 0}개`);
     log(`버튼/링크: ${loginPageDump.elements?.length || 0}개`);
 
-    // Step 4: AnyID 로그인 영역 DOM 분석 + 휴대폰 본인인증 진행
+    // Step 4: 비회원 로그인 + 로그인 영역 HTML 덤프
     let authTriggered = false;
     let authStatus = 'login_page_loaded';
 
     try {
-      // AnyID 로그인 섹션의 정확한 DOM 구조 덤프
-      log('AnyID 로그인 영역 DOM 분석...');
-      const anyidDom = await page.evaluate(() => {
-        // 로그인 컨텐츠 영역 찾기 (container, content-section, login-area 등)
-        const contentArea = document.querySelector('#content-section, .content, .login-wrap, [class*="login"], [class*="content"]') || document.body;
+      // Step 4-1: 로그인 컨텐츠 영역 HTML 직접 덤프 (정확한 구조 파악)
+      log('로그인 영역 HTML 덤프...');
+      const htmlDump = await page.evaluate(() => {
+        // content-section 또는 container 영역의 outerHTML 가져오기
+        const contentSection = document.querySelector('#content-section') ||
+          document.querySelector('.container') ||
+          document.querySelector('[class*="content-wrap"]') ||
+          document.querySelector('main') ||
+          document.querySelector('#container');
 
-        // 모든 탭/링크 요소 (CSS 클래스에 tab, menu, link 포함)
+        // AnyID 관련 영역 (tab-area, layer, login 등)
+        const loginArea = document.querySelector('.tab-area') ||
+          document.querySelector('[class*="tab-content"]') ||
+          document.querySelector('[class*="login-content"]');
+
+        return {
+          contentSectionHtml: contentSection ? contentSection.outerHTML.substring(0, 5000) : 'NOT FOUND',
+          loginAreaHtml: loginArea ? loginArea.outerHTML.substring(0, 5000) : 'NOT FOUND',
+          contentSectionTag: contentSection ? `${contentSection.tagName}#${contentSection.id}.${contentSection.className?.toString()?.substring(0, 60)}` : 'N/A',
+          loginAreaTag: loginArea ? `${loginArea.tagName}#${loginArea.id}.${loginArea.className?.toString()?.substring(0, 60)}` : 'N/A',
+        };
+      });
+
+      log(`콘텐츠 영역: ${htmlDump.contentSectionTag}`);
+      log(`로그인 영역: ${htmlDump.loginAreaTag}`);
+      // HTML 일부 로그 (구조 파악용)
+      const loginHtml = htmlDump.loginAreaHtml || htmlDump.contentSectionHtml;
+      log(`로그인 HTML (500자): ${loginHtml.substring(0, 500)}`);
+
+      // Step 4-2: "비회원 로그인" 탭 클릭 시도 (phone auth 직접 접근 가능 경로)
+      log('"비회원 로그인" 탭(tab_0102) 클릭 시도...');
+      const tab0102 = await page.$('#tab_0102');
+      if (tab0102 && await tab0102.isVisible()) {
+        await tab0102.click();
+        log('비회원 로그인 탭 클릭 성공');
+        await humanDelay(3000, 5000);
+
+        // 비회원 로그인 탭 내용 분석
+        const nonMemberDump = await page.evaluate(() => {
+          const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
+            tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+            placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+          })).filter(i => i.visible);
+
+          const buttons = Array.from(document.querySelectorAll('button, a[class*="btn"]')).map(e => ({
+            id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
+            cls: e.className?.toString()?.substring(0, 60) || '',
+            visible: e.offsetParent !== null,
+          })).filter(b => b.visible && b.text);
+
+          return {
+            inputs,
+            buttons: buttons.slice(0, 20),
+            bodySnippet: document.body?.innerText?.substring(0, 3000) || '',
+            hash: window.location.hash,
+          };
+        });
+
+        log(`비회원 로그인 - 입력 필드: ${nonMemberDump.inputs?.length || 0}개`);
+        for (const inp of (nonMemberDump.inputs || [])) {
+          log(`  [input] id=${inp.id} name=${inp.name} type=${inp.type} placeholder="${inp.placeholder}"`);
+        }
+        log(`비회원 로그인 - 버튼: ${nonMemberDump.buttons?.length || 0}개`);
+        for (const btn of (nonMemberDump.buttons || []).slice(0, 10)) {
+          log(`  [btn] id=${btn.id} text="${btn.text}" cls="${btn.cls}"`);
+        }
+        log(`URL 해시: ${nonMemberDump.hash}`);
+
+        loginPageDump.nonMemberDump = nonMemberDump;
+        loginPageDump.htmlDump = { contentSectionTag: htmlDump.contentSectionTag, loginAreaTag: htmlDump.loginAreaTag };
+        authStatus = 'non_member_tab_loaded';
+      } else {
+        log('비회원 로그인 탭(tab_0102) 없음. AnyID SPA 구조를 HTML에서 분석...');
+        loginPageDump.htmlDump = htmlDump;
+      }
+
+      await stealthScreenshot(page, `car365_auth_${taskId.slice(0, 8)}`);
+
+      // AnyID SPA의 "정부 통합로그인" 영역 분석
+      const anyidDom = await page.evaluate(() => {
+        // 모든 가시적 요소에서 "인증" 관련 텍스트 찾기 (전체 document 대상)
         const tabElements = [];
-        contentArea.querySelectorAll('a, button, li, div, span').forEach(el => {
+        document.querySelectorAll('a, button, li, div, span').forEach(el => {
           const text = (el.textContent || '').trim();
           if (text.length > 0 && text.length < 50) {
             const rect = el.getBoundingClientRect();
