@@ -756,6 +756,56 @@ async function startTransfer(data) {
                   if (req.body && req.body !== 'null') log(`    body: ${req.body}`);
                 }
 
+                // Phase 3: rlnmCert=true이면 "다음" 버튼 클릭으로 Step 3 전환
+                if (phase2Result.afterRlnmCert === true) {
+                  log('✅ 실명인증 성공! Step 3 전환 시도...');
+                  authStatus = 'identity_verified';
+
+                  // 먼저 KO의 nextStep() 호출 시도
+                  const nextStepResult = await page.evaluate(() => {
+                    const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                    let vm = null;
+                    try { vm = ko.contextFor(rootEl)?.$root; } catch (e) {}
+                    if (vm && typeof vm.nextStep === 'function') {
+                      try {
+                        vm.nextStep();
+                        return { called: true, step: vm.model ? (ko.isObservable(vm.model) ? vm.model() : vm.model).step?.() : 'N/A' };
+                      } catch (e) { return { called: false, error: e.message }; }
+                    }
+                    return { called: false, error: 'nextStep not found' };
+                  });
+
+                  log(`nextStep() 호출: ${nextStepResult.called ? '성공' : '실패'} step=${nextStepResult.step || 'N/A'}`);
+                  if (nextStepResult.error) log(`nextStep 에러: ${nextStepResult.error}`);
+
+                  // nextStep이 안되면 "다음" 버튼 클릭
+                  if (!nextStepResult.called || nextStepResult.step === 2) {
+                    log('"다음" 버튼 클릭으로 Step 3 전환...');
+                    const nextBtnSelectors = [
+                      'button:has-text("다음")',
+                      'a:has-text("다음")',
+                    ];
+                    for (const sel of nextBtnSelectors) {
+                      try {
+                        const btns = await page.$$(sel);
+                        for (const btn of btns) {
+                          if (await btn.isVisible()) {
+                            const txt = (await btn.textContent())?.trim();
+                            if (txt === '다음') {
+                              await btn.click();
+                              log(`다음 버튼 클릭: "${txt}"`);
+                              break;
+                            }
+                          }
+                        }
+                      } catch (e) { /* continue */ }
+                    }
+                  }
+
+                  await humanDelay(2000, 3000);
+                  await stealthScreenshot(page, `car365_step3_${taskId.slice(0, 8)}`);
+                }
+
               } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
             } else {
               log('⚠️ 주민번호 뒷자리(idNumberBack) 미제공 - 실명인증 불가능');
@@ -764,33 +814,6 @@ async function startTransfer(data) {
 
             await humanDelay(500, 1000);
             await stealthScreenshot(page, `car365_step2_filled_${taskId.slice(0, 8)}`);
-
-            // checkRlnmCert가 이미 KO에서 호출됨 → 결과 대기
-            // (폴백: 버튼 클릭)
-            if (!idNumberBack || !koModelResult?.checkCalled) {
-              log('checkRlnmCert 미호출, 실명인증 버튼 클릭 시도...');
-              const step2NextSelectors = [
-                'button:has-text("실명인증")',
-                'a:has-text("실명인증")',
-                'button:has-text("다음")',
-                'a:has-text("다음")',
-              ];
-              for (const sel of step2NextSelectors) {
-                try {
-                  const btns = await page.$$(sel);
-                  for (const btn of btns) {
-                    if (await btn.isVisible()) {
-                      const txt = (await btn.textContent())?.trim();
-                      if (txt === '실명인증' || txt === '다음') {
-                        await btn.click();
-                        log(`2단계 버튼 클릭: ${sel} - "${txt}"`);
-                        break;
-                      }
-                    }
-                  }
-                } catch (e) { /* continue */ }
-              }
-            }
 
             // 실명인증 결과 대기 (AJAX 호출 완료 대기)
             await humanDelay(3000, 5000);
