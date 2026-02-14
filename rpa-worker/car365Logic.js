@@ -694,8 +694,6 @@ async function startTransfer(data) {
             await humanDelay(3000, 5000);
             await stealthScreenshot(page, `car365_step2_result_${taskId.slice(0, 8)}`);
 
-            {
-
               // 실명인증 결과 확인 - 에러 모달 감지
               const step2Result = await page.evaluate(() => {
                 const bodyText = document.body?.innerText || '';
@@ -861,7 +859,6 @@ async function startTransfer(data) {
               log('2단계 다음 버튼을 찾지 못함');
               authStatus = 'step2_next_failed';
             }
-          }
         } else {
           log('동의 버튼을 찾지 못함');
           authStatus = 'agreement_failed';
