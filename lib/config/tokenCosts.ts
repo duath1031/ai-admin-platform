@@ -92,6 +92,10 @@ export const TOKEN_COSTS: Record<string, number> = {
 
   // 직접생산확인
   direct_production_check: 1500,
+
+  // 저작권/IP AI
+  copyright_description: 800,
+  copyright_code_process: 200,
 };
 
 /**
@@ -134,4 +138,6 @@ export const TOKEN_FEATURE_NAMES: Record<string, string> = {
   trip_log: "운행일지",
   research_note: "연구노트 작성",
   direct_production_check: "직접생산확인 진단",
+  copyright_description: "창작의도 기술서 AI 생성",
+  copyright_code_process: "소스코드 전처리",
 };

@@ -43,6 +43,8 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     research_note: false,
     direct_production_check: false,
     trip_log: false,
+    copyright_description: false,
+    copyright_code_process: false,
   },
   standard: {
     ai_chat: true,
@@ -82,6 +84,8 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     research_note: false,
     direct_production_check: true,
     trip_log: false,
+    copyright_description: true,
+    copyright_code_process: true,
   },
   pro: {
     ai_chat: true,
@@ -122,6 +126,8 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     research_note: true,
     direct_production_check: true,
     trip_log: true,
+    copyright_description: true,
+    copyright_code_process: true,
   },
   pro_plus: {
     ai_chat: true,
@@ -163,6 +169,8 @@ const PLAN_ACCESS: Record<string, Record<string, boolean>> = {
     research_note: true,
     direct_production_check: true,
     trip_log: true,
+    copyright_description: true,
+    copyright_code_process: true,
   },
 };
 
