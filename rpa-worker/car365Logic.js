@@ -553,28 +553,9 @@ async function startTransfer(data) {
           if (step2Dump.inputs?.length > 0) {
             log('실명확인 정보 입력 시도...');
 
-            // 이름 입력 (name=mbrNm)
-            try {
-              const nameEl = await page.$('input[name="mbrNm"]');
-              if (nameEl && await nameEl.isVisible()) {
-                await nameEl.fill('');
-                await nameEl.type(name, { delay: 80 });
-                log(`이름 입력 성공: mbrNm = ${name}`);
-              }
-            } catch (e) { log(`이름 입력 실패: ${e.message}`); }
-
-            // 주민등록번호 앞자리 (YYMMDD 6자리) 입력 (name=stkhIdntfNo1)
-            const birthDateStr = birthDate?.length === 8 ? birthDate.substring(2) : birthDate; // YYYYMMDD → YYMMDD
-            if (birthDateStr) {
-              try {
-                const ssnFrontEl = await page.$('input[name="stkhIdntfNo1"]');
-                if (ssnFrontEl && await ssnFrontEl.isVisible()) {
-                  await ssnFrontEl.fill('');
-                  await ssnFrontEl.type(birthDateStr, { delay: 80 });
-                  log(`주민번호 앞자리 입력 성공: stkhIdntfNo1 = ${birthDateStr}`);
-                }
-              } catch (e) { log(`주민번호 앞자리 입력 실패: ${e.message}`); }
-            }
+            // 이름 + 주민번호 앞자리는 KO observable로만 설정 (DOM type()은 한글 깨짐)
+            // fill()은 KO textInput 바인딩과 충돌 가능 → evaluate에서 KO 직접 설정
+            const birthDateStr = birthDate?.length === 8 ? birthDate.substring(2) : birthDate;
 
             // ★ 핵심: KnockoutJS data-bind="textInput: model.stkhIdntfNo2"
             // → vm.model 서브모델에 직접 값 설정 + DOM 직접 설정 + checkRlnmCert 분석
