@@ -396,6 +396,146 @@ export default function InsuranceReportPage() {
     setShowPreview(true);
   };
 
+  // ── HWPX 양식 다운로드 ──
+  const [hwpxLoading, setHwpxLoading] = useState(false);
+
+  const buildHwpxData = (): Record<string, string> => {
+    const emp = selectedEmployee;
+    if (!emp) return {};
+    const today = new Date();
+    const base: Record<string, string> = {
+      신고연도: String(today.getFullYear()),
+      신고월: String(today.getMonth() + 1),
+      신고일: String(today.getDate()),
+    };
+
+    if (activeTab === "acquisition") {
+      const d = acqDate ? new Date(acqDate) : today;
+      return {
+        ...base,
+        사업장관리번호: company.npBizNo || company.hiBizNo || "",
+        사업장명칭: company.companyName || "",
+        사업장전화번호: company.phone || "",
+        사업장팩스번호: "",
+        사업장소재지: company.address || "",
+        사업장우편번호: "",
+        근로자성명: emp.name,
+        주민등록번호: residentNo,
+        월소득액: String(npIncome),
+        국민연금자격취득연도: String(d.getFullYear()),
+        국민연금자격취득부호: npAcqCode,
+        건강보험자격취득부호: hiAcqCode,
+        정근로시간: String(weeklyWorkHours),
+        check_국민연금1: acqNP ? "■" : "□",
+        check_건강보험1: acqHI ? "■" : "□",
+        check_고용보험1: acqEI ? "■" : "□",
+        check_산재보험1: acqIA ? "■" : "□",
+        check_예1: isContract ? "■" : "□",
+        check_아니오1: isContract ? "□" : "■",
+      };
+    }
+
+    if (activeTab === "loss") {
+      const d = lossDate ? new Date(lossDate) : today;
+      return {
+        ...base,
+        사업장관리번호: company.npBizNo || company.hiBizNo || "",
+        사업장명칭: company.companyName || "",
+        사업장전화번호: company.phone || "",
+        사업장팩스번호: "",
+        사업장소재지: company.address || "",
+        사업장우편번호: "",
+        성명: emp.name,
+        주민등록번호: residentNo,
+        전화번호: workerPhone,
+        상실연도: String(d.getFullYear()),
+        상실월: String(d.getMonth() + 1),
+        상실일: String(d.getDate()),
+        국민연금상실부호: npLossCode,
+        건강보험상실부호: hiLossCode,
+        해당연도보수총액: String(hiCurrentYearSalary),
+        전년도보수총액: String(hiPrevYearSalary),
+        고용보험상실사유: eiLossCode + " " + eiLossDetail,
+        고용보험해당연도보수총액: String(eiCurrentYearSalary),
+        고용보험해당연도근무개월수: String(eiCurrentYearMonths),
+        고용보험전년도보수총액: String(eiPrevYearSalary),
+        고용보험전년도근무개월수: String(eiPrevYearMonths),
+      };
+    }
+
+    // salary_change
+    return {
+      ...base,
+      사업장관리번호: company.npBizNo || company.hiBizNo || "",
+      사업장명칭: company.companyName || "",
+      사업장전화번호: company.phone || "",
+      사업장팩스번호: "",
+      사업장소재지: company.address || "",
+      성명: emp.name,
+      주민등록번호: residentNo,
+      국민연금현재기준소득월액: String(beforeSalary),
+      국민연금변경후기준소득월액: String(afterSalary),
+      건강보험변경후보수월액: String(afterSalary),
+      건강보험보수변경월: changeDate ? String(new Date(changeDate).getMonth() + 1) : "",
+      건강보험변경사유: changeReason,
+      고용보험변경후월평균보수: String(afterSalary),
+      고용보험변경사유: changeReason,
+      산재보험변경후월평균보수: String(afterSalary),
+      산재보험변경사유: changeReason,
+      check_국민연금: "■",
+      check_건강보험: "■",
+      check_고용산재보험: "■",
+    };
+  };
+
+  const handleDownloadHwpx = async () => {
+    const err = validate();
+    if (err) { setError(err); return; }
+    setError(""); setHwpxLoading(true);
+    try {
+      const templateCodes: Record<ReportType, string> = {
+        acquisition: "hwpx_사업장가입자자격취득신고서",
+        loss: "hwpx_사업장가입자자격상실신고서",
+        salary_change: "hwpx_보수월액변경신청서",
+      };
+      const res = await fetch("/api/document/generate-hwpx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateCode: templateCodes[activeTab],
+          data: buildHwpxData(),
+          returnFormat: "base64",
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        setError(errData.error || "HWPX 생성 실패");
+        return;
+      }
+      const result = await res.json();
+      if (result.success && result.base64) {
+        const blob = new Blob(
+          [Uint8Array.from(atob(result.base64), c => c.charCodeAt(0))],
+          { type: "application/octet-stream" }
+        );
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const tabLabel = TABS.find(t => t.key === activeTab)?.label || activeTab;
+        a.download = `${tabLabel}_${selectedEmployee?.name || ""}_${new Date().toISOString().split("T")[0]}.hwpx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setSuccess("HWPX 양식 파일이 다운로드되었습니다.");
+      } else {
+        setError("HWPX 파일 생성에 실패했습니다.");
+      }
+    } catch {
+      setError("HWPX 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setHwpxLoading(false);
+    }
+  };
+
   const handleDelete = async (reportId: string) => {
     if (!confirm("신고서를 삭제하시겠습니까?")) return;
     try {
@@ -1023,6 +1163,10 @@ export default function InsuranceReportPage() {
                 <div className="flex flex-wrap gap-3 pt-4 border-t">
                   <Button variant="outline" onClick={handlePreviewOnly}>미리보기</Button>
                   <Button onClick={handleSave} disabled={saving}>{saving ? "저장 중..." : "저장"}</Button>
+                  <Button variant="outline" onClick={handleDownloadHwpx} disabled={hwpxLoading}
+                    className="bg-green-50 text-green-700 border-green-300 hover:bg-green-100">
+                    {hwpxLoading ? "생성 중..." : "HWPX 양식 다운로드"}
+                  </Button>
                   {showPreview && selectedEmployee && (
                     <InsuranceReportPdf
                       reportType={activeTab}

@@ -323,6 +323,98 @@ export default function TransferDocumentsPage() {
     printAllDocuments(data);
   };
 
+  // ── HWPX 양식 다운로드 ──
+  const [hwpxLoading, setHwpxLoading] = useState(false);
+
+  const handleDownloadHwpx = async (docType: "transfer_application" | "transfer_certificate") => {
+    if (!validate()) return;
+    setError(""); setHwpxLoading(true);
+    try {
+      const templateCodes: Record<string, string> = {
+        transfer_application: "hwpx_이전등록신청서",
+        transfer_certificate: "hwpx_자동차양도증명서양도인양수인직접거래용",
+      };
+      const today = new Date();
+      const hwpxData: Record<string, string> = docType === "transfer_application" ? {
+        구소유자_성명: form.sellerName,
+        구소유자_주민등록번호: form.sellerIdNumber,
+        구소유자_사용본거지: form.sellerAddress,
+        신소유자_성명: form.buyerName,
+        신소유자_주민등록번호: form.buyerIdNumber,
+        신소유자_사용본거지: form.buyerAddress,
+        신소유자_전자우편: "",
+        신소유자_전화번호: form.buyerPhone,
+        자동차등록번호: form.plateNumber,
+        주행거리: form.mileage ? String(parseNumber(form.mileage)) : "",
+        신자동차등록번호: "",
+        등록원인_매매: form.transferReason === "매매" ? "■" : "□",
+        등록원인_증여: form.transferReason === "증여" ? "■" : "□",
+        등록원인_상속: form.transferReason === "상속" ? "■" : "□",
+        등록원인_기타: form.transferReason === "기타" ? "■" : "□",
+        등록원인_촉탁: "□",
+        신청연도: String(today.getFullYear()),
+        신청월: String(today.getMonth() + 1),
+        신청일: String(today.getDate()),
+        신청인_성명: form.buyerName,
+        신청인_생년월일: form.buyerIdNumber ? form.buyerIdNumber.substring(0, 6) : "",
+        관할관청: "",
+      } : {
+        양도인_성명: form.sellerName,
+        양도인_주민등록번호: form.sellerIdNumber,
+        양도인_전화번호: form.sellerPhone,
+        양도인_주소: form.sellerAddress,
+        양수인_성명: form.buyerName,
+        양수인_주민등록번호: form.buyerIdNumber,
+        양수인_전화번호: form.buyerPhone,
+        양수인_지분율: "100",
+        양수인_주소: form.buyerAddress,
+        자동차등록번호: form.plateNumber,
+        차종및차명: (VEHICLE_TYPE_LABELS[form.vehicleType] || "") + " " + form.vehicleName,
+        차대번호: form.vin,
+        매매일: form.transferDate,
+        매매금액: form.salePrice ? String(parseNumber(form.salePrice)) : "",
+        잔금지급일: form.transferDate,
+        자동차인도일: form.transferDate,
+        주행거리: form.mileage ? String(parseNumber(form.mileage)) : "",
+        특약사항: form.specialTerms,
+      };
+
+      const res = await fetch("/api/document/generate-hwpx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateCode: templateCodes[docType],
+          data: hwpxData,
+          returnFormat: "base64",
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        setError(errData.error || "HWPX 생성 실패");
+        return;
+      }
+      const result = await res.json();
+      if (result.success && result.base64) {
+        const blob = new Blob(
+          [Uint8Array.from(atob(result.base64), c => c.charCodeAt(0))],
+          { type: "application/octet-stream" }
+        );
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const docLabel = docType === "transfer_application" ? "이전등록신청서" : "양도증명서";
+        a.download = `${docLabel}_${form.buyerName || ""}_${today.toISOString().split("T")[0]}.hwpx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setSuccess(`${docLabel} HWPX 파일이 다운로드되었습니다.`);
+      }
+    } catch {
+      setError("HWPX 다운로드 중 오류가 발생했습니다.");
+    } finally {
+      setHwpxLoading(false);
+    }
+  };
+
   // ── Preview handler ──
   const getPreviewHtml = (docType: string): string => {
     const data = buildDocumentData();
@@ -872,6 +964,18 @@ export default function TransferDocumentsPage() {
                       </svg>
                       인쇄
                     </button>
+                    {(card.key === "transfer_application" || card.key === "transfer_certificate") && (
+                      <button
+                        onClick={() => handleDownloadHwpx(card.key as "transfer_application" | "transfer_certificate")}
+                        disabled={hwpxLoading}
+                        className="flex-1 py-2 bg-green-50 text-green-700 border border-green-300 text-xs font-medium rounded-lg hover:bg-green-100 transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        {hwpxLoading ? "생성중..." : "HWPX"}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

@@ -402,7 +402,7 @@ export default function LandingPage() {
               { name: "Starter", price: "무료", monthlyPrice: 0, desc: "체험용 (1회)", features: ["AI 상담 1회", "서류 1건", "계정당 평생 1회"] },
               { name: "Standard", monthlyPrice: 99000, annualMonthly: 90000, desc: "일반인, 소상공인", features: ["AI 상담 (토큰차감)", "서류 작성 20건/월", "건축행정AI", "서류 검토", "월 100만 토큰"] },
               { name: "Pro", monthlyPrice: 165000, annualMonthly: 150000, desc: "행정사, 기업담당자, 공무원", features: ["Standard 전체 포함", "입찰 분석", "비자AI", "정책자금 매칭", "월 300만 토큰"], popular: true },
-              { name: "Pro Plus", monthlyPrice: 275000, annualMonthly: 250000, desc: "전문행정사, 기업법무팀", features: ["Pro 전체 포함", "거래처 50개 관리", "일괄 보조금매칭", "우선 고객지원", "월 500만 토큰"] },
+              { name: "Pro Plus", monthlyPrice: 300000, annualMonthly: 250000, desc: "전문행정사, 기업법무팀", features: ["Pro 전체 포함", "거래처 50개 관리", "일괄 보조금매칭", "우선 고객지원", "월 500만 토큰"] },
             ].map((plan) => (
               <div
                 key={plan.name}

@@ -33,7 +33,7 @@ const PLAN_LABELS: Record<string, { name: string; price: string }> = {
   standard: { name: 'Standard', price: '90,000원/월' },
   basic: { name: '일반 (Basic)', price: '90,000원/월' },
   pro: { name: 'Pro', price: '150,000원/월' },
-  pro_plus: { name: 'Pro Plus', price: '250,000원/월' },
+  pro_plus: { name: 'Pro Plus', price: '300,000원/월' },
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
