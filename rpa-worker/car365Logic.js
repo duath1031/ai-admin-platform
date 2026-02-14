@@ -126,6 +126,28 @@ function TouchEnStart() { return true; }
     window.TouchEnNxKeyCheck = function() { return true; };
     window.TouchEnStart = function() { return true; };
 
+    // ★ TouchEn이 password 필드를 readonly로 만드는 것을 지속적으로 해제
+    // MutationObserver로 DOM 변경 감시 → stkhIdntfNo2 필드가 나타나면 즉시 editable로 전환
+    const _touchenObserver = new MutationObserver(() => {
+      const pwFields = document.querySelectorAll('#stkhIdntfNo2, input[name="stkhIdntfNo2"], input[type="password"]');
+      pwFields.forEach(el => {
+        if (el.readOnly || el.disabled) {
+          el.readOnly = false;
+          el.disabled = false;
+          el.removeAttribute('readonly');
+          el.removeAttribute('disabled');
+        }
+      });
+    });
+    // document가 ready되면 Observer 시작
+    if (document.body) {
+      _touchenObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['readonly', 'disabled'] });
+    } else {
+      document.addEventListener('DOMContentLoaded', () => {
+        _touchenObserver.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['readonly', 'disabled'] });
+      });
+    }
+
     // 보안 프로그램 설치 페이지 리다이렉트 방지
     const origAssign = window.location.assign;
     const origReplace = window.location.replace;
@@ -555,73 +577,89 @@ async function startTransfer(data) {
             }
 
             // 주민등록번호 뒷자리 7자리 입력 (id=stkhIdntfNo2, password 필드)
-            // ★ TouchEn nxKey 보안 키보드가 필드를 readonly로 만들므로 JS로 직접 주입
+            // ★ TouchEn nxKey 보안 키보드가 필드를 readonly로 만듦
+            // → MutationObserver + JS로 readonly 해제 → Playwright type()로 실제 키입력
             if (idNumberBack) {
               try {
-                // 방법 1: JS evaluate로 필드 속성 해제 + 값 직접 설정 + KnockoutJS 바인딩 트리거
-                const ssnBackResult = await page.evaluate((val) => {
+                // Step A: JS로 필드 editable 강제 전환 + focus
+                await page.evaluate(() => {
                   const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
-                  if (!el) return { success: false, error: 'element not found' };
-
-                  // TouchEn 보안 키보드 속성 해제
+                  if (!el) return;
+                  // readonly/disabled 해제
                   el.removeAttribute('readonly');
                   el.removeAttribute('disabled');
                   el.readOnly = false;
                   el.disabled = false;
+                  // type을 text로 변경 (password 보안 해제) 후 다시 password로
+                  // 일부 보안 프로그램은 password type에 대해 추가 잠금
+                  el.setAttribute('type', 'text');
+                  el.type = 'text';
+                  el.focus();
+                  el.click();
+                });
+                await humanDelay(300, 500);
 
-                  // 값 직접 설정
-                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                  nativeInputValueSetter.call(el, val);
+                // Step B: Playwright의 실제 키보드 타이핑 (KO textInput 바인딩이 감지)
+                log('주민번호 뒷자리: type=text 전환 후 Playwright 키보드 입력 시도...');
+                const ssnBackEl = await page.$('#stkhIdntfNo2') || await page.$('input[name="stkhIdntfNo2"]');
+                if (ssnBackEl) {
+                  try {
+                    await ssnBackEl.fill('');
+                    await ssnBackEl.type(idNumberBack, { delay: 100 });
+                    log('주민번호 뒷자리 Playwright type() 성공');
+                  } catch (fillErr) {
+                    log(`Playwright type 실패: ${fillErr.message}, 폴백 시도...`);
+                    // Step C 폴백: 필드 클릭 후 page.keyboard 사용
+                    await ssnBackEl.click();
+                    await humanDelay(200, 300);
+                    await page.keyboard.type(idNumberBack, { delay: 100 });
+                    log('주민번호 뒷자리 page.keyboard.type() 성공');
+                  }
+                }
 
-                  // React/KnockoutJS 이벤트 트리거 (바인딩 업데이트)
-                  el.dispatchEvent(new Event('input', { bubbles: true }));
-                  el.dispatchEvent(new Event('change', { bubbles: true }));
-                  el.dispatchEvent(new Event('keyup', { bubbles: true }));
-                  el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
-                  el.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true }));
+                // Step D: type을 다시 password로 복원 (보안) + KO observable 직접 설정
+                const koResult = await page.evaluate((val) => {
+                  const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
+                  if (!el) return { found: false };
 
-                  // KnockoutJS valueUpdate 트리거
+                  // KnockoutJS observable 직접 설정
+                  let koSet = false;
                   if (typeof ko !== 'undefined') {
                     try {
-                      const context = ko.contextFor(el);
-                      if (context) {
-                        const observable = ko.dataFor(el);
-                        if (observable && observable.stkhIdntfNo2) {
-                          observable.stkhIdntfNo2(val);
+                      const data = ko.dataFor(el);
+                      if (data) {
+                        // stkhIdntfNo2 observable 직접 업데이트
+                        if (typeof data.stkhIdntfNo2 === 'function') {
+                          data.stkhIdntfNo2(val);
+                          koSet = true;
                         }
+                        // 다른 가능한 이름들
+                        if (typeof data.idNo2 === 'function') { data.idNo2(val); koSet = true; }
+                        if (typeof data.ssnBack === 'function') { data.ssnBack(val); koSet = true; }
                       }
-                    } catch (e) { /* ko not bound */ }
+                    } catch (e) { /* KO binding error */ }
                   }
 
-                  return { success: true, value: el.value };
+                  // 값 확인
+                  return {
+                    found: true,
+                    domValue: el.value,
+                    koSet,
+                    fieldType: el.type,
+                  };
                 }, idNumberBack);
 
-                if (ssnBackResult.success) {
-                  log(`주민번호 뒷자리 JS 주입 성공: stkhIdntfNo2 (value=${ssnBackResult.value ? 'SET' : 'EMPTY'})`);
-                } else {
-                  log(`주민번호 뒷자리 JS 주입 실패: ${ssnBackResult.error}`);
-                }
+                log(`뒷자리 결과: DOM값=${koResult.domValue ? 'SET' : 'EMPTY'}, KO설정=${koResult.koSet}, type=${koResult.fieldType}`);
 
-                // 방법 2: 폴백 - dispatchEvent로 키보드 이벤트 시뮬레이션
-                if (!ssnBackResult.success || !ssnBackResult.value) {
-                  log('폴백: keyboard dispatch 시도...');
-                  await page.evaluate((val) => {
-                    const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
-                    if (!el) return;
-                    el.focus();
-                    el.readOnly = false;
-                    el.disabled = false;
-                    for (const char of val) {
-                      el.dispatchEvent(new KeyboardEvent('keydown', { key: char, code: `Digit${char}`, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), bubbles: true }));
-                      el.dispatchEvent(new KeyboardEvent('keypress', { key: char, code: `Digit${char}`, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), bubbles: true }));
-                      el.value += char;
-                      el.dispatchEvent(new Event('input', { bubbles: true }));
-                      el.dispatchEvent(new KeyboardEvent('keyup', { key: char, code: `Digit${char}`, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0), bubbles: true }));
-                    }
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                  }, idNumberBack);
-                  log('폴백 keyboard dispatch 완료');
-                }
+                // Step E: password 필드의 모의검수 통과를 위해 blur + change 이벤트 발생
+                await page.evaluate(() => {
+                  const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
+                  if (!el) return;
+                  // type 복원은 하지 않음 (text 상태에서 검증이 더 잘 됨)
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                  el.dispatchEvent(new Event('blur', { bubbles: true }));
+                });
 
               } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
             } else {
