@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { runFundMatching, type FundMatchResult } from "@/lib/analytics/fundMatcher";
 import ClientSelector from "@/components/common/ClientSelector";
+import { useClientStore } from "@/lib/store";
 
 // ─── Types ───
 
@@ -120,12 +121,14 @@ function UrgencyIcon({ urgency }: { urgency: string }) {
 // ─── Main Component ───
 
 export default function FundMatchingPage() {
+  const { selectedClient } = useClientStore();
   const [activeTab, setActiveTab] = useState<TabId>("matching");
 
   // 프로필 매칭 state
   const [results, setResults] = useState<FundMatchResult[]>([]);
   const [matchLoading, setMatchLoading] = useState(true);
   const [matchError, setMatchError] = useState("");
+  const [profileSource, setProfileSource] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "high" | "medium">("all");
   const [fundType, setFundType] = useState<FundType>("all");
   const [matchingApi, setMatchingApi] = useState(false);
@@ -152,18 +155,61 @@ export default function FundMatchingPage() {
 
   useEffect(() => {
     fetchAndMatch();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClient]);
 
   async function fetchAndMatch() {
+    setMatchLoading(true);
+    setMatchError("");
     try {
-      const res = await fetch("/api/user/company-profile");
-      const data = await res.json();
-      if (!data.success || !data.data) {
-        setMatchError("기업 프로필을 먼저 등록해주세요. 마이페이지 > 기업정보에서 등록할 수 있습니다.");
-        return;
+      if (selectedClient) {
+        // 거래처 선택 시: 거래처 데이터로 직접 매칭
+        // 거래처 인증 현황을 certifications 배열로 변환
+        const certs: { certType: string; isActive: boolean }[] = [];
+        if (selectedClient.isVentureCertified) certs.push({ certType: "venture", isActive: true });
+        if (selectedClient.isInnobiz) certs.push({ certType: "innobiz", isActive: true });
+        if (selectedClient.isMainbiz) certs.push({ certType: "mainbiz", isActive: true });
+        if (selectedClient.isISO9001) certs.push({ certType: "iso9001", isActive: true });
+        if (selectedClient.isISO14001) certs.push({ certType: "iso14001", isActive: true });
+        if (selectedClient.isRootCompany) certs.push({ certType: "root_company", isActive: true });
+
+        // 특허 현황
+        const patents: { patentType: string; status: string }[] = [];
+        const patentTotal = (selectedClient.patentCount || 0) + (selectedClient.utilityModelCount || 0) + (selectedClient.designPatentCount || 0);
+        for (let i = 0; i < patentTotal; i++) patents.push({ patentType: "patent", status: "registered" });
+
+        const clientProfile = {
+          businessSector: selectedClient.businessSector,
+          foundedDate: selectedClient.foundedDate,
+          employeeCount: selectedClient.employeeCount || 0,
+          capital: selectedClient.capital ? Number(selectedClient.capital) : undefined,
+          revenueYear1: selectedClient.revenueYear1 ? Number(selectedClient.revenueYear1) : null,
+          revenueYear2: selectedClient.revenueYear2 ? Number(selectedClient.revenueYear2) : null,
+          rndExpenditure: selectedClient.rndExpenditure ? Number(selectedClient.rndExpenditure) : null,
+          exportAmount: selectedClient.exportAmount ? Number(selectedClient.exportAmount) : null,
+          researcherCount: selectedClient.researcherCount ?? null,
+          hasResearchInstitute: selectedClient.hasResearchInstitute ?? false,
+          hasRndDepartment: selectedClient.hasRndDepartment ?? false,
+          isExporter: selectedClient.isExporter ?? false,
+          isWomenOwned: selectedClient.isWomenBiz ?? false,
+          certifications: certs,
+          patents,
+        };
+        const matchResults = runFundMatching(clientProfile);
+        setResults(matchResults);
+        setProfileSource(selectedClient.companyName);
+      } else {
+        // 거래처 미선택: 내 기업 프로필로 매칭
+        const res = await fetch("/api/user/company-profile");
+        const data = await res.json();
+        if (!data.success || !data.data) {
+          setMatchError("기업 프로필을 먼저 등록해주세요. 마이페이지 > 기업정보에서 등록할 수 있습니다.");
+          return;
+        }
+        const matchResults = runFundMatching(data.data);
+        setResults(matchResults);
+        setProfileSource(data.data.companyName || "내 기업");
       }
-      const matchResults = runFundMatching(data.data);
-      setResults(matchResults);
     } catch {
       setMatchError("데이터를 불러오는 중 오류가 발생했습니다.");
     } finally {
@@ -386,6 +432,14 @@ export default function FundMatchingPage() {
             </div>
           ) : (
             <>
+              {/* 분석 대상 기업명 */}
+              {profileSource && (
+                <div className="mb-4 px-4 py-2 bg-gray-50 rounded-lg text-sm text-gray-600">
+                  분석 대상: <span className="font-medium text-gray-900">{profileSource}</span>
+                  {selectedClient && <span className="ml-2 text-xs text-indigo-600">(거래처)</span>}
+                </div>
+              )}
+
               {/* 상단: 전체 매칭 버튼 + 요약 */}
               <div className="flex items-center justify-between">
                 <div className="grid grid-cols-3 gap-3 flex-1 mr-4">

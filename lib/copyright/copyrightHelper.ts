@@ -240,12 +240,12 @@ export function getRegistrationGuide(): RegistrationStep[] {
       step: 5,
       title: "수수료 납부",
       description: "온라인 결제 또는 계좌이체로 등록 수수료를 납부합니다.",
-      fee: "개인: 25,000원 / 법인: 50,000원 (부가세 별도)",
+      fee: "온라인 등록: 50,000원 + 등록면허세 3,600원 (개인/법인 동일)",
     },
     {
       step: 6,
       title: "등록증 발급",
-      description: "심사 후 1~2주 내 등록증이 발급됩니다. 온라인에서 등록증을 확인하고 출력할 수 있습니다.",
+      description: "심사 후 약 4영업일 내 등록증이 발급됩니다. cros.or.kr에서 등록증을 확인하고 출력할 수 있습니다.",
       documents: ["SW 저작권 등록증"],
     },
   ];

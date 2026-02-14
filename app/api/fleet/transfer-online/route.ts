@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { emailService } from "@/lib/notification/email";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     // documentsJson에 신청 정보 전체 저장
     const applicationData = {
       requestNumber,
-      transferType: "online_agent",
+      transferType: body.serviceType || "agent_visit",
       seller: {
         name: body.sellerName,
         idNumber: body.sellerIdNumber || "",
@@ -144,12 +145,14 @@ export async function POST(request: NextRequest) {
       vehicleId = newVehicle.id;
     }
 
+    const serviceType = body.serviceType || "agent_visit";
+
     // VehicleTransfer DB 저장
     const transfer = await prisma.vehicleTransfer.create({
       data: {
         vehicleId,
         userId: session.user.id,
-        transferType: "online_agent",
+        transferType: serviceType === "online_self" ? "online_self" : "online_agent",
         transferDate: new Date(transferDate),
         counterparty: body.buyerName,
         transferPrice: body.salePrice ? Number(body.salePrice) : null,
@@ -163,6 +166,69 @@ export async function POST(request: NextRequest) {
         documentsJson: JSON.stringify(applicationData),
         status: "requested",
       },
+    });
+
+    // ── 관리자 이메일 알림 발송 (행정사 방문 대행 시) ──
+    const adminEmails = ["Lawyeom@naver.com", "duath1031@gmail.com"];
+    const saleAmount = body.salePrice ? Number(body.salePrice).toLocaleString() : "-";
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8"><style>
+        body { font-family: 'Apple SD Gothic Neo', sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #7c3aed; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { padding: 20px; background: #f9fafb; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+        .label { color: #6b7280; font-size: 14px; }
+        .value { color: #111827; font-weight: 600; font-size: 14px; }
+        .footer { text-align: center; padding: 15px; font-size: 12px; color: #666; }
+        .badge { display: inline-block; background: #dbeafe; color: #1d4ed8; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+      </style></head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2 style="margin:0;">자동차 이전등록 대행 접수</h2>
+            <p style="margin:5px 0 0;font-size:14px;opacity:0.9;">새로운 접수가 도착했습니다</p>
+          </div>
+          <div class="content">
+            <p><span class="badge">${serviceType === "online_self" ? "온라인 직접" : "행정사 방문"}</span> &nbsp; 접수번호: <strong>${requestNumber}</strong></p>
+            <div style="margin:15px 0;">
+              <div class="info-row"><span class="label">양도인 (매도인)</span><span class="value">${body.sellerName} ${body.sellerPhone ? "/ " + body.sellerPhone : ""}</span></div>
+              <div class="info-row"><span class="label">양수인 (매수인)</span><span class="value">${body.buyerName} ${body.buyerPhone ? "/ " + body.buyerPhone : ""}</span></div>
+              <div class="info-row"><span class="label">차량</span><span class="value">${body.vehicleName} (${body.plateNumber || "-"})</span></div>
+              <div class="info-row"><span class="label">매매금액</span><span class="value">${saleAmount}원</span></div>
+              <div class="info-row"><span class="label">양도일자</span><span class="value">${transferDate}</span></div>
+              <div class="info-row"><span class="label">등록 지역</span><span class="value">${body.region || "서울"}</span></div>
+              <div class="info-row"><span class="label">예상 비용</span><span class="value">${totalCost ? totalCost.toLocaleString() + "원" : "미계산"}</span></div>
+              ${body.specialTerms ? `<div class="info-row"><span class="label">특약사항</span><span class="value">${body.specialTerms}</span></div>` : ""}
+            </div>
+            <p style="font-size:13px;color:#6b7280;">신청자에게 확인 연락을 해주세요.</p>
+          </div>
+          <div class="footer">AI 행정사 어드미니 | admini.co.kr</div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // 비동기로 이메일 발송 (응답 지연 방지)
+    Promise.allSettled(
+      adminEmails.map((email) =>
+        emailService.send({
+          to: email,
+          subject: `[어드미니] 이전등록 대행 접수 - ${body.vehicleName} (${requestNumber})`,
+          html: emailHtml,
+          text: `이전등록 대행 접수\n접수번호: ${requestNumber}\n양도인: ${body.sellerName}\n양수인: ${body.buyerName}\n차량: ${body.vehicleName} (${body.plateNumber || "-"})\n매매금액: ${saleAmount}원\n지역: ${body.region || "서울"}`,
+        })
+      )
+    ).then((results) => {
+      results.forEach((r, i) => {
+        if (r.status === "rejected") {
+          console.error(`[Transfer Email] Failed to send to ${adminEmails[i]}:`, r.reason);
+        } else {
+          console.log(`[Transfer Email] Sent to ${adminEmails[i]}:`, r.value);
+        }
+      });
     });
 
     return NextResponse.json(

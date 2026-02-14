@@ -598,7 +598,7 @@ export default function TransferDocumentsPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">주민등록번호 / 사업자번호</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">주민등록번호 / 법인등록번호</label>
                 <input
                   type="text"
                   value={form.buyerIdNumber}

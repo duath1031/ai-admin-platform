@@ -646,16 +646,43 @@ export default function ChatPage() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-gray-200 p-3 md:p-4 mb-2 md:mb-4">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-gray-500">
+          <div className="h-full flex flex-col items-center justify-center text-gray-500 px-2">
             <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center mb-4">
               <svg className="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
             <p className="text-lg font-medium mb-2">AI행정사에게 질문하세요</p>
-            <p className="text-sm text-center max-w-md">
+            <p className="text-sm text-center max-w-md mb-4">
               행정 절차, 인허가 요건, 필요 서류, 법령 정보 등<br />
               다양한 행정 관련 질문에 답변해 드립니다
+            </p>
+            {/* 빠른 시작 제안 버튼 */}
+            <div className="grid grid-cols-2 gap-2 max-w-lg w-full mb-3">
+              {[
+                { icon: "📋", label: "인허가 신청서", query: "음식점 영업허가 신청서를 작성해주세요" },
+                { icon: "💰", label: "급여/4대보험", query: "월급 300만원 직원의 4대보험료와 실수령액을 계산해주세요" },
+                { icon: "📄", label: "서류 안내", query: "법인 설립에 필요한 서류와 절차를 알려주세요" },
+                { icon: "⚖️", label: "법령 검색", query: "근로기준법상 연차휴가 규정을 알려주세요" },
+                { icon: "🏗️", label: "건축 인허가", query: "건축허가와 건축신고의 차이점을 알려주세요" },
+                { icon: "🚗", label: "자동차 행정", query: "중고차 명의이전 절차와 필요서류를 알려주세요" },
+              ].map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    setInput(item.query);
+                    setTimeout(() => textareaRef.current?.focus(), 100);
+                  }}
+                  className="flex items-center gap-2 p-3 text-left text-sm bg-gray-50 hover:bg-primary-50 border border-gray-200 hover:border-primary-300 rounded-xl transition-colors"
+                >
+                  <span className="text-lg">{item.icon}</span>
+                  <span className="text-gray-700 font-medium">{item.label}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-center text-blue-600 bg-blue-50 px-4 py-2 rounded-lg max-w-lg">
+              위 버튼을 누르면 예시 질문이 입력됩니다. 자유롭게 수정 후 전송하세요.
             </p>
           </div>
         ) : (

@@ -26,8 +26,8 @@ import {
 } from "@/lib/ai/knowledge";
 import { extractDocumentTags } from "@/lib/ai/tagExtractor";
 
-// 관리자 이메일 목록
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").filter(Boolean);
+// 관리자 이메일 목록 (case-insensitive)
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || "").split(",").filter(Boolean).map(e => e.trim().toLowerCase());
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 관리자 권한 확인
-    if (!ADMIN_EMAILS.includes(session.user.email)) {
+    if (!ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
       return NextResponse.json(
         { success: false, error: "관리자 권한이 필요합니다." },
         { status: 403 }
@@ -210,7 +210,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 관리자 권한 확인
-    if (!ADMIN_EMAILS.includes(session.user.email)) {
+    if (!ADMIN_EMAILS.includes(session.user.email.toLowerCase())) {
       return NextResponse.json(
         { success: false, error: "관리자 권한이 필요합니다." },
         { status: 403 }

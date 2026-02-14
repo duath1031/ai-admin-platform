@@ -140,22 +140,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: '인증이 필요합니다' }, { status: 401 });
     }
 
-    // 토큰/플랜 체크
-    const access = await checkFeatureAccess(session.user.id, "rpa_submission");
-    if (!access.allowed) {
-      return NextResponse.json(
-        { success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan },
-        { status: 403 }
-      );
-    }
-    const deducted = await deductTokens(session.user.id, "rpa_submission");
-    if (!deducted) {
-      return NextResponse.json(
-        { success: false, error: '토큰이 부족합니다.', required: 5000, redirect: '/token-charge' },
-        { status: 402 }
-      );
-    }
-
+    // 입력 유효성 검사를 토큰 차감보다 먼저 수행
     const body = await request.json();
     const validationResult = RpaSubmitSchema.safeParse(body);
 
@@ -170,6 +155,22 @@ export async function POST(request: NextRequest) {
           })),
         },
         { status: 400 }
+      );
+    }
+
+    // 토큰/플랜 체크 (입력 검증 후 차감)
+    const access = await checkFeatureAccess(session.user.id, "rpa_submission");
+    if (!access.allowed) {
+      return NextResponse.json(
+        { success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan },
+        { status: 403 }
+      );
+    }
+    const deducted = await deductTokens(session.user.id, "rpa_submission");
+    if (!deducted) {
+      return NextResponse.json(
+        { success: false, error: '토큰이 부족합니다.', required: 5000, redirect: '/token-charge' },
+        { status: 402 }
       );
     }
 

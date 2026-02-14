@@ -158,7 +158,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
     }
 
-    // 2. 토큰/플랜 체크
+    // 2. 입력 유효성 검사를 토큰 차감보다 먼저 수행
+    const body = await request.json();
+    const { recipient, recipientCode, title, content, files } = body;
+
+    if (!recipient || !title) {
+      return NextResponse.json({ error: '수신기관과 제목은 필수입니다.' }, { status: 400 });
+    }
+
+    // 3. 토큰/플랜 체크 (입력 검증 후 차감)
     const access = await checkFeatureAccess(session.user.id, "doc24_submission");
     if (!access.allowed) {
       return NextResponse.json(
@@ -174,14 +182,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { recipient, recipientCode, title, content, files } = body;
-
-    if (!recipient || !title) {
-      return NextResponse.json({ error: '수신기관과 제목은 필수입니다.' }, { status: 400 });
-    }
-
-    // 3. 문서24 계정 조회
+    // 4. 문서24 계정 조회
     const account = await prisma.doc24Account.findUnique({
       where: { userId: session.user.id },
     });
@@ -194,7 +195,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 3. 비밀번호 복호화
+    // 5. 비밀번호 복호화
     let decryptedPassword: string;
     try {
       decryptedPassword = decrypt(
@@ -210,7 +211,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
 
-    // 4. DB에 제출 기록 생성
+    // 6. DB에 제출 기록 생성
     const submission = await prisma.doc24Submission.create({
       data: {
         userId: session.user.id,
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Doc24 API] 작업 등록: submissionId=${submission.id}, recipient=${recipient}`);
 
-    // 5. Worker에 비동기 작업 등록
+    // 7. Worker에 비동기 작업 등록
     const workerResult = await callWorker('/doc24/submit', 'POST', {
       loginId: account.doc24LoginId,
       password: decryptedPassword,
@@ -250,7 +251,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 6. jobId와 submissionId 반환 (프론트에서 폴링)
+    // 8. jobId와 submissionId 반환 (프론트에서 폴링)
     return NextResponse.json({
       success: true,
       async: true,

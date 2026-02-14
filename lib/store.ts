@@ -213,7 +213,9 @@ export interface ClientCompanyData {
   // 조달
   isG2bRegistered?: boolean;
   g2bRegistrationNumber?: string | null;
-  // 외국인
+  // 수출/외국인
+  isExporter?: boolean;
+  exportCountries?: string | null;
   hasForeignWorkers?: boolean;
   foreignWorkerVisaTypes?: string | null;
   // 인증

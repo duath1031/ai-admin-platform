@@ -27,21 +27,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 토큰/플랜 체크
     const userId = session.user.id;
-    const access = await checkFeatureAccess(userId, "document_create");
-    if (!access.allowed) {
-      return NextResponse.json({ success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan }, { status: 403 });
-    }
-    const deducted = await deductTokens(userId, "document_create");
-    if (!deducted) {
-      return NextResponse.json({ success: false, error: '토큰이 부족합니다.', required: 3000, redirect: '/token-charge' }, { status: 402 });
-    }
 
+    // 입력 유효성 검사를 토큰 차감보다 먼저 수행
     const body = await request.json();
     const { templateCode, data, returnFormat = 'binary', saveForRpa = false } = body;
 
-    // 유효성 검사
     if (!templateCode) {
       return NextResponse.json(
         { success: false, error: 'templateCode는 필수입니다.' },
@@ -54,6 +45,16 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'data 객체가 필요합니다.' },
         { status: 400 }
       );
+    }
+
+    // 토큰/플랜 체크 (입력 검증 후 차감)
+    const access = await checkFeatureAccess(userId, "document_create");
+    if (!access.allowed) {
+      return NextResponse.json({ success: false, error: '플랜 업그레이드가 필요합니다.', requiredPlan: access.requiredPlan }, { status: 403 });
+    }
+    const deducted = await deductTokens(userId, "document_create");
+    if (!deducted) {
+      return NextResponse.json({ success: false, error: '토큰이 부족합니다.', required: 3000, redirect: '/token-charge' }, { status: 402 });
     }
 
     // DB에서 템플릿 조회

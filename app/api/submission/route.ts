@@ -124,8 +124,8 @@ export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
 
     // 관리자 권한 확인 (이메일 기반 간단한 체크)
-    const adminEmails = (process.env.ADMIN_EMAILS || "Lawyeom@naver.com").split(",");
-    if (!session?.user?.email || !adminEmails.includes(session.user.email)) {
+    const adminEmails = (process.env.ADMIN_EMAILS || "Lawyeom@naver.com").split(",").map(e => e.trim().toLowerCase());
+    if (!session?.user?.email || !adminEmails.includes(session.user.email.toLowerCase())) {
       return NextResponse.json(
         { error: "접근 권한이 없습니다." },
         { status: 403 }
