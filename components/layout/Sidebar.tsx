@@ -203,59 +203,74 @@ const sidebarItems: SidebarItem[] = [
     icon: icons.home,
   },
 
-  // 행정-민원
+  // 기업행정 AI
   {
-    name: "행정·민원",
+    name: "기업행정 AI",
     emoji: "\uD83D\uDCCB",
     children: [
-      { name: "AI 상담", href: "/chat", icon: icons.chat },
-      { name: "민원 접수", href: "/submission", icon: icons.submission },
-      { name: "자동차 이전등록", href: "/fleet/transfer-online", icon: icons.car },
+      { name: "AI 행정 상담", href: "/chat", icon: icons.chat },
+      { name: "민원 자동접수", href: "/submission", icon: icons.submission },
       { name: "인허가 자가진단", href: "/permit-check", icon: icons.permit },
-      { name: "저작권 등록 가이드", href: "/copyright", icon: icons.copyright },
-      { name: "과태료 방어", href: "/chat", icon: icons.fine, badge: "준비 중" },
+      { name: "저작권 등록", href: "/copyright", icon: icons.copyright },
+      { name: "내용증명", href: "/legal-notice", icon: icons.docWrite },
+      { name: "회의록 AI", href: "/meeting-minutes", icon: icons.docReview },
     ],
   },
 
-  // 노무-HR
+  // 노무·HR
   {
     name: "노무·HR",
     emoji: "\uD83D\uDC77",
     children: [
-      { name: "4대보험 관리", href: "/labor/insurance-calc", icon: icons.insurance },
-      { name: "급여 계산기", href: "/labor/payslip", icon: icons.payslip },
-      { name: "근로계약서", href: "/labor/contract", icon: icons.contract },
-      { name: "외국인 비자", href: "/visa-calculator", icon: icons.visa, badge: "준비 중" },
-      { name: "퇴직금 정산", href: "/labor/severance-calc", icon: icons.severance },
+      { name: "4대보험 계산기", href: "/labor/insurance-calc", icon: icons.insurance },
+      { name: "4대보험 신고서", href: "/labor/insurance-report", icon: icons.docWrite },
+      { name: "급여명세서", href: "/labor/payslip", icon: icons.payslip },
+      { name: "근로계약서 AI", href: "/labor/contract", icon: icons.contract },
+      { name: "퇴직금 계산기", href: "/labor/severance-calc", icon: icons.severance },
+      { name: "연차 계산기", href: "/labor/annual-leave", icon: icons.calendar },
+      { name: "주휴수당 계산기", href: "/labor/weekly-holiday-pay", icon: icons.insurance },
+      { name: "비자 계산기", href: "/visa-calculator", icon: icons.visa },
     ],
   },
 
-  // 자금-컨설팅
+  // 자동차 행정
+  {
+    name: "자동차 행정",
+    emoji: "\uD83D\uDE97",
+    children: [
+      { name: "온라인 이전등록", href: "/fleet/transfer-online", icon: icons.car },
+      { name: "취등록세 계산기", href: "/fleet/transfer-cost", icon: icons.insurance },
+      { name: "이전등록 서류", href: "/fleet/transfer-documents", icon: icons.docWrite },
+      { name: "운행일지", href: "/fleet/trip-log", icon: icons.calendar },
+    ],
+  },
+
+  // 입찰·조달
+  {
+    name: "입찰·조달",
+    emoji: "\uD83D\uDCCA",
+    children: [
+      { name: "나라장터 검색", href: "/procurement", icon: icons.search },
+      { name: "사정률 시뮬레이터", href: "/bid-simulation", icon: icons.simulator },
+      { name: "입찰 분석", href: "/bid-analysis", icon: icons.simulator },
+      { name: "직접생산확인 진단", href: "/direct-production-check", icon: icons.certification },
+    ],
+  },
+
+  // 자금·컨설팅
   {
     name: "자금·컨설팅",
     emoji: "\uD83D\uDCB0",
     children: [
       { name: "정책자금 매칭", href: "/fund-matching", icon: icons.fund },
-      { name: "보조금 매칭", href: "/fund-matching", icon: icons.subsidy },
-      { name: "인증 진단", href: "/certification-check", icon: icons.certification },
-      { name: "사업계획서", href: "/chat", icon: icons.bizplan, badge: "준비 중" },
+      { name: "인증 자가진단", href: "/certification-check", icon: icons.certification },
+      { name: "사업계획서 AI", href: "/chat?q=사업계획서 작성을 도와주세요", icon: icons.bizplan, badge: "준비 중" },
     ],
   },
 
-  // 입찰-조달
+  // 서류 AI
   {
-    name: "입찰·조달",
-    emoji: "\uD83D\uDCCA",
-    children: [
-      { name: "입찰 분석", href: "/procurement", icon: icons.search },
-      { name: "시뮬레이터", href: "/bid-simulation", icon: icons.simulator, badge: "준비 중" },
-      { name: "보증보험", href: "/chat", icon: icons.guarantee, badge: "준비 중" },
-    ],
-  },
-
-  // 서류
-  {
-    name: "서류",
+    name: "서류 AI",
     emoji: "\uD83D\uDCC4",
     children: [
       { name: "서류 작성", href: "/documents", icon: icons.docWrite },
@@ -264,14 +279,14 @@ const sidebarItems: SidebarItem[] = [
     ],
   },
 
-  // 연구-관리
+  // 연구·관리
   {
     name: "연구·관리",
-    emoji: "\uD83D\uDCDD",
+    emoji: "\uD83D\uDD2C",
     children: [
-      { name: "연구노트", href: "/research-note", icon: icons.researchNote, badge: "준비 중" },
-      { name: "기한 알림", href: "/chat", icon: icons.alarm, badge: "준비 중" },
-      { name: "세금 캘린더", href: "/chat", icon: icons.calendar, badge: "준비 중" },
+      { name: "연구노트 (KOITA)", href: "/research-note", icon: icons.researchNote },
+      { name: "거래처 관리", href: "/client-management", icon: icons.user },
+      { name: "법인차량 관리", href: "/fleet", icon: icons.car },
     ],
   },
 ];

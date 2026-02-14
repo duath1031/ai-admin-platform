@@ -6,16 +6,16 @@ import { Card, CardContent } from "@/components/ui";
 
 const serviceCategories = [
   {
-    title: "행정·민원",
+    title: "기업행정 AI",
     emoji: "📋",
     color: "blue",
     items: [
       { name: "AI 행정 상담", href: "/chat", desc: "인허가·절차 AI 상담" },
       { name: "민원 자동접수", href: "/submission", desc: "정부24·문서24 접수" },
-      { name: "자동차 이전등록", href: "/car-transfer", desc: "온라인 명의이전" },
+      { name: "인허가 자가진단", href: "/permit-check", desc: "건축행정 GIS 진단" },
       { name: "저작권 등록", href: "/copyright", desc: "등록 가이드·신청서" },
-      { name: "과태료 감경", href: "/chat?q=과태료 감경 신청을 도와주세요", desc: "감경 신청서 자동작성" },
-      { name: "토지이용계획", href: "/chat?q=토지이용계획을 조회해주세요", desc: "용도지역 확인" },
+      { name: "내용증명", href: "/legal-notice", desc: "내용증명 작성" },
+      { name: "회의록 AI", href: "/meeting-minutes", desc: "녹취록 자동 요약" },
     ],
   },
   {
@@ -24,22 +24,24 @@ const serviceCategories = [
     color: "green",
     items: [
       { name: "4대보험 계산기", href: "/labor/insurance-calc", desc: "보험료·소득세 계산" },
+      { name: "4대보험 신고서", href: "/labor/insurance-report", desc: "취득·상실·변경" },
       { name: "급여명세서", href: "/labor/payslip", desc: "명세서 생성·인쇄" },
       { name: "근로계약서 AI", href: "/labor/contract", desc: "계약서 자동 생성" },
       { name: "퇴직금 계산기", href: "/labor/severance-calc", desc: "퇴직금·퇴직소득세" },
       { name: "연차 계산기", href: "/labor/annual-leave", desc: "연차 자동 산정" },
       { name: "주휴수당 계산기", href: "/labor/weekly-holiday-pay", desc: "주휴수당·실질시급" },
+      { name: "비자 계산기", href: "/visa-calculator", desc: "E-7/E-9/D-8 등 8종" },
     ],
   },
   {
-    title: "자금·컨설팅",
-    emoji: "💰",
-    color: "purple",
+    title: "자동차 행정",
+    emoji: "🚗",
+    color: "cyan",
     items: [
-      { name: "정책자금 매칭", href: "/fund-matching", desc: "보조금24 통합 매칭" },
-      { name: "인증 자가진단", href: "/certification-check", desc: "벤처·ISO·이노비즈" },
-      { name: "사업계획서 AI", href: "/chat?q=사업계획서 작성을 도와주세요", desc: "AI 대필·검토" },
-      { name: "직접생산확인", href: "/direct-production", desc: "자가진단 엔진" },
+      { name: "온라인 이전등록", href: "/fleet/transfer-online", desc: "명의이전 대행" },
+      { name: "취등록세 계산기", href: "/fleet/transfer-cost", desc: "차종별 세금 계산" },
+      { name: "이전등록 서류", href: "/fleet/transfer-documents", desc: "양도증명서·위임장" },
+      { name: "운행일지", href: "/fleet/trip-log", desc: "법인차량 운행기록" },
     ],
   },
   {
@@ -49,18 +51,27 @@ const serviceCategories = [
     items: [
       { name: "나라장터 검색", href: "/procurement", desc: "스마트 입찰 필터" },
       { name: "사정률 시뮬레이터", href: "/bid-simulation", desc: "투찰금액 분석" },
-      { name: "경쟁사 분석", href: "/procurement", desc: "투찰 패턴 인사이트" },
+      { name: "입찰 분석", href: "/bid-analysis", desc: "경쟁사 패턴 인사이트" },
+      { name: "직접생산확인 진단", href: "/direct-production-check", desc: "37업종 자가진단" },
     ],
   },
   {
-    title: "서류·계약",
+    title: "자금·컨설팅",
+    emoji: "💰",
+    color: "purple",
+    items: [
+      { name: "정책자금 매칭", href: "/fund-matching", desc: "보조금24 통합 매칭" },
+      { name: "인증 자가진단", href: "/certification-check", desc: "벤처·ISO·이노비즈" },
+    ],
+  },
+  {
+    title: "서류 AI",
     emoji: "📄",
     color: "teal",
     items: [
       { name: "서류 작성", href: "/documents/new", desc: "206종 법정 서식" },
-      { name: "서류 검토 AI", href: "/review", desc: "AI 검증·독소조항" },
-      { name: "내용증명", href: "/certified-mail", desc: "내용증명 작성" },
-      { name: "회의록 AI", href: "/meeting-minutes", desc: "녹취록 요약" },
+      { name: "서류 검토", href: "/review", desc: "AI 검증·독소조항" },
+      { name: "계약서 분석", href: "/contract-analysis", desc: "독소조항 검출" },
     ],
   },
   {
@@ -69,8 +80,8 @@ const serviceCategories = [
     color: "indigo",
     items: [
       { name: "연구노트 (KOITA)", href: "/research-note", desc: "표준 양식·타임스탬프" },
-      { name: "법인차량 운행일지", href: "/fleet", desc: "운행기록 관리" },
-      { name: "거래처 관리", href: "/clients", desc: "거래처별 서류함" },
+      { name: "거래처 관리", href: "/client-management", desc: "거래처별 서류함" },
+      { name: "법인차량 관리", href: "/fleet", desc: "차량·운행 종합관리" },
     ],
   },
 ];
@@ -78,6 +89,7 @@ const serviceCategories = [
 const colorMap: Record<string, { bg: string; text: string; border: string; iconBg: string }> = {
   blue: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-100", iconBg: "bg-blue-100" },
   green: { bg: "bg-green-50", text: "text-green-700", border: "border-green-100", iconBg: "bg-green-100" },
+  cyan: { bg: "bg-cyan-50", text: "text-cyan-700", border: "border-cyan-100", iconBg: "bg-cyan-100" },
   purple: { bg: "bg-purple-50", text: "text-purple-700", border: "border-purple-100", iconBg: "bg-purple-100" },
   orange: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-100", iconBg: "bg-orange-100" },
   teal: { bg: "bg-teal-50", text: "text-teal-700", border: "border-teal-100", iconBg: "bg-teal-100" },
