@@ -93,6 +93,9 @@ export async function PUT(
     if (body.clientCompanyId !== undefined) {
       updateData.clientCompanyId = body.clientCompanyId || null;
     }
+    if (body.attachments !== undefined) {
+      updateData.attachments = body.attachments ? JSON.stringify(body.attachments) : null;
+    }
 
     const note = await prisma.researchNote.update({
       where: { id },

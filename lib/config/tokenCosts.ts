@@ -88,7 +88,7 @@ export const TOKEN_COSTS: Record<string, number> = {
   trip_log: 0,
 
   // 연구노트
-  research_note: 2000,
+  research_note: 3000,
 
   // 직접생산확인
   direct_production_check: 1500,

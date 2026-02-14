@@ -126,6 +126,9 @@ const companyProfileSchema = z.object({
 
   // Section 11: 대표자 성별 (여성기업 인증용)
   ceoGender: z.string().max(10).optional().nullable(),
+
+  // Section 12: 청년 창업자
+  isYouthEntrepreneur: z.boolean().optional().default(false),
 });
 
 // BigInt 변환이 필요한 필드 목록

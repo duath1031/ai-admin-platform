@@ -493,7 +493,13 @@ export async function POST(req: NextRequest) {
     const parallelTasks = await Promise.all([
       // Task 1: 마스터 프로필 (DB)
       withTimeout(
-        prisma.companyProfile.findUnique({ where: { userId: session.user.id as string } }).catch(() => null),
+        prisma.companyProfile.findUnique({
+          where: { userId: session.user.id as string },
+          include: {
+            patents: { orderBy: { createdAt: 'desc' }, take: 20 },
+            certifications: { orderBy: { createdAt: 'desc' }, take: 20 },
+          },
+        }).catch(() => null),
         PARALLEL_TIMEOUT, null
       ),
 
@@ -568,6 +574,44 @@ export async function POST(req: NextRequest) {
       if (p.foundedDate) profileLines.push(`- 설립일: ${new Date(p.foundedDate).toISOString().split('T')[0]}`);
       if (p.employeeCount > 0) profileLines.push(`- 직원 수: ${p.employeeCount}명`);
       if (p.capital > 0) { const cap = Number(p.capital); profileLines.push(`- 자본금: ${cap >= 100000000 ? `${(cap / 100000000).toFixed(1)}억원` : `${Math.round(cap / 10000).toLocaleString()}만원`}`); }
+      if (p.businessSector) profileLines.push(`- 업종 대분류: ${p.businessSector}`);
+      if (p.industryCode) profileLines.push(`- 산업분류코드: ${p.industryCode} (${p.industryName || ''})`);
+      if (p.establishmentDate) profileLines.push(`- 사업개시일: ${new Date(p.establishmentDate).toISOString().split('T')[0]}`);
+      if (p.isYouthEntrepreneur) profileLines.push(`- 청년 창업자: 해당`);
+      if (p.permanentEmployees) profileLines.push(`- 정규직: ${p.permanentEmployees}명`);
+      if (p.researcherCount) profileLines.push(`- 연구원: ${p.researcherCount}명`);
+      if (p.foreignEmployees) profileLines.push(`- 외국인 근로자: ${p.foreignEmployees}명`);
+      // 재무 정보
+      const formatMoney = (v: any) => { const n = Number(v); return n >= 100000000 ? `${(n/100000000).toFixed(1)}억원` : `${Math.round(n/10000).toLocaleString()}만원`; };
+      if (p.revenueYear1 && Number(p.revenueYear1) > 0) profileLines.push(`- 매출액(${p.revenueLabel1 || '최근'}): ${formatMoney(p.revenueYear1)}`);
+      if (p.revenueYear2 && Number(p.revenueYear2) > 0) profileLines.push(`- 매출액(${p.revenueLabel2 || '전년'}): ${formatMoney(p.revenueYear2)}`);
+      if (p.totalAssets && Number(p.totalAssets) > 0) profileLines.push(`- 총자산: ${formatMoney(p.totalAssets)}`);
+      if (p.rndExpenditure && Number(p.rndExpenditure) > 0) profileLines.push(`- 연구개발비: ${formatMoney(p.rndExpenditure)}`);
+      if (p.exportAmount && Number(p.exportAmount) > 0) profileLines.push(`- 수출액: ${formatMoney(p.exportAmount)}`);
+      // 연구소/제조/조달
+      if (p.hasResearchInstitute) profileLines.push(`- 기업부설연구소: 보유${p.researchInstituteDate ? ` (${new Date(p.researchInstituteDate).toISOString().split('T')[0]} 인정)` : ''}`);
+      if (p.hasRndDepartment) profileLines.push(`- 연구개발전담부서: 보유`);
+      if (p.isManufacturer) profileLines.push(`- 제조업체: 해당${p.factoryAddress ? ` (공장: ${p.factoryAddress})` : ''}`);
+      if (p.isG2bRegistered) profileLines.push(`- 나라장터 등록: ${p.g2bRegistrationNumber || '등록됨'}`);
+      if (p.hasDirectProductionCert) profileLines.push(`- 직접생산확인: 보유`);
+      if (p.hasMasContract) profileLines.push(`- MAS 계약: 보유`);
+      if (p.isExporter) profileLines.push(`- 수출기업: 해당`);
+      if (p.hasForeignWorkers) profileLines.push(`- 외국인 고용: 해당`);
+      // 특허 (relations)
+      if (p.patents && p.patents.length > 0) {
+        profileLines.push(`- 특허/지식재산권: ${p.patents.length}건`);
+        for (const pat of p.patents.slice(0, 5)) {
+          profileLines.push(`  · ${pat.patentType || '특허'}: ${pat.title}${pat.registrationNo ? ` (${pat.registrationNo})` : ''}${pat.status ? ` [${pat.status}]` : ''}`);
+        }
+        if (p.patents.length > 5) profileLines.push(`  · ... 외 ${p.patents.length - 5}건`);
+      }
+      // 인증 (relations)
+      if (p.certifications && p.certifications.length > 0) {
+        profileLines.push(`- 보유 인증: ${p.certifications.length}건`);
+        for (const cert of p.certifications.slice(0, 5)) {
+          profileLines.push(`  · ${cert.certType || '인증'}: ${cert.name}${cert.certNumber ? ` (${cert.certNumber})` : ''}${cert.status ? ` [${cert.status}]` : ''}`);
+        }
+      }
       if (profileLines.length > 0) {
         contextParts.push(`\n\n[사용자 기업 정보 (마스터 프로필)]\n${profileLines.join('\n')}\n⚠️ 위 정보는 사용자가 사전에 등록한 기업 정보입니다.\n- 답변 시 이 정보를 자연스럽게 활용하세요.\n- 이미 등록된 정보를 다시 물어보지 마세요.\n- 서류 작성 시 위 정보를 자동으로 채워 넣으세요.`);
         console.log(`[Chat Stream] 마스터 프로필 로드: ${p.companyName || '(상호 미입력)'}`);
@@ -713,8 +757,44 @@ export async function POST(req: NextRequest) {
 - 인허가 자가진단: 토지이용계획 + 건축물대장 데이터로 사업 가능 여부 분석
 - 토지이용계획 조회: 주소 입력 시 자동 조회
 
-📄 **저작권/IP**
-- 저작권 등록: 10가지 저작물 유형 (어문, 음악, 미술, 건축, 사진, 영상, 도형, SW, 2차적, 편집) 등록 가이드 및 신청서 작성 안내
+📄 **저작권/IP AI**
+- 저작권 등록 가이드: 저작물 유형별(어문, 미술, 프로그램, 음악 등) 등록 절차, 필요서류, 수수료, 법적 효과 상세 안내
+- SW 소스코드 전처리: 비밀정보 마스킹 + CROS 규격 30페이지 추출 도구
+- 창작의도 기술서 AI 생성: 프로그램 정보 입력 시 1,500~2,000자 명세서 자동 생성
+- CROS(한국저작권위원회) 바로가기: cros.or.kr에서 온라인 등록 (비회원도 가능)
+- 대리 신청: 행정사합동사무소 정의 (070-8657-1888)에 위임 가능
+
+[저작권 등록 상세 지식]
+사용자가 "저작권 등록" 관련 질문을 하면 아래 지식을 활용하세요:
+
+1. 저작물 유형별 수수료:
+   - 일반저작물(어문/미술/음악 등): 온라인 20,000원 + 등록면허세 3,600원 = 23,600원
+   - 프로그램저작물(SW): 온라인 50,000원 + 등록면허세 3,600원 = 53,600원
+   - 오프라인 접수 시 각각 30,000원 / 60,000원
+
+2. CROS 온라인 등록 절차:
+   Step 1: cros.or.kr 접속 → 비회원 또는 회원 로그인
+   Step 2: "등록신청" → 저작물 유형 선택
+   Step 3: 신청서 작성 (저작물명, 저작자, 창작연월일, 공표여부 등)
+   Step 4: 복제물 업로드 (PDF, 이미지, 소스코드 zip 등)
+   Step 5: PASS/카카오 본인인증
+   Step 6: 수수료 결제 (신용카드/실시간 계좌이체)
+   Step 7: 접수번호 확인 + 접수증 출력
+
+3. 등록의 법적 효과:
+   - 저작자 추정 효력 (저작권법 제53조 제3항)
+   - 침해 시 과실 추정 (저작권법 제125조 제4항)
+   - 제3자 대항력
+   - 세관 통관보류 신청 가능
+
+4. 주요 법령: 저작권법 제53조(등록), 제55조(등록절차), 시행규칙 별지 제3호서식
+
+5. 심사 소요기간: 일반 1~2주, 프로그램 약 4영업일
+
+6. 팁: 창작일로부터 1년 이내 등록 시 창작일 추정 효력 발생
+
+7. 대리 신청 안내: "직접 등록이 번거로우시면 행정사에게 위임할 수 있습니다"
+   → 행정사합동사무소 정의 / 070-8657-1888
 
 🌍 **비자/출입국**
 - 비자 점수 계산기: E-7, F-2, F-5 등 비자별 점수 자동 계산
@@ -732,7 +812,7 @@ export async function POST(req: NextRequest) {
 5. 사용자가 "입찰", "나라장터" 질문 → 조달 분석 메뉴 안내
 6. 사용자가 "보조금", "정책자금" 질문 → 정부지원금 매칭 메뉴 안내
 7. 사용자가 "차량 이전", "명의변경" 질문 → 이전등록 대행 접수 안내 + 070-8657-1888
-8. 사용자가 "저작권 등록" 질문 → 저작권/IP 메뉴 안내
+8. 사용자가 "저작권 등록" 질문 → 위 저작권 등록 상세 지식 활용하여 절차/수수료/서류 안내 + 좌측 메뉴 "저작권 등록 가이드" 페이지 안내 + 대리 신청(070-8657-1888) 안내
 9. 사용자가 "뭘 할 수 있어?", "기능 소개" 질문 → 위 전체 기능 목록 요약 안내
 
 [답변 마무리: 후속 질문 제안 - 반드시!]
@@ -752,7 +832,7 @@ export async function POST(req: NextRequest) {
   1. 해당 인허가의 관련 법령과 절차를 먼저 안내하세요
   2. 필요한 정보(상호명, 대표자, 소재지 등)를 질문하세요
   3. 정보가 충분하면 신청서를 마크다운 형식으로 작성해 드리세요
-  4. HWPX 서식이 있으면 [[DOCUMENT:code]] 마커로 서류작성 폼도 제공하세요
+  4. HWPX 서식이 있으면 [[DOCUMENT:실제서식code값]] 마커로 서류작성 폼도 제공하세요 (예: [[DOCUMENT:hwpx_식품영업신고서]])
 - 작성 가능한 신청서 예시: 영업신고서, 사업자등록신청서, 각종 인허가 신청서, 변경신고서, 폐업신고서 등
 
 [인허가 자가진단]
@@ -788,7 +868,7 @@ export async function POST(req: NextRequest) {
 ${templateLines}
 
 🔴 핵심 규칙:
-1. 사용자의 대화 맥락을 파악하여, 위 목록 중 적합한 서식이 있다면 답변 마지막에 반드시 [[DOCUMENT:code]] 마커를 출력하세요.
+1. 사용자의 대화 맥락을 파악하여, 위 목록 중 적합한 서식이 있다면 답변 마지막에 반드시 [[DOCUMENT:해당서식의code값]] 마커를 출력하세요. (주의: "code"라는 글자를 그대로 쓰지 말고, 위 목록의 실제 code 컬럼 값을 사용하세요!)
 2. 사용자가 먼저 "서류 작성해줘"라고 요청할 때까지 기다리지 마세요. 행정 절차 안내 시 관련 서식이 있으면 선제적으로 "서류를 작성해드릴까요?" 라고 제안하고 마커를 출력하세요.
 3. 마커 형식: [[DOCUMENT:정확한_code값]] (예: [[DOCUMENT:hwpx_식품영업신고서]])
 4. 이 마커가 출력되면 사용자 화면에 서류 작성 폼이 자동으로 나타납니다.

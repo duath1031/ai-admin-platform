@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
       researcherName,
       supervisorName,
       status,
+      attachments,
     } = body;
 
     if (!projectName || !title || !content) {
@@ -125,6 +126,7 @@ export async function POST(request: NextRequest) {
         equipment: equipment || null,
         researcherName: researcherName || null,
         supervisorName: supervisorName || null,
+        attachments: attachments ? JSON.stringify(attachments) : null,
         status: status || "draft",
       },
     });

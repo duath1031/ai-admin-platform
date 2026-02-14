@@ -65,6 +65,18 @@ export default function BasicInfoSection({ form, onChange, errors }: Props) {
               </select>
               <p className="text-xs text-gray-400 mt-1">여성기업 인증 진단에 활용됩니다</p>
             </div>
+            <div className="flex items-start gap-3 md:col-span-2 mt-2">
+              <label className="relative flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.isYouthEntrepreneur || false}
+                  onChange={(e) => onChange("isYouthEntrepreneur", e.target.checked)}
+                  className="w-4 h-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                />
+                <span className="ml-2 text-sm font-medium text-gray-700">청년 창업자 (만 39세 이하)</span>
+              </label>
+              <p className="text-xs text-gray-400 mt-0.5">청년 정책자금, 보조금 매칭에 활용됩니다</p>
+            </div>
           </div>
         </CardContent>
       </Card>

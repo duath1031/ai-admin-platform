@@ -241,6 +241,7 @@ model CompanyProfile {
   companyName   String?   // 상호
   ownerName     String?   // 대표자명
   ceoGender     String?   // 대표자 성별 (male/female)
+  isYouthEntrepreneur Boolean @default(false) // 청년 창업자 여부 (만 39세 이하)
   bizRegNo      String?   // 사업자등록번호 (10자리)
   corpRegNo     String?   // 법인등록번호 (선택)
   address       String?   // 주소
@@ -1419,6 +1420,9 @@ model ResearchNote {
   nextPlan        String?  @db.Text // 향후계획
   materials       String?  @db.Text // 사용재료/시약
   equipment       String?  @db.Text // 사용장비
+
+  // 첨부파일 (사진, 도표 등) - JSON 배열 [{name, type, data(base64), caption}]
+  attachments     String?  @db.Text
 
   // 서명
   researcherName  String?          // 연구원명

@@ -7,6 +7,13 @@ import ResearchNotePdf from "@/components/labor/ResearchNotePdf";
 
 // ─── Types ───
 
+interface Attachment {
+  name: string;
+  type: string;
+  data: string; // base64
+  caption: string;
+}
+
 interface ResearchNote {
   id: string;
   userId: string;
@@ -26,6 +33,7 @@ interface ResearchNote {
   equipment: string | null;
   researcherName: string | null;
   supervisorName: string | null;
+  attachments: string | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -47,6 +55,7 @@ interface NoteForm {
   equipment: string;
   researcherName: string;
   supervisorName: string;
+  status: string;
 }
 
 const EMPTY_FORM: NoteForm = {
@@ -65,19 +74,21 @@ const EMPTY_FORM: NoteForm = {
   equipment: "",
   researcherName: "",
   supervisorName: "",
+  status: "draft",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: "작성중",
-  signed: "서명완료",
-  archived: "보관",
+  draft: "수정중",
+  completed: "작성완료",
 };
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-yellow-100 text-yellow-800",
-  signed: "bg-green-100 text-green-800",
-  archived: "bg-gray-100 text-gray-800",
+  completed: "bg-green-100 text-green-800",
 };
+
+const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024; // 5MB per file
+const MAX_ATTACHMENTS = 10;
 
 type TabKey = "list" | "write" | "ai";
 
@@ -92,6 +103,7 @@ export default function ResearchNotePage() {
   const [form, setForm] = useState<NoteForm>({ ...EMPTY_FORM });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewNote, setViewNote] = useState<ResearchNote | null>(null);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // AI 보강 탭
@@ -147,6 +159,52 @@ export default function ResearchNotePage() {
   const resetForm = () => {
     setForm({ ...EMPTY_FORM, noteDate: new Date().toISOString().split("T")[0] });
     setEditingId(null);
+    setAttachments([]);
+  };
+
+  // ─── Attachment Handlers ───
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    if (attachments.length + files.length > MAX_ATTACHMENTS) {
+      showMessage("error", `첨부파일은 최대 ${MAX_ATTACHMENTS}개까지 가능합니다.`);
+      return;
+    }
+
+    Array.from(files).forEach((file) => {
+      if (file.size > MAX_ATTACHMENT_SIZE) {
+        showMessage("error", `${file.name}: 파일 크기가 5MB를 초과합니다.`);
+        return;
+      }
+      if (!file.type.startsWith("image/")) {
+        showMessage("error", `${file.name}: 이미지 파일만 첨부 가능합니다.`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const base64 = ev.target?.result as string;
+        setAttachments((prev) => [
+          ...prev,
+          { name: file.name, type: file.type, data: base64, caption: "" },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // reset input
+    e.target.value = "";
+  };
+
+  const handleAttachmentCaption = (index: number, caption: string) => {
+    setAttachments((prev) =>
+      prev.map((att, i) => (i === index ? { ...att, caption } : att))
+    );
+  };
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -169,6 +227,7 @@ export default function ResearchNotePage() {
         ...form,
         clientCompanyId: selectedClient?.id || null,
         noteNumber: form.noteNumber ? Number(form.noteNumber) : undefined,
+        attachments: attachments.length > 0 ? attachments : null,
       };
 
       let res;
@@ -219,7 +278,19 @@ export default function ResearchNotePage() {
       equipment: note.equipment || "",
       researcherName: note.researcherName || "",
       supervisorName: note.supervisorName || "",
+      status: note.status || "draft",
     });
+    // 첨부파일 로딩
+    if (note.attachments) {
+      try {
+        const parsed = JSON.parse(note.attachments);
+        setAttachments(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setAttachments([]);
+      }
+    } else {
+      setAttachments([]);
+    }
     setEditingId(note.id);
     setViewNote(null);
     setActiveTab("write");
@@ -618,7 +689,7 @@ export default function ResearchNotePage() {
               </svg>
               노트 정보
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   작성일 <span className="text-red-500">*</span>
@@ -654,6 +725,19 @@ export default function ResearchNotePage() {
                   placeholder="연구노트 제목"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  상태
+                </label>
+                <select
+                  value={form.status}
+                  onChange={(e) => handleFormChange("status", e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                >
+                  <option value="draft">수정중</option>
+                  <option value="completed">작성완료</option>
+                </select>
               </div>
             </div>
           </div>
@@ -794,6 +878,99 @@ export default function ResearchNotePage() {
             </div>
           </div>
 
+          {/* 첨부파일 (사진/이미지) */}
+          <div className="bg-white rounded-xl shadow-sm border p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <svg
+                className="w-5 h-5 text-blue-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              첨부파일 (사진/도표)
+              <span className="text-xs font-normal text-gray-400 ml-1">
+                {attachments.length}/{MAX_ATTACHMENTS}
+              </span>
+            </h3>
+
+            {/* 파일 선택 */}
+            <div className="mb-4">
+              <label className="relative inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors text-sm font-medium">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                사진 추가
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+              </label>
+              <span className="ml-3 text-xs text-gray-400">
+                이미지 파일 (JPG, PNG 등), 개당 최대 5MB
+              </span>
+            </div>
+
+            {/* 첨부 목록 */}
+            {attachments.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {attachments.map((att, idx) => (
+                  <div
+                    key={idx}
+                    className="relative border border-gray-200 rounded-lg overflow-hidden group"
+                  >
+                    {/* 이미지 미리보기 */}
+                    <div className="aspect-[4/3] bg-gray-50 flex items-center justify-center overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={att.data}
+                        alt={att.caption || att.name}
+                        className="w-full h-full object-contain"
+                      />
+                    </div>
+                    {/* 삭제 버튼 */}
+                    <button
+                      onClick={() => handleRemoveAttachment(idx)}
+                      className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                      title="삭제"
+                    >
+                      X
+                    </button>
+                    {/* 파일명 + 캡션 */}
+                    <div className="p-2 border-t border-gray-100">
+                      <p className="text-xs text-gray-500 truncate mb-1">{att.name}</p>
+                      <input
+                        type="text"
+                        value={att.caption}
+                        onChange={(e) => handleAttachmentCaption(idx, e.target.value)}
+                        placeholder="사진 설명 (선택)"
+                        className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {attachments.length === 0 && (
+              <div className="text-center py-6 text-gray-400 text-sm">
+                <svg className="w-10 h-10 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                실험 사진, 도표, 그래프 등을 첨부할 수 있습니다.
+              </div>
+            )}
+          </div>
+
           {/* 서명 */}
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <h3 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -881,7 +1058,8 @@ export default function ResearchNotePage() {
                     equipment: form.equipment || null,
                     researcherName: form.researcherName || null,
                     supervisorName: form.supervisorName || null,
-                    status: "draft",
+                    attachments: attachments.length > 0 ? JSON.stringify(attachments) : null,
+                    status: form.status || "draft",
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
                   });
