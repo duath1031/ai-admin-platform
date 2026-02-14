@@ -62,7 +62,47 @@ async function setupDevToolsBypass(page, context, log) {
     });
   });
 
-  // 방법 2: 페이지 로드 전에 devtoolsDetector 전역 객체 무력화
+  // 방법 2: TouchEn nxKey 보안 프로그램 설치 페이지 리다이렉트 차단
+  // car365 로그인 시 TouchEn 미설치면 install.html로 리다이렉트됨 → 이를 차단
+  await context.route('**/touchenNx/install/**', (route) => {
+    log('TouchEn 설치 페이지 리다이렉트 차단됨');
+    // install.html에서 url 파라미터로 원래 이동하려던 URL이 들어옴
+    const url = new URL(route.request().url());
+    const redirectUrl = url.searchParams.get('url');
+    log(`원래 목적지: ${redirectUrl}`);
+    // 빈 페이지 반환 (리다이렉트 방지)
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<html><body><script>window.location.href="' + (redirectUrl || 'https://www.car365.go.kr/ccpt/mbr/login/mainView.do') + '";</script></body></html>',
+    });
+  });
+
+  // 방법 3: TouchEn nxKey 관련 JS 파일 가짜 응답
+  await context.route('**/{TouchEn,touchen,nxKey,nxkey,nxweb,ksign}*.js', (route) => {
+    const reqUrl = route.request().url();
+    // install 관련은 위에서 처리하므로 JS만
+    if (reqUrl.includes('install.html')) {
+      route.continue();
+      return;
+    }
+    log(`TouchEn JS 차단: ${reqUrl.split('/').pop()}`);
+    route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `// TouchEn bypassed by RPA
+var TouchEn = TouchEn || {};
+TouchEn.nxKey = { isRunning: true, isInstalled: true, version: "1.0.0" };
+var nxKey = { isRunning: true };
+var ksToken = "";
+function nxkey_check() { return true; }
+function TouchEnNxKeyCheck() { return true; }
+function TouchEnStart() { return true; }
+`,
+    });
+  });
+
+  // 방법 4: 페이지 로드 전에 devtoolsDetector + TouchEn 전역 객체 무력화
   await page.addInitScript(() => {
     // devtoolsDetector가 로드되기 전에 더미 객체로 선점
     Object.defineProperty(window, 'devtoolsDetector', {
@@ -75,9 +115,33 @@ async function setupDevToolsBypass(page, context, log) {
       writable: false,
       configurable: false,
     });
+
+    // TouchEn nxKey 전역 객체 선점
+    window.TouchEn = window.TouchEn || {};
+    window.TouchEn.nxKey = { isRunning: true, isInstalled: true, version: "1.0.0" };
+    window.nxKey = { isRunning: true };
+
+    // TouchEn 설치 체크 함수 오버라이드
+    window.nxkey_check = function() { return true; };
+    window.TouchEnNxKeyCheck = function() { return true; };
+    window.TouchEnStart = function() { return true; };
+
+    // 보안 프로그램 설치 페이지 리다이렉트 방지
+    const origAssign = window.location.assign;
+    const origReplace = window.location.replace;
+    const blockSecurityRedirect = function(url) {
+      if (typeof url === 'string' && (url.includes('touchenNx/install') || url.includes('TouchEn') || url.includes('raonsecure'))) {
+        console.log('[RPA] 보안 프로그램 리다이렉트 차단:', url);
+        return;
+      }
+      return origAssign ? origAssign.call(window.location, url) : undefined;
+    };
+    try {
+      Object.defineProperty(window.location, 'assign', { value: blockSecurityRedirect, writable: true });
+    } catch (e) { /* location.assign은 일부 브라우저에서 변경 불가 */ }
   });
 
-  log('DevTools 감지 우회 설정 완료');
+  log('DevTools + TouchEn 보안 우회 설정 완료');
 }
 
 // =============================================================================
