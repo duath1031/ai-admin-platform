@@ -380,7 +380,7 @@ const sidebarItems: SidebarItem[] = [
     ),
     children: [
       {
-        name: "거래처 관리",
+        name: "거래처/의뢰인 관리",
         href: "/client-management",
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

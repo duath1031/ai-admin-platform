@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
     const client = await prisma.clientCompany.create({
       data: {
         userId: session.user.id,
+        // 유형 (company / individual)
+        clientType: body.clientType || "company",
         // 기본 정보
         companyName: body.companyName,
         ownerName: body.ownerName || null,
@@ -63,6 +65,16 @@ export async function POST(req: NextRequest) {
         hiBizNo: body.hiBizNo || null,
         eiBizNo: body.eiBizNo || null,
         memo: body.memo || null,
+        // 개인 의뢰인 정보
+        birthDate: body.birthDate ? new Date(body.birthDate) : null,
+        nationality: body.nationality || null,
+        isForeigner: Boolean(body.isForeigner),
+        visaType: body.visaType || null,
+        visaExpiry: body.visaExpiry ? new Date(body.visaExpiry) : null,
+        visaStatus: body.visaStatus || null,
+        alienRegNo: body.alienRegNo || null,
+        alienRegExpiry: body.alienRegExpiry ? new Date(body.alienRegExpiry) : null,
+        email: body.email || null,
         // 식별 상세
         ceoGender: body.ceoGender || null,
         corpRegNo: body.corpRegNo || null,
@@ -142,6 +154,51 @@ export async function POST(req: NextRequest) {
         profileCompleteness: Number(body.profileCompleteness) || 0,
       },
     });
+
+    // 비자 만료일 / 외국인등록증 만료일 알림 자동 생성
+    if (body.visaExpiry) {
+      const visaDate = new Date(body.visaExpiry);
+      for (const alertType of ["d-30", "d-7", "d-3", "d-1"] as const) {
+        const daysMap = { "d-30": 30, "d-7": 7, "d-3": 3, "d-1": 1 };
+        const alertDate = new Date(visaDate);
+        alertDate.setDate(alertDate.getDate() - daysMap[alertType]);
+        if (alertDate > new Date()) {
+          await prisma.deadlineAlert.create({
+            data: {
+              userId: session.user.id,
+              referenceType: "visa_expiry",
+              referenceId: client.id,
+              title: `[${body.companyName}] 비자(${body.visaType || ""}) 만료 ${alertType.replace("d-", "D-")}`,
+              deadline: alertDate,
+              alertType,
+              channel: "in_app",
+            },
+          });
+        }
+      }
+    }
+
+    if (body.alienRegExpiry) {
+      const alienDate = new Date(body.alienRegExpiry);
+      for (const alertType of ["d-30", "d-7"] as const) {
+        const daysMap = { "d-30": 30, "d-7": 7 };
+        const alertDate = new Date(alienDate);
+        alertDate.setDate(alertDate.getDate() - daysMap[alertType]);
+        if (alertDate > new Date()) {
+          await prisma.deadlineAlert.create({
+            data: {
+              userId: session.user.id,
+              referenceType: "alien_reg_expiry",
+              referenceId: client.id,
+              title: `[${body.companyName}] 외국인등록증 만료 ${alertType.replace("d-", "D-")}`,
+              deadline: alertDate,
+              alertType,
+              channel: "in_app",
+            },
+          });
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

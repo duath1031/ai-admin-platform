@@ -85,12 +85,13 @@ model User {
   clientCompanies         ClientCompany[]
 }
 
-// 거래처 기업 프로필 (행정사가 관리하는 거래처 사업장)
+// 거래처/의뢰인 프로필 (행정사가 관리하는 거래처 사업장 또는 개인 의뢰인)
 model ClientCompany {
   id            String   @id @default(cuid())
   userId        String
-  companyName   String   // 거래처 상호
-  ownerName     String?  // 대표자명
+  clientType    String   @default("company") // company(기업) | individual(개인)
+  companyName   String   // 거래처 상호 (개인: 이름)
+  ownerName     String?  // 대표자명 (개인: 사용 안함)
   bizRegNo      String?  // 사업자등록번호
   address       String?  // 주소
   phone         String?  // 전화번호
@@ -98,6 +99,17 @@ model ClientCompany {
   hiBizNo       String?  // 건강보험 사업장관리번호
   eiBizNo       String?  // 고용·산재보험 사업장관리번호
   memo          String?
+
+  // Section: 개인 의뢰인 정보
+  birthDate         DateTime? // 생년월일 (개인)
+  nationality       String?   // 국적 (예: 대한민국, 베트남, 중국 등)
+  isForeigner       Boolean   @default(false) // 외국인 여부
+  visaType          String?   // 비자 형태 (E-9, F-2, D-10 등)
+  visaExpiry        DateTime? // 비자 만료일
+  visaStatus        String?   // 비자 상태 (active, expiring_soon, expired)
+  alienRegNo        String?   // 외국인등록번호
+  alienRegExpiry    DateTime? // 외국인등록증 만료일
+  email             String?   // 이메일 (개인 연락처)
 
   // Section 2: 식별 상세
   ceoGender         String?   // 대표자 성별 (male/female)

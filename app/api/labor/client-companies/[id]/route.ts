@@ -69,6 +69,7 @@ export async function PUT(
     const stringFields = [
       "companyName", "ownerName", "bizRegNo", "address", "phone",
       "npBizNo", "hiBizNo", "eiBizNo", "memo",
+      "clientType", "nationality", "visaType", "visaStatus", "alienRegNo", "email",
       "ceoGender", "corpRegNo", "bizType",
       "businessSector", "industryCode", "industryName", "businessSubType",
       "revenueLabel1", "revenueLabel2", "revenueLabel3",
@@ -85,6 +86,9 @@ export async function PUT(
     if (body.foundedDate !== undefined) updateData.foundedDate = body.foundedDate ? new Date(body.foundedDate) : null;
     if (body.researchInstituteDate !== undefined) updateData.researchInstituteDate = body.researchInstituteDate ? new Date(body.researchInstituteDate) : null;
     if (body.ventureExpiry !== undefined) updateData.ventureExpiry = body.ventureExpiry ? new Date(body.ventureExpiry) : null;
+    if (body.birthDate !== undefined) updateData.birthDate = body.birthDate ? new Date(body.birthDate) : null;
+    if (body.visaExpiry !== undefined) updateData.visaExpiry = body.visaExpiry ? new Date(body.visaExpiry) : null;
+    if (body.alienRegExpiry !== undefined) updateData.alienRegExpiry = body.alienRegExpiry ? new Date(body.alienRegExpiry) : null;
 
     // BigInt fields
     const bigintFields = [
@@ -110,7 +114,7 @@ export async function PUT(
     const boolFields = [
       "hasResearchInstitute", "hasRndDepartment", "isManufacturer",
       "isG2bRegistered", "hasDirectProductionCert", "hasMasContract",
-      "isExporter", "hasForeignWorkers",
+      "isExporter", "hasForeignWorkers", "isForeigner",
       "isVentureCertified", "isInnobiz", "isMainbiz",
       "isISO9001", "isISO14001", "isISO45001",
       "isWomenBiz", "isSocialEnterprise", "isRootCompany",
@@ -123,6 +127,61 @@ export async function PUT(
       where: { id },
       data: updateData,
     });
+
+    // 비자 만료일이 변경되었으면 기존 알림 삭제 후 재생성
+    if (body.visaExpiry !== undefined) {
+      await prisma.deadlineAlert.deleteMany({
+        where: { userId: session.user.id, referenceType: "visa_expiry", referenceId: id },
+      });
+      if (body.visaExpiry) {
+        const visaDate = new Date(body.visaExpiry);
+        for (const alertType of ["d-30", "d-7", "d-3", "d-1"] as const) {
+          const daysMap = { "d-30": 30, "d-7": 7, "d-3": 3, "d-1": 1 };
+          const alertDate = new Date(visaDate);
+          alertDate.setDate(alertDate.getDate() - daysMap[alertType]);
+          if (alertDate > new Date()) {
+            await prisma.deadlineAlert.create({
+              data: {
+                userId: session.user.id,
+                referenceType: "visa_expiry",
+                referenceId: id,
+                title: `[${client.companyName}] 비자(${body.visaType || client.visaType || ""}) 만료 ${alertType.replace("d-", "D-")}`,
+                deadline: alertDate,
+                alertType,
+                channel: "in_app",
+              },
+            });
+          }
+        }
+      }
+    }
+
+    if (body.alienRegExpiry !== undefined) {
+      await prisma.deadlineAlert.deleteMany({
+        where: { userId: session.user.id, referenceType: "alien_reg_expiry", referenceId: id },
+      });
+      if (body.alienRegExpiry) {
+        const alienDate = new Date(body.alienRegExpiry);
+        for (const alertType of ["d-30", "d-7"] as const) {
+          const daysMap = { "d-30": 30, "d-7": 7 };
+          const alertDate = new Date(alienDate);
+          alertDate.setDate(alertDate.getDate() - daysMap[alertType]);
+          if (alertDate > new Date()) {
+            await prisma.deadlineAlert.create({
+              data: {
+                userId: session.user.id,
+                referenceType: "alien_reg_expiry",
+                referenceId: id,
+                title: `[${client.companyName}] 외국인등록증 만료 ${alertType.replace("d-", "D-")}`,
+                deadline: alertDate,
+                alertType,
+                channel: "in_app",
+              },
+            });
+          }
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

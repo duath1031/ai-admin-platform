@@ -7,6 +7,7 @@ import { useClientStore, ClientCompanyData } from "@/lib/store";
 
 interface ClientCompany {
   id: string;
+  clientType: string; // "company" | "individual"
   companyName: string;
   ownerName: string | null;
   bizRegNo: string | null;
@@ -19,6 +20,16 @@ interface ClientCompany {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  // 개인 의뢰인 정보
+  birthDate: string | null;
+  nationality: string | null;
+  isForeigner: boolean;
+  visaType: string | null;
+  visaExpiry: string | null;
+  visaStatus: string | null;
+  alienRegNo: string | null;
+  alienRegExpiry: string | null;
+  email: string | null;
   // 식별 상세
   ceoGender: string | null;
   corpRegNo: string | null;
@@ -90,6 +101,8 @@ interface ClientCompany {
 }
 
 interface ClientForm {
+  // 유형
+  clientType: string; // "company" | "individual"
   // Tab 1: 기본 정보
   companyName: string;
   ownerName: string;
@@ -98,6 +111,7 @@ interface ClientForm {
   corpRegNo: string;
   address: string;
   phone: string;
+  email: string;
   bizType: string;
   foundedDate: string;
   // Tab 2: 업종/산업
@@ -142,6 +156,15 @@ interface ClientForm {
   exportCountries: string;
   hasForeignWorkers: boolean;
   foreignWorkerVisaTypes: string;
+  // 개인 의뢰인 정보
+  birthDate: string;
+  nationality: string;
+  isForeigner: boolean;
+  visaType: string;
+  visaExpiry: string;
+  visaStatus: string;
+  alienRegNo: string;
+  alienRegExpiry: string;
   // Tab 6: 메모
   memo: string;
   // Tab 7: 인증 현황
@@ -166,6 +189,7 @@ interface ClientForm {
 }
 
 const EMPTY_FORM: ClientForm = {
+  clientType: "company",
   companyName: "",
   ownerName: "",
   ceoGender: "",
@@ -173,6 +197,7 @@ const EMPTY_FORM: ClientForm = {
   corpRegNo: "",
   address: "",
   phone: "",
+  email: "",
   bizType: "",
   foundedDate: "",
   businessSector: "",
@@ -213,6 +238,15 @@ const EMPTY_FORM: ClientForm = {
   exportCountries: "",
   hasForeignWorkers: false,
   foreignWorkerVisaTypes: "",
+  // 개인 의뢰인 정보
+  birthDate: "",
+  nationality: "",
+  isForeigner: false,
+  visaType: "",
+  visaExpiry: "",
+  visaStatus: "",
+  alienRegNo: "",
+  alienRegExpiry: "",
   memo: "",
   // 인증 현황
   isVentureCertified: false,
@@ -235,7 +269,7 @@ const EMPTY_FORM: ClientForm = {
   patentDetails: "",
 };
 
-const TAB_LABELS = [
+const COMPANY_TAB_LABELS = [
   "기본 정보",
   "업종/산업",
   "재무 정보",
@@ -244,6 +278,36 @@ const TAB_LABELS = [
   "메모",
   "인증 현황",
   "특허/IP",
+] as const;
+
+const INDIVIDUAL_TAB_LABELS = [
+  "기본 정보",
+  "비자/체류 정보",
+  "메모",
+] as const;
+
+const NATIONALITY_OPTIONS = [
+  "대한민국", "중국", "베트남", "태국", "필리핀", "인도네시아", "미얀마",
+  "캄보디아", "네팔", "스리랑카", "방글라데시", "파키스탄", "우즈베키스탄",
+  "몽골", "일본", "미국", "러시아", "인도", "기타",
+] as const;
+
+const VISA_TYPE_OPTIONS = [
+  { value: "", label: "선택안함" },
+  { value: "F-2", label: "F-2 (거주)" },
+  { value: "F-4", label: "F-4 (재외동포)" },
+  { value: "F-5", label: "F-5 (영주)" },
+  { value: "F-6", label: "F-6 (결혼이민)" },
+  { value: "E-7", label: "E-7 (특정활동)" },
+  { value: "E-9", label: "E-9 (비전문취업)" },
+  { value: "H-2", label: "H-2 (방문취업)" },
+  { value: "D-2", label: "D-2 (유학)" },
+  { value: "D-4", label: "D-4 (일반연수)" },
+  { value: "D-10", label: "D-10 (구직)" },
+  { value: "C-3", label: "C-3 (단기방문)" },
+  { value: "C-4", label: "C-4 (단기취업)" },
+  { value: "G-1", label: "G-1 (기타)" },
+  { value: "other", label: "기타 (직접입력)" },
 ] as const;
 
 const BUSINESS_SECTOR_OPTIONS = [
@@ -307,6 +371,23 @@ function toDateInput(d: string | null | undefined): string {
 
 /** 프로필 완성도 계산 (클라이언트 기준) */
 function calcCompleteness(form: ClientForm): number {
+  if (form.clientType === "individual") {
+    const checks: boolean[] = [
+      !!form.companyName.trim(), // 이름
+      !!form.phone.trim(),
+      !!form.address.trim(),
+      !!form.nationality,
+      !!form.birthDate,
+      !!form.email?.trim(),
+      !!form.memo.trim(),
+    ];
+    // 외국인이면 추가 항목
+    if (form.isForeigner) {
+      checks.push(!!form.visaType, !!form.visaExpiry, !!form.alienRegNo?.trim());
+    }
+    const filled = checks.filter(Boolean).length;
+    return Math.round((filled / checks.length) * 100);
+  }
   const checks: boolean[] = [
     !!form.companyName.trim(),
     !!form.ownerName.trim(),
@@ -331,6 +412,7 @@ function calcCompleteness(form: ClientForm): number {
 /** ClientCompany -> ClientForm */
 function clientToForm(client: ClientCompany): ClientForm {
   return {
+    clientType: client.clientType || "company",
     companyName: client.companyName,
     ownerName: client.ownerName || "",
     ceoGender: client.ceoGender || "",
@@ -338,6 +420,7 @@ function clientToForm(client: ClientCompany): ClientForm {
     corpRegNo: client.corpRegNo || "",
     address: client.address || "",
     phone: client.phone || "",
+    email: client.email || "",
     bizType: client.bizType || "",
     foundedDate: toDateInput(client.foundedDate),
     businessSector: client.businessSector || "",
@@ -378,6 +461,15 @@ function clientToForm(client: ClientCompany): ClientForm {
     exportCountries: client.exportCountries || "",
     hasForeignWorkers: client.hasForeignWorkers || false,
     foreignWorkerVisaTypes: client.foreignWorkerVisaTypes || "",
+    // 개인 의뢰인 정보
+    birthDate: toDateInput(client.birthDate),
+    nationality: client.nationality || "",
+    isForeigner: client.isForeigner || false,
+    visaType: client.visaType || "",
+    visaExpiry: toDateInput(client.visaExpiry),
+    visaStatus: client.visaStatus || "",
+    alienRegNo: client.alienRegNo || "",
+    alienRegExpiry: toDateInput(client.alienRegExpiry),
     memo: client.memo || "",
     // 인증 현황
     isVentureCertified: client.isVentureCertified || false,
@@ -473,6 +565,7 @@ function clientToStoreData(client: ClientCompany): ClientCompanyData {
 function formToPayload(form: ClientForm) {
   const completeness = calcCompleteness(form);
   return {
+    clientType: form.clientType || "company",
     companyName: form.companyName.trim(),
     ownerName: form.ownerName.trim() || null,
     ceoGender: form.ceoGender || null,
@@ -480,6 +573,7 @@ function formToPayload(form: ClientForm) {
     corpRegNo: form.corpRegNo.trim() || null,
     address: form.address.trim() || null,
     phone: form.phone.trim() || null,
+    email: form.email?.trim() || null,
     bizType: form.bizType.trim() || null,
     foundedDate: form.foundedDate || null,
     businessSector: form.businessSector || null,
@@ -520,6 +614,15 @@ function formToPayload(form: ClientForm) {
     exportCountries: form.exportCountries.trim() || null,
     hasForeignWorkers: form.hasForeignWorkers,
     foreignWorkerVisaTypes: form.foreignWorkerVisaTypes.trim() || null,
+    // 개인 의뢰인 정보
+    birthDate: form.birthDate || null,
+    nationality: form.nationality || null,
+    isForeigner: form.isForeigner,
+    visaType: form.visaType || null,
+    visaExpiry: form.visaExpiry || null,
+    visaStatus: form.visaStatus || null,
+    alienRegNo: form.alienRegNo?.trim() || null,
+    alienRegExpiry: form.alienRegExpiry || null,
     memo: form.memo.trim() || null,
     // 인증 현황
     isVentureCertified: form.isVentureCertified,
@@ -600,6 +703,8 @@ export default function ClientManagementPage() {
         (c.bizRegNo && c.bizRegNo.includes(q)) ||
         (c.phone && c.phone.includes(q)) ||
         (c.businessSector && c.businessSector.toLowerCase().includes(q)) ||
+        (c.nationality && c.nationality.toLowerCase().includes(q)) ||
+        (c.visaType && c.visaType.toLowerCase().includes(q)) ||
         (c.memo && c.memo.toLowerCase().includes(q))
     );
   }, [clients, searchQuery]);
@@ -621,7 +726,7 @@ export default function ClientManagementPage() {
   // ── 저장 ──
   const handleSave = async () => {
     if (!form.companyName.trim()) {
-      setFormError("거래처 상호는 필수입니다.");
+      setFormError(form.clientType === "individual" ? "이름은 필수입니다." : "거래처 상호는 필수입니다.");
       setActiveTab(0);
       return;
     }
@@ -702,9 +807,9 @@ export default function ClientManagementPage() {
     <div className="max-w-7xl mx-auto space-y-6">
       {/* ── 헤더 ── */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">거래처 관리</h1>
+        <h1 className="text-2xl font-bold text-gray-900">거래처/의뢰인 관리</h1>
         <p className="text-sm text-gray-500 mt-1">
-          거래처를 등록하고 선택하여 노동행정 업무를 처리합니다 (Pro Plus)
+          거래처(기업) 또는 개인 의뢰인을 등록하고 관리합니다 (Pro Plus)
         </p>
       </div>
 
@@ -766,7 +871,7 @@ export default function ClientManagementPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="거래처명, 대표자, 사업자번호, 업종 검색..."
+              placeholder="거래처명/이름, 대표자, 사업자번호, 국적, 비자 검색..."
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             />
             {searchQuery && (
@@ -792,7 +897,7 @@ export default function ClientManagementPage() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          거래처 추가
+          거래처/의뢰인 추가
         </button>
       </div>
 
@@ -825,15 +930,15 @@ export default function ClientManagementPage() {
                   />
                 </svg>
               </div>
-              <p className="text-gray-600 font-medium">등록된 거래처가 없습니다</p>
+              <p className="text-gray-600 font-medium">등록된 거래처/의뢰인이 없습니다</p>
               <p className="text-gray-400 text-sm mt-1">
-                거래처를 추가하면 4대보험, 급여명세서 등 노동행정 업무를 거래처별로 관리할 수 있습니다.
+                거래처(기업) 또는 개인 의뢰인을 추가하여 업무를 관리하세요. 외국인 의뢰인의 비자 만료 알림도 지원합니다.
               </p>
               <button
                 onClick={() => handleOpenModal()}
                 className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
               >
-                첫 거래처 추가하기
+                첫 거래처/의뢰인 추가하기
               </button>
             </>
           ) : (
@@ -859,11 +964,11 @@ export default function ClientManagementPage() {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="text-left px-4 py-3 font-medium text-gray-600 w-10">#</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">상호</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">대표자</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">사업자등록번호</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">업종</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">직원수</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">유형</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">상호/이름</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">대표자/국적</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">사업자번호/비자</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">업종/비자만료</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">완성도</th>
                     <th className="text-center px-4 py-3 font-medium text-gray-600 w-44">관리</th>
                   </tr>
@@ -882,6 +987,17 @@ export default function ClientManagementPage() {
                       >
                         <td className="px-4 py-3 text-gray-400 text-xs">{idx + 1}</td>
                         <td className="px-4 py-3">
+                          {client.clientType === "individual" ? (
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-violet-100 text-violet-700 border border-violet-200">
+                              개인
+                            </span>
+                          ) : (
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
+                              기업
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900">{client.companyName}</span>
                             {isSelected && (
@@ -889,17 +1005,27 @@ export default function ClientManagementPage() {
                                 선택됨
                               </span>
                             )}
+                            {client.clientType === "individual" && client.isForeigner && (
+                              <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-700">
+                                외국인
+                              </span>
+                            )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-gray-600">{client.ownerName || "-"}</td>
+                        <td className="px-4 py-3 text-gray-600 text-xs">
+                          {client.clientType === "individual"
+                            ? (client.nationality || "-")
+                            : (client.ownerName || "-")}
+                        </td>
                         <td className="px-4 py-3 text-gray-600 font-mono text-xs">
-                          {client.bizRegNo || "-"}
+                          {client.clientType === "individual"
+                            ? (client.visaType || "-")
+                            : (client.bizRegNo || "-")}
                         </td>
                         <td className="px-4 py-3 text-gray-600 text-xs">
-                          {client.businessSector || "-"}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">
-                          {client.employeeCount ? `${client.employeeCount}명` : "-"}
+                          {client.clientType === "individual"
+                            ? (client.visaExpiry ? new Date(client.visaExpiry).toLocaleDateString("ko-KR") : "-")
+                            : (client.businessSector || "-")}
                         </td>
                         <td className="px-4 py-3">
                           <ProfileBar percent={client.profileCompleteness || 0} />
@@ -981,12 +1107,19 @@ export default function ClientManagementPage() {
                         )}
                       </div>
                       <p className="text-xs text-gray-500 truncate mt-0.5">
-                        {[
-                          client.ownerName,
-                          client.bizRegNo,
-                          client.businessSector,
-                          client.employeeCount ? `${client.employeeCount}명` : null,
-                        ].filter(Boolean).join(" / ") || "상세 정보 없음"}
+                        {client.clientType === "individual"
+                          ? [
+                              client.nationality,
+                              client.isForeigner ? `비자: ${client.visaType || "미입력"}` : "내국인",
+                              client.visaExpiry ? `만료: ${new Date(client.visaExpiry).toLocaleDateString("ko-KR")}` : null,
+                            ].filter(Boolean).join(" / ") || "상세 정보 없음"
+                          : [
+                              client.ownerName,
+                              client.bizRegNo,
+                              client.businessSector,
+                              client.employeeCount ? `${client.employeeCount}명` : null,
+                            ].filter(Boolean).join(" / ") || "상세 정보 없음"
+                        }
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1006,14 +1139,35 @@ export default function ClientManagementPage() {
                   {isExpanded && (
                     <div className="border-t border-gray-100">
                       <div className="px-4 py-3 space-y-2 text-sm">
-                        <InfoRow label="대표자" value={client.ownerName} />
-                        <InfoRow label="성별" value={client.ceoGender === "male" ? "남" : client.ceoGender === "female" ? "여" : null} />
-                        <InfoRow label="사업자번호" value={client.bizRegNo} mono />
-                        <InfoRow label="주소" value={client.address} />
-                        <InfoRow label="전화번호" value={client.phone} mono />
-                        <InfoRow label="업종" value={client.businessSector} />
-                        <InfoRow label="업태/종목" value={client.bizType} />
-                        <InfoRow label="직원수" value={client.employeeCount ? `${client.employeeCount}명 (정규직 ${client.permanentEmployees ?? "-"}명, 계약직 ${client.contractEmployees ?? "-"}명)` : null} />
+                        {client.clientType === "individual" ? (
+                          <>
+                            <InfoRow label="유형" value="개인 의뢰인" />
+                            <InfoRow label="국적" value={client.nationality} />
+                            <InfoRow label="생년월일" value={client.birthDate ? new Date(client.birthDate).toLocaleDateString("ko-KR") : null} />
+                            <InfoRow label="전화번호" value={client.phone} mono />
+                            <InfoRow label="이메일" value={client.email} />
+                            <InfoRow label="주소" value={client.address} />
+                            {client.isForeigner && (
+                              <>
+                                <InfoRow label="비자 유형" value={client.visaType} />
+                                <InfoRow label="비자 만료일" value={client.visaExpiry ? new Date(client.visaExpiry).toLocaleDateString("ko-KR") : null} />
+                                <InfoRow label="외국인등록번호" value={client.alienRegNo} mono />
+                                <InfoRow label="등록증 만료" value={client.alienRegExpiry ? new Date(client.alienRegExpiry).toLocaleDateString("ko-KR") : null} />
+                              </>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <InfoRow label="대표자" value={client.ownerName} />
+                            <InfoRow label="성별" value={client.ceoGender === "male" ? "남" : client.ceoGender === "female" ? "여" : null} />
+                            <InfoRow label="사업자번호" value={client.bizRegNo} mono />
+                            <InfoRow label="주소" value={client.address} />
+                            <InfoRow label="전화번호" value={client.phone} mono />
+                            <InfoRow label="업종" value={client.businessSector} />
+                            <InfoRow label="업태/종목" value={client.bizType} />
+                            <InfoRow label="직원수" value={client.employeeCount ? `${client.employeeCount}명 (정규직 ${client.permanentEmployees ?? "-"}명, 계약직 ${client.contractEmployees ?? "-"}명)` : null} />
+                          </>
+                        )}
                         {client.capital != null && client.capital > 0 && (
                           <InfoRow label="자본금" value={formatCurrency(client.capital)} />
                         )}
@@ -1095,7 +1249,10 @@ export default function ClientManagementPage() {
             * 거래처를 선택하면 급여명세서, 4대보험 신고, 근로계약서 등 모든 노동행정 업무에 해당 거래처 정보가 자동 적용됩니다.
           </p>
           <p>
-            * 삭제된 거래처는 비활성화 처리되며, 기존 데이터는 유지됩니다.
+            * 외국인 의뢰인의 비자 만료일을 입력하면 만료 30일/7일/3일/1일 전 알림을 자동으로 받을 수 있습니다.
+          </p>
+          <p>
+            * 삭제된 거래처/의뢰인은 비활성화 처리되며, 기존 데이터는 유지됩니다.
           </p>
         </div>
       )}
@@ -1112,10 +1269,10 @@ export default function ClientManagementPage() {
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900">
-                    {editingClient ? "거래처 수정" : "거래처 추가"}
+                    {editingClient ? "거래처/의뢰인 수정" : "거래처/의뢰인 추가"}
                   </h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    {editingClient ? "거래처 정보를 수정합니다." : "새 거래처를 등록합니다. 상호(*)는 필수 항목입니다."}
+                    {editingClient ? "정보를 수정합니다." : "기업 거래처 또는 개인 의뢰인을 등록합니다."}
                   </p>
                 </div>
                 <button
@@ -1148,9 +1305,37 @@ export default function ClientManagementPage() {
                 </div>
               </div>
 
+              {/* 유형 선택 토글 */}
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setField("clientType", "company"); setActiveTab(0); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                    form.clientType === "company"
+                      ? "border-blue-300 bg-blue-50 text-blue-700"
+                      : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                  기업 (거래처)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setField("clientType", "individual"); setActiveTab(0); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                    form.clientType === "individual"
+                      ? "border-violet-300 bg-violet-50 text-violet-700"
+                      : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                  개인 (의뢰인)
+                </button>
+              </div>
+
               {/* 탭 네비게이션 */}
-              <div className="mt-4 flex gap-1 overflow-x-auto pb-1 -mb-4">
-                {TAB_LABELS.map((label, i) => (
+              <div className="mt-3 flex gap-1 overflow-x-auto pb-1 -mb-4">
+                {(form.clientType === "individual" ? INDIVIDUAL_TAB_LABELS : COMPANY_TAB_LABELS).map((label, i) => (
                   <button
                     key={i}
                     onClick={() => setActiveTab(i)}
@@ -1168,8 +1353,267 @@ export default function ClientManagementPage() {
 
             {/* 모달 본문 (스크롤 영역) */}
             <div className="flex-1 overflow-y-auto p-6">
+
+              {/* ═══════════════════════════════════════════ */}
+              {/* 개인 의뢰인 전용 탭 */}
+              {/* ═══════════════════════════════════════════ */}
+              {form.clientType === "individual" && activeTab === 0 && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      이름 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={form.companyName}
+                      onChange={(e) => setField("companyName", e.target.value)}
+                      placeholder="홍길동"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">생년월일</label>
+                      <input
+                        type="date"
+                        value={form.birthDate}
+                        onChange={(e) => setField("birthDate", e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">성별</label>
+                      <select
+                        value={form.ceoGender}
+                        onChange={(e) => setField("ceoGender", e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                      >
+                        <option value="">선택안함</option>
+                        <option value="male">남성</option>
+                        <option value="female">여성</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">국적</label>
+                      <select
+                        value={NATIONALITY_OPTIONS.includes(form.nationality as typeof NATIONALITY_OPTIONS[number]) ? form.nationality : form.nationality ? "기타" : ""}
+                        onChange={(e) => {
+                          if (e.target.value === "기타") {
+                            setField("nationality", "");
+                          } else {
+                            setField("nationality", e.target.value);
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                      >
+                        <option value="">선택안함</option>
+                        {NATIONALITY_OPTIONS.map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                      {form.nationality && !NATIONALITY_OPTIONS.includes(form.nationality as typeof NATIONALITY_OPTIONS[number]) && (
+                        <input
+                          type="text"
+                          value={form.nationality}
+                          onChange={(e) => setField("nationality", e.target.value)}
+                          placeholder="국적 직접 입력"
+                          className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">외국인 여부</label>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <CheckboxField
+                          label="외국인입니다"
+                          checked={form.isForeigner}
+                          onChange={(v) => setField("isForeigner", v)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">주소</label>
+                    <input
+                      type="text"
+                      value={form.address}
+                      onChange={(e) => setField("address", e.target.value)}
+                      placeholder="서울특별시 강남구 테헤란로 123"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">전화번호</label>
+                      <input
+                        type="text"
+                        value={form.phone}
+                        onChange={(e) => setField("phone", formatPhone(e.target.value))}
+                        placeholder="010-1234-5678"
+                        maxLength={13}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">이메일</label>
+                      <input
+                        type="email"
+                        value={form.email}
+                        onChange={(e) => setField("email", e.target.value)}
+                        placeholder="example@email.com"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ─── 개인 Tab 1: 비자/체류 정보 ─── */}
+              {form.clientType === "individual" && activeTab === 1 && (
+                <div className="space-y-4">
+                  {!form.isForeigner ? (
+                    <div className="bg-gray-50 rounded-lg p-6 text-center">
+                      <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c0 1.657-1.343 3-3 3s-3-1.343-3-3 1.343-3 3-3 3 1.343 3 3zm0 0c0 1.657 1.343 3 3 3s3-1.343 3-3-1.343-3-3-3-3 1.343-3 3zm-9 8a9 9 0 1118 0H3z" /></svg>
+                      </div>
+                      <p className="text-gray-600 font-medium">내국인 의뢰인</p>
+                      <p className="text-gray-400 text-sm mt-1">비자/체류 정보는 외국인 의뢰인에게만 해당됩니다.</p>
+                      <p className="text-xs text-gray-400 mt-2">외국인으로 변경하려면 &quot;기본 정보&quot; 탭에서 &quot;외국인입니다&quot;를 체크하세요.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-xs text-gray-500 bg-orange-50 rounded-lg px-3 py-2 border border-orange-100">
+                        비자 만료일과 외국인등록증 만료일을 입력하면 만료 전 자동 알림을 받을 수 있습니다.
+                      </p>
+
+                      <div className="border border-gray-200 rounded-xl p-4 space-y-4">
+                        <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">비자 정보</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">비자 유형</label>
+                            <select
+                              value={VISA_TYPE_OPTIONS.some(v => v.value === form.visaType) ? form.visaType : form.visaType ? "other" : ""}
+                              onChange={(e) => {
+                                if (e.target.value === "other") {
+                                  setField("visaType", "");
+                                } else {
+                                  setField("visaType", e.target.value);
+                                }
+                              }}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                            >
+                              {VISA_TYPE_OPTIONS.map((v) => (
+                                <option key={v.value} value={v.value}>{v.label}</option>
+                              ))}
+                            </select>
+                            {form.visaType && !VISA_TYPE_OPTIONS.some(v => v.value === form.visaType) && (
+                              <input
+                                type="text"
+                                value={form.visaType}
+                                onChange={(e) => setField("visaType", e.target.value)}
+                                placeholder="비자 유형 직접 입력"
+                                className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                              />
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">비자 만료일</label>
+                            <input
+                              type="date"
+                              value={form.visaExpiry}
+                              onChange={(e) => setField("visaExpiry", e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            />
+                            {form.visaExpiry && (() => {
+                              const daysLeft = Math.ceil((new Date(form.visaExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                              if (daysLeft < 0) return <p className="text-xs text-red-600 mt-1 font-semibold">만료됨 ({Math.abs(daysLeft)}일 초과)</p>;
+                              if (daysLeft <= 30) return <p className="text-xs text-orange-600 mt-1 font-semibold">D-{daysLeft} (만료 임박)</p>;
+                              return <p className="text-xs text-green-600 mt-1">D-{daysLeft}</p>;
+                            })()}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">비자 상태</label>
+                          <select
+                            value={form.visaStatus}
+                            onChange={(e) => setField("visaStatus", e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                          >
+                            <option value="">선택안함</option>
+                            <option value="active">유효</option>
+                            <option value="expiring_soon">만료 임박</option>
+                            <option value="expired">만료됨</option>
+                            <option value="renewal_pending">갱신 진행 중</option>
+                            <option value="change_pending">변경 진행 중</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="border border-gray-200 rounded-xl p-4 space-y-4">
+                        <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">외국인등록증</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">외국인등록번호</label>
+                            <input
+                              type="text"
+                              value={form.alienRegNo}
+                              onChange={(e) => setField("alienRegNo", e.target.value)}
+                              placeholder="000000-0000000"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">등록증 만료일</label>
+                            <input
+                              type="date"
+                              value={form.alienRegExpiry}
+                              onChange={(e) => setField("alienRegExpiry", e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                            />
+                            {form.alienRegExpiry && (() => {
+                              const daysLeft = Math.ceil((new Date(form.alienRegExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                              if (daysLeft < 0) return <p className="text-xs text-red-600 mt-1 font-semibold">만료됨</p>;
+                              if (daysLeft <= 30) return <p className="text-xs text-orange-600 mt-1 font-semibold">D-{daysLeft} (만료 임박)</p>;
+                              return <p className="text-xs text-green-600 mt-1">D-{daysLeft}</p>;
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ─── 개인 Tab 2: 메모 ─── */}
+              {form.clientType === "individual" && activeTab === 2 && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">메모</label>
+                    <textarea
+                      value={form.memo}
+                      onChange={(e) => setField("memo", e.target.value)}
+                      placeholder="의뢰인에 대한 메모를 입력하세요. 의뢰 내용, 진행 상황, 특이사항 등을 자유롭게 기록합니다."
+                      rows={12}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">{form.memo.length}자</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══════════════════════════════════════════ */}
+              {/* 기업 거래처 전용 탭 (기존) */}
+              {/* ═══════════════════════════════════════════ */}
+
               {/* ─── Tab 0: 기본 정보 ─── */}
-              {activeTab === 0 && (
+              {form.clientType === "company" && activeTab === 0 && (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -1282,7 +1726,7 @@ export default function ClientManagementPage() {
               )}
 
               {/* ─── Tab 1: 업종/산업 ─── */}
-              {activeTab === 1 && (
+              {form.clientType === "company" && activeTab === 1 && (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">업종 대분류</label>
@@ -1342,7 +1786,7 @@ export default function ClientManagementPage() {
               )}
 
               {/* ─── Tab 2: 재무 정보 ─── */}
-              {activeTab === 2 && (
+              {form.clientType === "company" && activeTab === 2 && (
                 <div className="space-y-4">
                   <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
                     최근 3개년 매출액을 입력합니다. 보조금 매칭, 입찰 시뮬레이션 등에 활용됩니다.
@@ -1477,7 +1921,7 @@ export default function ClientManagementPage() {
               )}
 
               {/* ─── Tab 3: 고용 정보 ─── */}
-              {activeTab === 3 && (
+              {form.clientType === "company" && activeTab === 3 && (
                 <div className="space-y-4">
                   <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
                     고용 현황과 4대보험 사업장 관리번호를 입력합니다.
@@ -1597,7 +2041,7 @@ export default function ClientManagementPage() {
               )}
 
               {/* ─── Tab 4: 사업장 상세 ─── */}
-              {activeTab === 4 && (
+              {form.clientType === "company" && activeTab === 4 && (
                 <div className="space-y-5">
                   {/* 연구소 */}
                   <div>
@@ -1775,7 +2219,7 @@ export default function ClientManagementPage() {
               )}
 
               {/* ─── Tab 5: 메모 ─── */}
-              {activeTab === 5 && (
+              {form.clientType === "company" && activeTab === 5 && (
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">메모</label>
@@ -1792,7 +2236,7 @@ export default function ClientManagementPage() {
               )}
 
               {/* ─── Tab 6: 인증 현황 ─── */}
-              {activeTab === 6 && (
+              {form.clientType === "company" && activeTab === 6 && (
                 <div className="space-y-4">
                   <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
                     보유 중인 기업 인증을 관리합니다. 보조금 매칭, 입찰 가점 산정 등에 활용됩니다.
@@ -1952,7 +2396,7 @@ export default function ClientManagementPage() {
               )}
 
               {/* ─── Tab 7: 특허/지식재산권 ─── */}
-              {activeTab === 7 && (
+              {form.clientType === "company" && activeTab === 7 && (
                 <div className="space-y-4">
                   <p className="text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
                     보유한 특허 및 지식재산권을 관리합니다. 기술력 평가, 보조금 심사 가점 등에 활용됩니다.
@@ -2113,7 +2557,7 @@ export default function ClientManagementPage() {
                     이전
                   </button>
                 )}
-                {activeTab < TAB_LABELS.length - 1 && (
+                {activeTab < (form.clientType === "individual" ? INDIVIDUAL_TAB_LABELS : COMPANY_TAB_LABELS).length - 1 && (
                   <button
                     onClick={() => setActiveTab((t) => t + 1)}
                     className="px-3 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
