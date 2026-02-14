@@ -577,128 +577,140 @@ async function startTransfer(data) {
             }
 
             // 주민등록번호 뒷자리 7자리 입력 (id=stkhIdntfNo2, password 필드)
-            // ★ TouchEn nxKey 보안 키보드 때문에 KO 바인딩이 DOM 이벤트를 감지 못함
-            // → KnockoutJS ViewModel에 직접 값을 설정하는 방식 사용
+            // ★ TouchEn nxKey → KO ViewModel의 login 서브모델에 직접 설정 + checkRlnmCert 호출
             if (idNumberBack) {
               try {
-                // ★ 핵심: KnockoutJS ViewModel을 찾아서 모든 필드를 직접 설정
-                const koSetResult = await page.evaluate(({ nameVal, ssnFront, ssnBack }) => {
-                  const results = { koFound: false, vmKeys: [], setResults: {} };
+                // ★ KO ViewModel 깊이 탐색 + data-bind 분석 + 직접 설정
+                const koDeepResult = await page.evaluate(({ nameVal, ssnFront, ssnBack }) => {
+                  const results = { koFound: false, debug: {} };
 
-                  if (typeof ko === 'undefined') {
-                    results.error = 'ko is undefined';
-                    return results;
+                  if (typeof ko === 'undefined') return { ...results, error: 'ko undefined' };
+
+                  // 1. 실명확인 필드의 data-bind 속성 추출
+                  const ssnField = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
+                  const nameField = document.querySelector('input[name="mbrNm"]');
+                  const ssnFrontField = document.querySelector('input[name="stkhIdntfNo1"]');
+                  results.debug.ssnFieldBind = ssnField?.getAttribute('data-bind') || 'NO_DATA_BIND';
+                  results.debug.nameFieldBind = nameField?.getAttribute('data-bind') || 'NO_DATA_BIND';
+                  results.debug.ssnFrontBind = ssnFrontField?.getAttribute('data-bind') || 'NO_DATA_BIND';
+
+                  // 2. 필드에서 직접 KO context 가져오기
+                  let fieldVm = null;
+                  let fieldCtx = null;
+                  if (ssnField) {
+                    try { fieldCtx = ko.contextFor(ssnField); fieldVm = ko.dataFor(ssnField); } catch (e) {}
                   }
 
-                  // KO ViewModel 탐색 - 여러 컨테이너에서 시도
-                  const containers = [
-                    document.querySelector('.tab-area'),
-                    document.querySelector('#content-section'),
-                    document.querySelector('[data-bind]'),
-                    document.querySelector('.tab-content'),
-                    document.body,
-                  ].filter(Boolean);
+                  // 3. Root VM 가져오기
+                  const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
+                  let rootVm = null;
+                  let rootCtx = null;
+                  try { rootCtx = ko.contextFor(rootEl); rootVm = rootCtx?.$root; } catch (e) {}
 
-                  let vm = null;
-                  let vmContext = null;
+                  results.debug.hasFieldVm = !!fieldVm;
+                  results.debug.hasRootVm = !!rootVm;
 
-                  for (const container of containers) {
-                    try {
-                      vmContext = ko.contextFor(container);
-                      if (vmContext && vmContext.$root) {
-                        vm = vmContext.$root;
-                        results.koFound = true;
-                        break;
+                  // 4. fieldVm의 키 탐색 (폼 데이터가 여기에!)
+                  if (fieldVm) {
+                    const fKeys = [];
+                    for (const k of Object.keys(fieldVm)) {
+                      const v = fieldVm[k];
+                      if (typeof v === 'function' && ko.isObservable(v)) {
+                        fKeys.push(k + '=' + (typeof v() === 'string' ? v().substring(0, 20) : typeof v()));
+                      } else if (typeof v === 'function') {
+                        fKeys.push(k + '()');
                       }
-                    } catch (e) { /* continue */ }
-                    try {
-                      const data = ko.dataFor(container);
-                      if (data) {
-                        vm = data;
-                        results.koFound = true;
-                        break;
-                      }
-                    } catch (e) { /* continue */ }
+                    }
+                    results.debug.fieldVmKeys = fKeys.slice(0, 30);
                   }
 
-                  if (!vm) {
-                    // 폴백: data-bind 속성이 있는 모든 요소에서 VM 찾기
-                    const bindEls = document.querySelectorAll('[data-bind]');
-                    for (const el of bindEls) {
-                      try {
-                        const data = ko.dataFor(el);
-                        if (data && (typeof data.stkhIdntfNo2 === 'function' || typeof data.mbrNm === 'function')) {
-                          vm = data;
-                          results.koFound = true;
-                          break;
+                  // 5. rootVm의 login 서브모델 탐색
+                  if (rootVm) {
+                    const rKeys = Object.keys(rootVm).slice(0, 20);
+                    results.debug.rootVmKeys = rKeys;
+
+                    // login 서브모델 확인
+                    if (rootVm.login) {
+                      const loginObj = typeof rootVm.login === 'function' ? rootVm.login() : rootVm.login;
+                      if (loginObj && typeof loginObj === 'object') {
+                        const lKeys = [];
+                        for (const k of Object.keys(loginObj)) {
+                          const v = loginObj[k];
+                          if (ko.isObservable(v)) {
+                            lKeys.push(k + '=' + (typeof v() === 'string' ? v().substring(0, 20) : typeof v()));
+                          }
                         }
-                      } catch (e) { /* continue */ }
-                    }
-                  }
-
-                  if (!vm) {
-                    results.error = 'KO ViewModel not found';
-                    return results;
-                  }
-
-                  // VM의 키 목록 (디버그용)
-                  results.vmKeys = Object.keys(vm).filter(k => typeof vm[k] === 'function').slice(0, 30);
-
-                  // 모든 관련 observable 설정 시도
-                  const setObservable = (name, val) => {
-                    if (vm[name] && typeof vm[name] === 'function') {
-                      try {
-                        vm[name](val);
-                        results.setResults[name] = { success: true, value: vm[name]() };
-                        return true;
-                      } catch (e) {
-                        results.setResults[name] = { success: false, error: e.message };
+                        results.debug.loginSubKeys = lKeys.slice(0, 30);
                       }
                     }
-                    // $root에서도 시도
-                    if (vmContext && vmContext.$root && vmContext.$root[name] && typeof vmContext.$root[name] === 'function') {
-                      try {
-                        vmContext.$root[name](val);
-                        results.setResults[name + '_root'] = { success: true, value: vmContext.$root[name]() };
-                        return true;
-                      } catch (e) { /* continue */ }
+                  }
+
+                  // 6. ★ 핵심: fieldVm에 직접 값 설정 (필드별 KO binding context)
+                  let setCount = 0;
+                  const trySet = (vm, key, val) => {
+                    if (vm && vm[key] && ko.isObservable(vm[key])) {
+                      vm[key](val);
+                      setCount++;
+                      return true;
                     }
                     return false;
                   };
 
-                  // 이름 설정
-                  setObservable('mbrNm', nameVal);
-                  // 주민번호 앞자리
-                  setObservable('stkhIdntfNo1', ssnFront);
-                  // 주민번호 뒷자리 (핵심!)
-                  setObservable('stkhIdntfNo2', ssnBack);
-                  // 내국인/외국인 구분 (01=내국인)
-                  setObservable('stkhIdntfNoTypeCd', '01');
+                  // fieldVm에서 시도
+                  if (fieldVm) {
+                    trySet(fieldVm, 'mbrNm', nameVal);
+                    trySet(fieldVm, 'stkhIdntfNo1', ssnFront);
+                    trySet(fieldVm, 'stkhIdntfNo2', ssnBack);
+                    trySet(fieldVm, 'stkhIdntfNoTypeCd', '01');
+                  }
 
-                  // 값 설정 확인
-                  results.verifyMbrNm = vm.mbrNm ? vm.mbrNm() : 'N/A';
-                  results.verifyNo1 = vm.stkhIdntfNo1 ? vm.stkhIdntfNo1() : 'N/A';
-                  results.verifyNo2 = vm.stkhIdntfNo2 ? vm.stkhIdntfNo2() : 'N/A';
+                  // rootVm에서도 시도
+                  if (rootVm && setCount < 3) {
+                    trySet(rootVm, 'mbrNm', nameVal);
+                    trySet(rootVm, 'stkhIdntfNo1', ssnFront);
+                    trySet(rootVm, 'stkhIdntfNo2', ssnBack);
+                    trySet(rootVm, 'stkhIdntfNoTypeCd', '01');
+                  }
+
+                  // login 서브모델에서도 시도
+                  if (rootVm?.login) {
+                    const loginObj = typeof rootVm.login === 'function' ? rootVm.login() : rootVm.login;
+                    if (loginObj) {
+                      trySet(loginObj, 'mbrNm', nameVal);
+                      trySet(loginObj, 'stkhIdntfNo1', ssnFront);
+                      trySet(loginObj, 'stkhIdntfNo2', ssnBack);
+                      trySet(loginObj, 'stkhIdntfNoTypeCd', '01');
+                    }
+                  }
+
+                  results.setCount = setCount;
+                  results.koFound = true;
+
+                  // 7. 설정 후 값 검증 (모든 레벨에서)
+                  const verify = (vm, key) => {
+                    if (vm && vm[key] && ko.isObservable(vm[key])) return vm[key]();
+                    return null;
+                  };
+                  results.verify = {
+                    fieldVm_mbrNm: verify(fieldVm, 'mbrNm'),
+                    fieldVm_No1: verify(fieldVm, 'stkhIdntfNo1'),
+                    fieldVm_No2: verify(fieldVm, 'stkhIdntfNo2') ? 'SET' : null,
+                    rootVm_No2: verify(rootVm, 'stkhIdntfNo2') ? 'SET' : null,
+                  };
 
                   return results;
                 }, { nameVal: name, ssnFront: birthDate?.length === 8 ? birthDate.substring(2) : birthDate, ssnBack: idNumberBack });
 
-                log(`KO ViewModel 결과: found=${koSetResult.koFound}`);
-                if (koSetResult.vmKeys?.length > 0) {
-                  log(`VM 키: ${koSetResult.vmKeys.join(', ')}`);
-                }
-                if (koSetResult.setResults) {
-                  for (const [key, val] of Object.entries(koSetResult.setResults)) {
-                    log(`  KO.${key}: success=${val.success}${val.value ? ', value=SET' : ''}${val.error ? ', err=' + val.error : ''}`);
-                  }
-                }
-                log(`검증: mbrNm=${koSetResult.verifyMbrNm}, No1=${koSetResult.verifyNo1}, No2=${koSetResult.verifyNo2 ? 'SET' : 'EMPTY'}`);
+                log(`KO 깊이 탐색: found=${koDeepResult.koFound}, setCount=${koDeepResult.setCount}`);
+                const dbg = koDeepResult.debug || {};
+                log(`data-bind: name="${dbg.nameFieldBind}", ssnFront="${dbg.ssnFrontBind}", ssnBack="${dbg.ssnFieldBind}"`);
+                if (dbg.fieldVmKeys) log(`필드VM 키: ${dbg.fieldVmKeys.join(', ')}`);
+                if (dbg.rootVmKeys) log(`루트VM 키: ${dbg.rootVmKeys.join(', ')}`);
+                if (dbg.loginSubKeys) log(`login 서브: ${dbg.loginSubKeys.join(', ')}`);
+                const vfy = koDeepResult.verify || {};
+                log(`검증: fieldVM(mbrNm=${vfy.fieldVm_mbrNm}, No1=${vfy.fieldVm_No1}, No2=${vfy.fieldVm_No2}), rootVM(No2=${vfy.rootVm_No2})`);
 
-                if (koSetResult.error) {
-                  log(`KO 오류: ${koSetResult.error}`);
-                }
-
-                // DOM 값도 동기화 (실명인증 버튼의 클라이언트 검증 통과용)
+                // DOM 값도 동기화
                 await page.evaluate(({ ssnBack }) => {
                   const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
                   if (el) {
