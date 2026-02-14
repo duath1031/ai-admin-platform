@@ -196,7 +196,8 @@ async function startTransfer(data) {
     name,           // 양수인(매수인) 이름
     phoneNumber,    // 양수인 전화번호 (010-xxxx-xxxx)
     carrier,        // 통신사
-    birthDate,      // 생년월일 6자리
+    birthDate,      // 생년월일 YYYYMMDD 8자리 또는 YYMMDD 6자리
+    idNumberBack,   // 주민등록번호 뒷자리 7자리 (선택)
   } = data;
 
   const taskId = uuidv4();
@@ -527,63 +528,57 @@ async function startTransfer(data) {
           loginPageDump.step2Dump = step2Dump;
           authStatus = 'step2_loaded';
 
-          // Step 4-5: 2단계 실명확인 정보 입력 (이름 + 주민번호 앞자리)
+          // Step 4-5: 2단계 실명확인 정보 입력 (이름 + 주민번호)
           if (step2Dump.inputs?.length > 0) {
             log('실명확인 정보 입력 시도...');
 
-            // 이름 입력
-            const nameInputSel = step2Dump.inputs.find(inp =>
-              inp.name?.includes('nm') || inp.name?.includes('name') || inp.id?.includes('nm') ||
-              inp.id?.includes('name') || inp.label?.includes('이름') || inp.label?.includes('성명') ||
-              inp.placeholder?.includes('이름') || inp.placeholder?.includes('성명')
-            );
-            if (nameInputSel) {
-              try {
-                const el = nameInputSel.id
-                  ? await page.$(`#${nameInputSel.id}`)
-                  : await page.$(`input[name="${nameInputSel.name}"]`);
-                if (el && await el.isVisible()) {
-                  await el.fill('');
-                  await el.type(name, { delay: 80 });
-                  log(`이름 입력 성공: #${nameInputSel.id || nameInputSel.name}`);
-                }
-              } catch (e) { log(`이름 입력 실패: ${e.message}`); }
-            }
+            // 이름 입력 (name=mbrNm)
+            try {
+              const nameEl = await page.$('input[name="mbrNm"]');
+              if (nameEl && await nameEl.isVisible()) {
+                await nameEl.fill('');
+                await nameEl.type(name, { delay: 80 });
+                log(`이름 입력 성공: mbrNm = ${name}`);
+              }
+            } catch (e) { log(`이름 입력 실패: ${e.message}`); }
 
-            // 주민등록번호 앞자리 (생년월일 6자리) 입력
+            // 주민등록번호 앞자리 (YYMMDD 6자리) 입력 (name=stkhIdntfNo1)
             const birthDateStr = birthDate?.length === 8 ? birthDate.substring(2) : birthDate; // YYYYMMDD → YYMMDD
             if (birthDateStr) {
-              const ssnInputSel = step2Dump.inputs.find(inp =>
-                inp.name?.includes('ihidnum') || inp.name?.includes('ssn') || inp.name?.includes('brdt') ||
-                inp.name?.includes('birth') || inp.id?.includes('ihidnum') || inp.id?.includes('ssn') ||
-                inp.label?.includes('주민등록') || inp.label?.includes('생년월일') ||
-                inp.placeholder?.includes('주민') || inp.placeholder?.includes('생년') ||
-                (inp.type === 'text' && !nameInputSel?.id?.includes(inp.id) && inp.id !== nameInputSel?.id)
-              );
-              if (ssnInputSel) {
-                try {
-                  const el = ssnInputSel.id
-                    ? await page.$(`#${ssnInputSel.id}`)
-                    : await page.$(`input[name="${ssnInputSel.name}"]`);
-                  if (el && await el.isVisible()) {
-                    await el.fill('');
-                    await el.type(birthDateStr, { delay: 80 });
-                    log(`주민번호 앞자리 입력 성공: #${ssnInputSel.id || ssnInputSel.name} (${birthDateStr})`);
-                  }
-                } catch (e) { log(`주민번호 입력 실패: ${e.message}`); }
-              }
+              try {
+                const ssnFrontEl = await page.$('input[name="stkhIdntfNo1"]');
+                if (ssnFrontEl && await ssnFrontEl.isVisible()) {
+                  await ssnFrontEl.fill('');
+                  await ssnFrontEl.type(birthDateStr, { delay: 80 });
+                  log(`주민번호 앞자리 입력 성공: stkhIdntfNo1 = ${birthDateStr}`);
+                }
+              } catch (e) { log(`주민번호 앞자리 입력 실패: ${e.message}`); }
+            }
+
+            // 주민등록번호 뒷자리 7자리 입력 (id=stkhIdntfNo2, password 필드)
+            if (idNumberBack) {
+              try {
+                const ssnBackEl = await page.$('#stkhIdntfNo2');
+                if (ssnBackEl && await ssnBackEl.isVisible()) {
+                  await ssnBackEl.fill('');
+                  await ssnBackEl.type(idNumberBack, { delay: 80 });
+                  log(`주민번호 뒷자리 입력 성공: stkhIdntfNo2`);
+                }
+              } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
+            } else {
+              log('⚠️ 주민번호 뒷자리(idNumberBack) 미제공 - 실명인증 불가능');
+              authStatus = 'need_id_number_back';
             }
 
             await humanDelay(500, 1000);
+            await stealthScreenshot(page, `car365_step2_filled_${taskId.slice(0, 8)}`);
 
-            // "확인" 또는 "다음" 버튼 클릭 (Step 3으로 이동)
+            // "실명인증" 버튼 클릭 (content-section 내부만 탐색)
             const step2NextSelectors = [
-              'button:has-text("확인")',
+              'button:has-text("실명인증")',
+              'a:has-text("실명인증")',
               'button:has-text("다음")',
-              'a:has-text("확인")',
               'a:has-text("다음")',
-              'button[class*="btn"]:has-text("확인")',
-              '#btnConfirm', '#btnNext',
             ];
 
             let step2Next = false;
@@ -592,11 +587,12 @@ async function startTransfer(data) {
                 const btns = await page.$$(sel);
                 for (const btn of btns) {
                   if (await btn.isVisible()) {
-                    const txt = await btn.textContent();
-                    if (txt && !txt.includes('취소') && !txt.includes('이전')) {
+                    const txt = (await btn.textContent())?.trim();
+                    // 정확히 "실명인증" 또는 "다음"만 매칭 (푸터 링크 제외)
+                    if (txt === '실명인증' || txt === '다음') {
                       await btn.click();
                       step2Next = true;
-                      log(`2단계 다음 버튼 클릭: ${sel} - "${txt.trim()}"`);
+                      log(`2단계 버튼 클릭: ${sel} - "${txt}"`);
                       break;
                     }
                   }
