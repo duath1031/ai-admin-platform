@@ -576,154 +576,83 @@ async function startTransfer(data) {
               } catch (e) { log(`주민번호 앞자리 입력 실패: ${e.message}`); }
             }
 
-            // 주민등록번호 뒷자리 7자리 입력 (id=stkhIdntfNo2, password 필드)
-            // ★ TouchEn nxKey → KO ViewModel의 login 서브모델에 직접 설정 + checkRlnmCert 호출
+            // ★ 핵심: KnockoutJS data-bind="textInput: model.stkhIdntfNo2"
+            // → vm.model 서브모델에 직접 값 설정 + checkRlnmCert 호출
+            let koModelResult = null;
             if (idNumberBack) {
               try {
-                // ★ KO ViewModel 깊이 탐색 + data-bind 분석 + 직접 설정
-                const koDeepResult = await page.evaluate(({ nameVal, ssnFront, ssnBack }) => {
-                  const results = { koFound: false, debug: {} };
+                const birthDateStr6 = birthDate?.length === 8 ? birthDate.substring(2) : birthDate;
+
+                koModelResult = await page.evaluate(({ nameVal, ssnFront, ssnBack }) => {
+                  const results = { success: false, setFields: {} };
 
                   if (typeof ko === 'undefined') return { ...results, error: 'ko undefined' };
 
-                  // 1. 실명확인 필드의 data-bind 속성 추출
-                  const ssnField = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
-                  const nameField = document.querySelector('input[name="mbrNm"]');
-                  const ssnFrontField = document.querySelector('input[name="stkhIdntfNo1"]');
-                  results.debug.ssnFieldBind = ssnField?.getAttribute('data-bind') || 'NO_DATA_BIND';
-                  results.debug.nameFieldBind = nameField?.getAttribute('data-bind') || 'NO_DATA_BIND';
-                  results.debug.ssnFrontBind = ssnFrontField?.getAttribute('data-bind') || 'NO_DATA_BIND';
-
-                  // 2. 필드에서 직접 KO context 가져오기
-                  let fieldVm = null;
-                  let fieldCtx = null;
-                  if (ssnField) {
-                    try { fieldCtx = ko.contextFor(ssnField); fieldVm = ko.dataFor(ssnField); } catch (e) {}
-                  }
-
-                  // 3. Root VM 가져오기
+                  // Root VM 가져오기
                   const rootEl = document.querySelector('.tab-area') || document.querySelector('#content-section');
-                  let rootVm = null;
-                  let rootCtx = null;
-                  try { rootCtx = ko.contextFor(rootEl); rootVm = rootCtx?.$root; } catch (e) {}
+                  let vm = null;
+                  try {
+                    const ctx = ko.contextFor(rootEl);
+                    vm = ctx?.$root;
+                  } catch (e) {}
+                  if (!vm) return { ...results, error: 'root VM not found' };
 
-                  results.debug.hasFieldVm = !!fieldVm;
-                  results.debug.hasRootVm = !!rootVm;
-
-                  // 4. fieldVm의 키 탐색 (폼 데이터가 여기에!)
-                  if (fieldVm) {
-                    const fKeys = [];
-                    for (const k of Object.keys(fieldVm)) {
-                      const v = fieldVm[k];
-                      if (typeof v === 'function' && ko.isObservable(v)) {
-                        fKeys.push(k + '=' + (typeof v() === 'string' ? v().substring(0, 20) : typeof v()));
-                      } else if (typeof v === 'function') {
-                        fKeys.push(k + '()');
-                      }
-                    }
-                    results.debug.fieldVmKeys = fKeys.slice(0, 30);
+                  // ★ model 서브모델에 접근 (data-bind="textInput: model.stkhIdntfNo2")
+                  let model = null;
+                  if (vm.model) {
+                    model = ko.isObservable(vm.model) ? vm.model() : vm.model;
                   }
+                  if (!model) return { ...results, error: 'vm.model not found', vmKeys: Object.keys(vm).slice(0, 20) };
 
-                  // 5. rootVm의 login 서브모델 탐색
-                  if (rootVm) {
-                    const rKeys = Object.keys(rootVm).slice(0, 20);
-                    results.debug.rootVmKeys = rKeys;
-
-                    // login 서브모델 확인
-                    if (rootVm.login) {
-                      const loginObj = typeof rootVm.login === 'function' ? rootVm.login() : rootVm.login;
-                      if (loginObj && typeof loginObj === 'object') {
-                        const lKeys = [];
-                        for (const k of Object.keys(loginObj)) {
-                          const v = loginObj[k];
-                          if (ko.isObservable(v)) {
-                            lKeys.push(k + '=' + (typeof v() === 'string' ? v().substring(0, 20) : typeof v()));
-                          }
-                        }
-                        results.debug.loginSubKeys = lKeys.slice(0, 30);
-                      }
+                  // model의 키 목록
+                  const modelKeys = [];
+                  for (const k of Object.keys(model)) {
+                    if (ko.isObservable(model[k])) {
+                      const v = model[k]();
+                      modelKeys.push(k + '=' + (v !== null && v !== undefined ? String(v).substring(0, 15) : 'null'));
                     }
                   }
+                  results.modelKeys = modelKeys;
 
-                  // 6. ★ 핵심: fieldVm에 직접 값 설정 (필드별 KO binding context)
-                  let setCount = 0;
-                  const trySet = (vm, key, val) => {
-                    if (vm && vm[key] && ko.isObservable(vm[key])) {
-                      vm[key](val);
-                      setCount++;
+                  // ★ model에 값 설정
+                  const setField = (key, val) => {
+                    if (model[key] && ko.isObservable(model[key])) {
+                      model[key](val);
+                      results.setFields[key] = { set: true, verify: model[key]() ? 'OK' : 'EMPTY' };
                       return true;
                     }
+                    results.setFields[key] = { set: false, exists: !!model[key] };
                     return false;
                   };
 
-                  // fieldVm에서 시도
-                  if (fieldVm) {
-                    trySet(fieldVm, 'mbrNm', nameVal);
-                    trySet(fieldVm, 'stkhIdntfNo1', ssnFront);
-                    trySet(fieldVm, 'stkhIdntfNo2', ssnBack);
-                    trySet(fieldVm, 'stkhIdntfNoTypeCd', '01');
-                  }
+                  setField('mbrNm', nameVal);
+                  setField('stkhIdntfNo1', ssnFront);
+                  setField('stkhIdntfNo2', ssnBack);
+                  setField('stkhIdntfNoTypeCd', '01');
 
-                  // rootVm에서도 시도
-                  if (rootVm && setCount < 3) {
-                    trySet(rootVm, 'mbrNm', nameVal);
-                    trySet(rootVm, 'stkhIdntfNo1', ssnFront);
-                    trySet(rootVm, 'stkhIdntfNo2', ssnBack);
-                    trySet(rootVm, 'stkhIdntfNoTypeCd', '01');
-                  }
+                  results.success = true;
 
-                  // login 서브모델에서도 시도
-                  if (rootVm?.login) {
-                    const loginObj = typeof rootVm.login === 'function' ? rootVm.login() : rootVm.login;
-                    if (loginObj) {
-                      trySet(loginObj, 'mbrNm', nameVal);
-                      trySet(loginObj, 'stkhIdntfNo1', ssnFront);
-                      trySet(loginObj, 'stkhIdntfNo2', ssnBack);
-                      trySet(loginObj, 'stkhIdntfNoTypeCd', '01');
+                  // ★ checkRlnmCert 직접 호출 (실명인증 버튼 클릭 대신)
+                  if (typeof vm.checkRlnmCert === 'function') {
+                    try {
+                      vm.checkRlnmCert();
+                      results.checkCalled = true;
+                    } catch (e) {
+                      results.checkError = e.message;
                     }
                   }
 
-                  results.setCount = setCount;
-                  results.koFound = true;
-
-                  // 7. 설정 후 값 검증 (모든 레벨에서)
-                  const verify = (vm, key) => {
-                    if (vm && vm[key] && ko.isObservable(vm[key])) return vm[key]();
-                    return null;
-                  };
-                  results.verify = {
-                    fieldVm_mbrNm: verify(fieldVm, 'mbrNm'),
-                    fieldVm_No1: verify(fieldVm, 'stkhIdntfNo1'),
-                    fieldVm_No2: verify(fieldVm, 'stkhIdntfNo2') ? 'SET' : null,
-                    rootVm_No2: verify(rootVm, 'stkhIdntfNo2') ? 'SET' : null,
-                  };
-
                   return results;
-                }, { nameVal: name, ssnFront: birthDate?.length === 8 ? birthDate.substring(2) : birthDate, ssnBack: idNumberBack });
+                }, { nameVal: name, ssnFront: birthDateStr6, ssnBack: idNumberBack });
 
-                log(`KO 깊이 탐색: found=${koDeepResult.koFound}, setCount=${koDeepResult.setCount}`);
-                const dbg = koDeepResult.debug || {};
-                log(`data-bind: name="${dbg.nameFieldBind}", ssnFront="${dbg.ssnFrontBind}", ssnBack="${dbg.ssnFieldBind}"`);
-                if (dbg.fieldVmKeys) log(`필드VM 키: ${dbg.fieldVmKeys.join(', ')}`);
-                if (dbg.rootVmKeys) log(`루트VM 키: ${dbg.rootVmKeys.join(', ')}`);
-                if (dbg.loginSubKeys) log(`login 서브: ${dbg.loginSubKeys.join(', ')}`);
-                const vfy = koDeepResult.verify || {};
-                log(`검증: fieldVM(mbrNm=${vfy.fieldVm_mbrNm}, No1=${vfy.fieldVm_No1}, No2=${vfy.fieldVm_No2}), rootVM(No2=${vfy.rootVm_No2})`);
-
-                // DOM 값도 동기화
-                await page.evaluate(({ ssnBack }) => {
-                  const el = document.querySelector('#stkhIdntfNo2') || document.querySelector('input[name="stkhIdntfNo2"]');
-                  if (el) {
-                    el.removeAttribute('readonly');
-                    el.removeAttribute('disabled');
-                    el.readOnly = false;
-                    el.disabled = false;
-                    el.type = 'text';
-                    el.value = ssnBack;
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                  }
-                }, { ssnBack: idNumberBack });
+                log(`KO model 설정: success=${koModelResult.success}`);
+                if (koModelResult.modelKeys) log(`model 키: ${koModelResult.modelKeys.join(', ')}`);
+                for (const [key, val] of Object.entries(koModelResult.setFields || {})) {
+                  log(`  model.${key}: set=${val.set}, verify=${val.verify || 'N/A'}`);
+                }
+                if (koModelResult.checkCalled) log('✅ checkRlnmCert() 직접 호출 성공');
+                if (koModelResult.checkError) log(`checkRlnmCert 에러: ${koModelResult.checkError}`);
+                if (koModelResult.error) log(`오류: ${koModelResult.error}`);
 
               } catch (e) { log(`주민번호 뒷자리 입력 실패: ${e.message}`); }
             } else {
@@ -734,37 +663,38 @@ async function startTransfer(data) {
             await humanDelay(500, 1000);
             await stealthScreenshot(page, `car365_step2_filled_${taskId.slice(0, 8)}`);
 
-            // "실명인증" 버튼 클릭 (content-section 내부만 탐색)
-            const step2NextSelectors = [
-              'button:has-text("실명인증")',
-              'a:has-text("실명인증")',
-              'button:has-text("다음")',
-              'a:has-text("다음")',
-            ];
-
-            let step2Next = false;
-            for (const sel of step2NextSelectors) {
-              try {
-                const btns = await page.$$(sel);
-                for (const btn of btns) {
-                  if (await btn.isVisible()) {
-                    const txt = (await btn.textContent())?.trim();
-                    // 정확히 "실명인증" 또는 "다음"만 매칭 (푸터 링크 제외)
-                    if (txt === '실명인증' || txt === '다음') {
-                      await btn.click();
-                      step2Next = true;
-                      log(`2단계 버튼 클릭: ${sel} - "${txt}"`);
-                      break;
+            // checkRlnmCert가 이미 KO에서 호출됨 → 결과 대기
+            // (폴백: 버튼 클릭)
+            if (!idNumberBack || !koModelResult?.checkCalled) {
+              log('checkRlnmCert 미호출, 실명인증 버튼 클릭 시도...');
+              const step2NextSelectors = [
+                'button:has-text("실명인증")',
+                'a:has-text("실명인증")',
+                'button:has-text("다음")',
+                'a:has-text("다음")',
+              ];
+              for (const sel of step2NextSelectors) {
+                try {
+                  const btns = await page.$$(sel);
+                  for (const btn of btns) {
+                    if (await btn.isVisible()) {
+                      const txt = (await btn.textContent())?.trim();
+                      if (txt === '실명인증' || txt === '다음') {
+                        await btn.click();
+                        log(`2단계 버튼 클릭: ${sel} - "${txt}"`);
+                        break;
+                      }
                     }
                   }
-                }
-                if (step2Next) break;
-              } catch (e) { /* continue */ }
+                } catch (e) { /* continue */ }
+              }
             }
 
-            if (step2Next) {
-              await humanDelay(2000, 3000);
-              await stealthScreenshot(page, `car365_step2_result_${taskId.slice(0, 8)}`);
+            // 실명인증 결과 대기 (AJAX 호출 완료 대기)
+            await humanDelay(3000, 5000);
+            await stealthScreenshot(page, `car365_step2_result_${taskId.slice(0, 8)}`);
+
+            {
 
               // 실명인증 결과 확인 - 에러 모달 감지
               const step2Result = await page.evaluate(() => {
