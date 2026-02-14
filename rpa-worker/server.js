@@ -559,9 +559,9 @@ app.post('/car365/transfer/start', validateApiKey, async (req, res) => {
 
   const timeout = setTimeout(() => {
     if (!res.headersSent) {
-      res.status(504).json({ success: false, error: '작업 시간 초과 (60초)' });
+      res.status(504).json({ success: false, error: '작업 시간 초과 (180초)' });
     }
-  }, 60000);
+  }, 180000);
 
   try {
     const result = await startTransfer(req.body);

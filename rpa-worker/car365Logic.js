@@ -245,12 +245,11 @@ async function startTransfer(data) {
     // about:blank 체크 (DevTools 우회 실패 시)
     if (mainUrl === 'about:blank' || !mainTitle) {
       log('⚠️ DevTools 우회 실패 - about:blank 감지. 재시도...');
-      // 재시도
       await page.goto(CAR365_URLS.main, {
         waitUntil: 'load',
         timeout: TIMEOUTS.navigation,
       });
-      await humanDelay(3000, 5000);
+      await humanDelay(1500, 2500);
       log(`재시도 후 URL: ${page.url()}`);
     }
 
@@ -264,12 +263,12 @@ async function startTransfer(data) {
       timeout: TIMEOUTS.navigation,
     });
 
-    // AnyID SPA 페이지 안정화 대기 (Vue/React 라우터 초기화)
-    await humanDelay(8000, 12000);
+    // AnyID SPA 페이지 안정화 대기 (KnockoutJS SPA 라우터 초기화)
+    await humanDelay(4000, 6000);
 
     // 네비게이션 완료 대기
     try {
-      await page.waitForLoadState('networkidle', { timeout: 20000 });
+      await page.waitForLoadState('networkidle', { timeout: 15000 });
     } catch (e) {
       log(`networkidle 대기 타임아웃 (무시): ${e.message}`);
     }
@@ -391,7 +390,7 @@ async function startTransfer(data) {
       if (tab0102 && await tab0102.isVisible()) {
         await tab0102.click();
         log('비회원 로그인 탭 클릭 성공');
-        await humanDelay(3000, 5000);
+        await humanDelay(2000, 3000);
 
         // 비회원 로그인 탭 내용 분석
         const nonMemberDump = await page.evaluate(() => {
@@ -490,7 +489,7 @@ async function startTransfer(data) {
         }
 
         if (agreedNext) {
-          await humanDelay(3000, 5000);
+          await humanDelay(2000, 3000);
           await stealthScreenshot(page, `car365_step2_${taskId.slice(0, 8)}`);
 
           // Step 4-4: 2단계 실명확인 페이지 분석
@@ -602,7 +601,7 @@ async function startTransfer(data) {
             }
 
             if (step2Next) {
-              await humanDelay(3000, 5000);
+              await humanDelay(2000, 3000);
               await stealthScreenshot(page, `car365_step3_${taskId.slice(0, 8)}`);
 
               // Step 4-6: 3단계 본인인증 페이지 분석 + 인증요청
@@ -723,7 +722,7 @@ async function startTransfer(data) {
               if (authRequested) {
                 authTriggered = true;
                 authStatus = 'auth_requested';
-                await humanDelay(3000, 5000);
+                await humanDelay(2000, 3000);
                 await stealthScreenshot(page, `car365_auth_requested_${taskId.slice(0, 8)}`);
               } else {
                 log('인증번호 요청 버튼을 찾지 못함');
