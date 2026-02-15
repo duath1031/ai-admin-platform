@@ -220,6 +220,9 @@ const sidebarItems: SidebarItem[] = [
       { name: "저작권 등록", href: "/copyright", icon: icons.copyright },
       { name: "내용증명", href: "/legal-notice", icon: icons.docWrite },
       { name: "회의록 AI", href: "/meeting-minutes", icon: icons.docReview },
+      { name: "서류 작성", href: "/documents", icon: icons.docWrite },
+      { name: "서류 검토", href: "/review", icon: icons.docReview },
+      { name: "계약서 분석", href: "/contract-analysis", icon: icons.contractAnalysis },
     ],
   },
 
@@ -275,17 +278,6 @@ const sidebarItems: SidebarItem[] = [
     ],
   },
 
-  // 서류 AI
-  {
-    name: "서류 AI",
-    emoji: "\uD83D\uDCC4",
-    children: [
-      { name: "서류 작성", href: "/documents", icon: icons.docWrite },
-      { name: "서류 검토", href: "/review", icon: icons.docReview },
-      { name: "계약서 분석", href: "/contract-analysis", icon: icons.contractAnalysis },
-    ],
-  },
-
   // 거래처 관리
   {
     name: "거래처 관리",
@@ -299,7 +291,6 @@ const sidebarItems: SidebarItem[] = [
 // Bottom fixed items (below divider)
 const bottomItems: MenuItem[] = [
   { name: "마스터 프로필", href: "/mypage", icon: icons.user },
-  { name: "요금제 / 토큰 충전", href: "/pricing", icon: icons.pricing },
 ];
 
 const adminMenuItem: MenuItem = {

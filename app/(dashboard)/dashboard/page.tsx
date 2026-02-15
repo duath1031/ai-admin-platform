@@ -15,6 +15,9 @@ const serviceCategories = [
       { name: "저작권 등록", href: "/copyright", desc: "등록 가이드·신청서" },
       { name: "내용증명", href: "/legal-notice", desc: "내용증명 작성" },
       { name: "회의록 AI", href: "/meeting-minutes", desc: "녹취록 자동 요약" },
+      { name: "서류 작성", href: "/documents/new", desc: "206종 법정 서식" },
+      { name: "서류 검토", href: "/review", desc: "AI 검증·독소조항" },
+      { name: "계약서 분석", href: "/contract-analysis", desc: "독소조항 검출" },
     ],
   },
   {
@@ -63,16 +66,6 @@ const serviceCategories = [
       { name: "입찰 검색/분석", href: "/procurement", desc: "나라장터 검색·경쟁사·A값" },
       { name: "사정률 시뮬레이터", href: "/bid-simulation", desc: "투찰금액·MC 시뮬레이션" },
       { name: "직접생산확인 진단", href: "/direct-production-check", desc: "37업종 자가진단" },
-    ],
-  },
-  {
-    title: "서류 AI",
-    emoji: "📄",
-    color: "teal",
-    items: [
-      { name: "서류 작성", href: "/documents/new", desc: "206종 법정 서식" },
-      { name: "서류 검토", href: "/review", desc: "AI 검증·독소조항" },
-      { name: "계약서 분석", href: "/contract-analysis", desc: "독소조항 검출" },
     ],
   },
   {
@@ -195,7 +188,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Bottom Quick Links */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6">
         <Link href="/mypage/company" className="block">
           <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-slate-50 to-gray-50 border border-gray-200 rounded-xl hover:shadow-md transition-all">
             <div className="w-10 h-10 bg-gradient-to-br from-slate-600 to-gray-700 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -206,19 +199,6 @@ export default function DashboardPage() {
             <div>
               <div className="text-sm font-bold text-gray-900">마스터 프로필</div>
               <div className="text-[11px] text-gray-500">기업 정보 등록·수정</div>
-            </div>
-          </div>
-        </Link>
-        <Link href="/pricing" className="block">
-          <div className="flex items-center gap-3 p-4 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-100 rounded-xl hover:shadow-md transition-all">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-sm font-bold text-gray-900">요금제 / 토큰</div>
-              <div className="text-[11px] text-gray-500">플랜 변경·충전</div>
             </div>
           </div>
         </Link>
