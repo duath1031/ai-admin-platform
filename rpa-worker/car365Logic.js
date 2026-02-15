@@ -1121,117 +1121,194 @@ async function startTransfer(data) {
                     loginPageDump.popupConsole = popupConsole;
                     authStatus = 'popup_opened';
 
-                    // ★ NICE 팝업 내 본인인증 진행 시도
-                    // NICE 팝업 구조: 통신사 선택 → 이름/생년월일/전화번호 → 인증 요청
-                    if (popupDump.visibleInputs > 0 || popupDump.allInputs > 2) {
-                      log('★ NICE 팝업 본인인증 폼 발견! 입력 시도...');
+                    // ★ NICE 팝업 본인인증 진행 (2단계 구조)
+                    // 1단계: 통신사 선택 버튼 클릭 → 2단계: 이름/생년/전화번호 입력 → 인증 요청
+                    const carrierBtnMap = {
+                      'SKT': '#telcomSK', 'SK': '#telcomSK',
+                      'KT': '#telcomKT',
+                      'LG': '#telcomLG', 'LGU': '#telcomLG', 'LGU+': '#telcomLG',
+                      'SK알뜰': '#telcomSM', 'KT알뜰': '#telcomKM', 'LG알뜰': '#telcomLM',
+                    };
+                    const carrierSelector = carrierBtnMap[carrier] || '#telcomSK';
 
-                      const carrierMap = {
-                        'SKT': '01', 'SK': '01', 'KT': '02', 'LG': '03', 'LGU': '03', 'LGU+': '03',
-                        'SK알뜰': '04', 'KT알뜰': '05', 'LG알뜰': '06',
-                      };
-                      const carrierCode = carrierMap[carrier] || '01';
+                    // NICE Step 1: 통신사 선택 버튼 클릭
+                    log(`NICE Step 1: 통신사 선택 (${carrier} → ${carrierSelector})`);
+                    const carrierBtn = await popup.$(carrierSelector);
+                    if (carrierBtn) {
+                      await carrierBtn.click();
+                      log('통신사 버튼 클릭 성공');
 
-                      const niceResult = await popup.evaluate(({ nameVal, birthVal, phoneVal, carrierCode }) => {
-                        const results = { filled: {} };
+                      // 다음 화면(이름/생년/전화번호 입력) 로딩 대기
+                      await popup.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+                      await humanDelay(3000, 5000);
 
-                        // 통신사 선택 (select 또는 radio)
-                        const carrierSelect = document.querySelector('select[name*="carrier" i], select[name*="telco" i], select[name*="agency" i], #agency, #carrier');
-                        if (carrierSelect) {
-                          carrierSelect.value = carrierCode;
-                          carrierSelect.dispatchEvent(new Event('change', { bubbles: true }));
-                          results.filled.carrier = { method: 'select', value: carrierCode };
-                        } else {
-                          // radio 버튼 방식
-                          const radios = document.querySelectorAll('input[type="radio"][name*="carrier" i], input[type="radio"][name*="telco" i], input[type="radio"][name*="agency" i]');
-                          for (const r of radios) {
-                            if (r.value === carrierCode) {
-                              r.click();
-                              results.filled.carrier = { method: 'radio', value: carrierCode };
+                      await stealthScreenshot(popup, `car365_nice_step2_${taskId.slice(0, 8)}`);
+
+                      // NICE Step 2: 폼 페이지 분석
+                      const niceFormDump = await popup.evaluate(() => {
+                        const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
+                          tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+                          placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+                          cls: e.className?.toString()?.substring(0, 60) || '',
+                        }));
+                        const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]')).map(e => ({
+                          id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
+                          cls: e.className?.toString()?.substring(0, 60) || '',
+                          visible: e.offsetParent !== null,
+                        }));
+                        return {
+                          title: document.title,
+                          url: window.location.href,
+                          inputs,
+                          visibleInputs: inputs.filter(i => i.visible),
+                          buttons: buttons.filter(b => b.visible),
+                          bodyText: document.body?.innerText?.substring(0, 2000) || '',
+                        };
+                      }).catch(e => ({ error: e.message }));
+
+                      log(`NICE Step 2 제목: ${niceFormDump.title}`);
+                      log(`NICE Step 2 URL: ${niceFormDump.url}`);
+                      log(`NICE Step 2 visible 입력: ${niceFormDump.visibleInputs?.length || 0}개`);
+                      for (const inp of (niceFormDump.visibleInputs || [])) {
+                        log(`  [input] id=${inp.id} name=${inp.name} type=${inp.type} placeholder="${inp.placeholder}" cls="${inp.cls}"`);
+                      }
+                      log(`NICE Step 2 visible 버튼: ${niceFormDump.buttons?.length || 0}개`);
+                      for (const btn of (niceFormDump.buttons || []).slice(0, 15)) {
+                        log(`  [btn] id=${btn.id} text="${btn.text}" cls="${btn.cls}"`);
+                      }
+                      log(`NICE Step 2 본문 (800자): ${niceFormDump.bodyText?.substring(0, 800)}`);
+
+                      // NICE Step 2: 이름/생년월일/전화번호/성별 입력
+                      if ((niceFormDump.visibleInputs?.length || 0) > 0) {
+                        log('NICE 폼 입력 시작...');
+
+                        // 성별 코드: 주민번호 뒷자리 첫째자리 (1=남, 2=여, 3=남2000, 4=여2000)
+                        const genderDigit = idNumberBack ? idNumberBack.charAt(0) : '1';
+                        const genderCode = (genderDigit === '1' || genderDigit === '3') ? '0' : '1'; // NICE: 0=남, 1=여
+
+                        const niceResult = await popup.evaluate(({ nameVal, birthVal, phoneVal, genderCode }) => {
+                          const results = { filled: {} };
+
+                          // 이름 입력 (다양한 셀렉터 시도)
+                          const nameSelectors = ['#userName', '#name', 'input[name="userName"]', 'input[name="name"]', 'input[placeholder*="이름"]', 'input[placeholder*="성명"]'];
+                          for (const sel of nameSelectors) {
+                            const el = document.querySelector(sel);
+                            if (el && (el.offsetParent !== null || el.type !== 'hidden')) {
+                              el.value = nameVal;
+                              el.dispatchEvent(new Event('input', { bubbles: true }));
+                              el.dispatchEvent(new Event('change', { bubbles: true }));
+                              results.filled.name = { selector: sel, value: nameVal };
                               break;
                             }
                           }
-                        }
 
-                        // 이름 입력
-                        const nameInput = document.querySelector('input[name*="name" i], input[name*="userName" i], input[id*="name" i], input[placeholder*="이름"], input[placeholder*="성명"]');
-                        if (nameInput) {
-                          nameInput.value = nameVal;
-                          nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-                          nameInput.dispatchEvent(new Event('change', { bubbles: true }));
-                          results.filled.name = true;
-                        }
+                          // 생년월일 입력
+                          const birthSelectors = ['#birthDay', '#birth', 'input[name="birthDay"]', 'input[name="birth"]', 'input[placeholder*="생년"]', 'input[placeholder*="YYYYMMDD"]', 'input[placeholder*="19"]'];
+                          for (const sel of birthSelectors) {
+                            const el = document.querySelector(sel);
+                            if (el && (el.offsetParent !== null || el.type !== 'hidden')) {
+                              el.value = birthVal;
+                              el.dispatchEvent(new Event('input', { bubbles: true }));
+                              el.dispatchEvent(new Event('change', { bubbles: true }));
+                              results.filled.birth = { selector: sel, value: birthVal };
+                              break;
+                            }
+                          }
 
-                        // 생년월일 (YYMMDD 또는 YYYYMMDD)
-                        const birthInput = document.querySelector('input[name*="birth" i], input[name*="birthday" i], input[id*="birth" i], input[placeholder*="생년"]');
-                        if (birthInput) {
-                          birthInput.value = birthVal;
-                          birthInput.dispatchEvent(new Event('input', { bubbles: true }));
-                          birthInput.dispatchEvent(new Event('change', { bubbles: true }));
-                          results.filled.birth = true;
-                        }
+                          // 전화번호 입력
+                          const phoneSelectors = ['#mobileNo', '#phoneNo', '#cellNo', 'input[name="mobileNo"]', 'input[name="phoneNo"]', 'input[name="cellNo"]', 'input[placeholder*="번호"]', 'input[placeholder*="-없이"]'];
+                          for (const sel of phoneSelectors) {
+                            const el = document.querySelector(sel);
+                            if (el && (el.offsetParent !== null || el.type !== 'hidden')) {
+                              el.value = phoneVal;
+                              el.dispatchEvent(new Event('input', { bubbles: true }));
+                              el.dispatchEvent(new Event('change', { bubbles: true }));
+                              results.filled.phone = { selector: sel, value: phoneVal };
+                              break;
+                            }
+                          }
 
-                        // 전화번호
-                        const phoneInput = document.querySelector('input[name*="phone" i], input[name*="cellNo" i], input[name*="mobile" i], input[id*="phone" i], input[placeholder*="전화"], input[placeholder*="번호"]');
-                        if (phoneInput) {
-                          phoneInput.value = phoneVal;
-                          phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
-                          phoneInput.dispatchEvent(new Event('change', { bubbles: true }));
-                          results.filled.phone = true;
-                        }
+                          // 성별 선택 (라디오 버튼)
+                          const genderRadios = document.querySelectorAll('input[type="radio"][name*="gender" i], input[type="radio"][name*="sex" i]');
+                          for (const r of genderRadios) {
+                            if (r.value === genderCode) {
+                              r.click();
+                              results.filled.gender = { value: genderCode };
+                              break;
+                            }
+                          }
 
-                        // 성별 (주민번호 뒷자리 첫숫자 기반: 1=남, 2=여, 3=남(2000년대), 4=여(2000년대))
-                        // 이건 필요시 나중에 추가
+                          // 동의 체크박스 (전체동의)
+                          const agreeCheckboxes = document.querySelectorAll('input[type="checkbox"][name*="agree" i], input[type="checkbox"][id*="agree" i], input[type="checkbox"][id*="chkAll" i], #allAgree, #chkAll');
+                          for (const chk of agreeCheckboxes) {
+                            if (!chk.checked && chk.offsetParent !== null) {
+                              chk.click();
+                              results.filled.agree = true;
+                              break;
+                            }
+                          }
 
-                        // "인증 요청", "본인확인", "인증번호 전송" 등 버튼 찾기
-                        const submitBtns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
-                        const certBtn = submitBtns.find(b => {
-                          const text = (b.textContent || b.value || '').trim();
-                          return b.offsetParent !== null && (
-                            text.includes('인증 요청') || text.includes('인증요청') ||
-                            text.includes('본인확인') || text.includes('인증번호') ||
-                            text.includes('전송') || text.includes('확인')
-                          );
-                        });
-
-                        results.certBtnFound = !!certBtn;
-                        results.certBtnText = certBtn ? (certBtn.textContent || certBtn.value || '').trim().substring(0, 40) : 'NOT_FOUND';
-
-                        return results;
-                      }, {
-                        nameVal: name,
-                        birthVal: birthDate?.length === 8 ? birthDate : `19${birthDate}`,
-                        phoneVal: phoneNumber?.replace(/-/g, ''),
-                        carrierCode,
-                      }).catch(e => ({ error: e.message }));
-
-                      log(`NICE 폼 입력 결과: ${JSON.stringify(niceResult)}`);
-
-                      // 인증 요청 버튼 클릭
-                      if (niceResult.certBtnFound) {
-                        log('인증 요청 버튼 클릭 시도...');
-                        await popup.evaluate(() => {
+                          // "인증 요청" / "인증번호 요청" / "요청" 버튼 찾기
                           const submitBtns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
                           const certBtn = submitBtns.find(b => {
                             const text = (b.textContent || b.value || '').trim();
                             return b.offsetParent !== null && (
-                              text.includes('인증 요청') || text.includes('인증요청') ||
-                              text.includes('본인확인') || text.includes('인증번호') ||
-                              text.includes('전송')
+                              text === '인증요청' || text === '인증 요청' ||
+                              text === '요청' || text === '인증번호 요청' ||
+                              text === '인증번호 받기' || text === '문자(SMS) 인증' ||
+                              text.includes('인증요청') || text.includes('인증번호')
                             );
                           });
-                          if (certBtn) certBtn.click();
-                        }).catch(e => log(`인증 요청 버튼 클릭 실패: ${e.message}`));
+                          results.certBtnFound = !!certBtn;
+                          results.certBtnText = certBtn ? (certBtn.textContent || certBtn.value || '').trim().substring(0, 60) : 'NOT_FOUND';
 
-                        await humanDelay(3000, 5000);
-                        await stealthScreenshot(popup, `car365_nice_after_submit_${taskId.slice(0, 8)}`);
+                          return results;
+                        }, {
+                          nameVal: name,
+                          birthVal: birthDate?.length === 8 ? birthDate : `19${birthDate}`,
+                          phoneVal: phoneNumber?.replace(/-/g, ''),
+                          genderCode,
+                        }).catch(e => ({ error: e.message }));
 
-                        authStatus = 'nice_auth_requested';
-                        authTriggered = true;
-                        log('✅ NICE 본인인증 요청 전송 완료!');
+                        log(`NICE 폼 입력 결과: ${JSON.stringify(niceResult)}`);
+
+                        // 인증 요청 버튼 클릭
+                        if (niceResult.certBtnFound) {
+                          log(`인증 요청 버튼 클릭: "${niceResult.certBtnText}"`);
+                          await popup.evaluate(() => {
+                            const submitBtns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+                            const certBtn = submitBtns.find(b => {
+                              const text = (b.textContent || b.value || '').trim();
+                              return b.offsetParent !== null && (
+                                text === '인증요청' || text === '인증 요청' ||
+                                text === '요청' || text === '인증번호 요청' ||
+                                text === '인증번호 받기' || text === '문자(SMS) 인증' ||
+                                text.includes('인증요청') || text.includes('인증번호')
+                              );
+                            });
+                            if (certBtn) certBtn.click();
+                          }).catch(e => log(`인증 요청 버튼 클릭 실패: ${e.message}`));
+
+                          await humanDelay(3000, 5000);
+                          await stealthScreenshot(popup, `car365_nice_auth_sent_${taskId.slice(0, 8)}`);
+
+                          authStatus = 'nice_auth_requested';
+                          authTriggered = true;
+                          log('✅ NICE 본인인증 SMS 요청 전송 완료!');
+                        } else {
+                          log('인증 요청 버튼 미발견 - 폼 구조 확인 필요');
+                          authStatus = 'nice_form_loaded';
+                        }
+                      } else {
+                        log('NICE Step 2 visible 입력 필드 없음 - 페이지 로딩 확인 필요');
+                        // raw HTML 덤프
+                        const step2Html = await popup.content().catch(() => '');
+                        log(`NICE Step 2 HTML (2000자): ${step2Html.substring(0, 2000)}`);
+                        authStatus = 'nice_carrier_selected';
                       }
                     } else {
-                      log('NICE 팝업에 visible 입력 필드 없음 - SPA 렌더링 미완료 가능성');
+                      log(`통신사 버튼(${carrierSelector}) 미발견`);
+                      authStatus = 'nice_popup_no_carrier';
                     }
                   } else {
                     log('팝업 윈도우 미감지 (10초 대기)');
