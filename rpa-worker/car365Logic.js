@@ -1000,49 +1000,239 @@ async function startTransfer(data) {
                   const popup = await popupPromise;
                   if (popup) {
                     log(`★ 팝업 윈도우 감지! URL: ${popup.url()}`);
-                    await popup.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
-                    await humanDelay(2000, 3000);
+
+                    // 팝업 콘솔 로그/에러 수집
+                    const popupConsole = [];
+                    popup.on('console', msg => {
+                      popupConsole.push(`[${msg.type()}] ${msg.text().substring(0, 200)}`);
+                    });
+                    popup.on('pageerror', err => {
+                      popupConsole.push(`[ERROR] ${err.message?.substring(0, 200)}`);
+                    });
+
+                    // 1단계: domcontentloaded 대기
+                    await popup.waitForLoadState('domcontentloaded', { timeout: 20000 }).catch(e => {
+                      log(`팝업 domcontentloaded 타임아웃: ${e.message}`);
+                    });
+                    log(`팝업 DOMContentLoaded 후 URL: ${popup.url()}`);
+
+                    // 2단계: networkidle 대기 (SPA 렌더링 완료)
+                    await popup.waitForLoadState('networkidle', { timeout: 30000 }).catch(e => {
+                      log(`팝업 networkidle 타임아웃: ${e.message}`);
+                    });
+
+                    // 3단계: 추가 대기 (JS 렌더링)
+                    await humanDelay(5000, 8000);
 
                     const popupUrl = popup.url();
                     log(`팝업 최종 URL: ${popupUrl}`);
 
-                    // 팝업 페이지 분석
-                    const popupDump = await popup.evaluate(() => {
-                      const inputs = Array.from(document.querySelectorAll('input, select')).map(e => ({
-                        tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
-                        placeholder: e.placeholder || '', visible: e.offsetParent !== null,
-                        label: e.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent?.trim()?.substring(0, 40) || '',
-                        options: e.tagName === 'SELECT' ? Array.from(e.options).map(o => ({ v: o.value, t: o.textContent?.trim() })).slice(0, 10) : [],
-                      })).filter(i => i.visible);
+                    // Raw HTML 캡처 (evaluate가 실패해도 HTML은 볼 수 있음)
+                    let popupRawHtml = '';
+                    try {
+                      popupRawHtml = await popup.content();
+                      log(`팝업 raw HTML 길이: ${popupRawHtml.length}`);
+                      log(`팝업 HTML (2000자): ${popupRawHtml.substring(0, 2000)}`);
+                    } catch (e) {
+                      log(`팝업 HTML 캡처 실패: ${e.message}`);
+                    }
 
-                      const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]')).map(e => ({
-                        id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
-                        visible: e.offsetParent !== null,
-                      })).filter(b => b.visible && b.text);
+                    // 콘솔 로그 출력
+                    if (popupConsole.length > 0) {
+                      log(`팝업 콘솔 메시지: ${popupConsole.length}건`);
+                      for (const msg of popupConsole.slice(0, 20)) {
+                        log(`  ${msg}`);
+                      }
+                    }
 
-                      return {
-                        title: document.title,
-                        url: window.location.href,
-                        inputs,
-                        buttons: buttons.slice(0, 20),
-                        bodySnippet: document.body?.innerText?.substring(0, 2000) || '',
-                      };
-                    }).catch(e => ({ error: e.message }));
+                    // 스크린샷
+                    await stealthScreenshot(popup, `car365_popup_${taskId.slice(0, 8)}`);
+
+                    // 팝업 페이지 분석 (재시도 포함)
+                    let popupDump = null;
+                    for (let popRetry = 0; popRetry < 3; popRetry++) {
+                      try {
+                        popupDump = await popup.evaluate(() => {
+                          const inputs = Array.from(document.querySelectorAll('input, select, textarea')).map(e => ({
+                            tag: e.tagName, id: e.id, name: e.name, type: e.type || '',
+                            placeholder: e.placeholder || '', visible: e.offsetParent !== null,
+                            label: e.closest('tr,div,label,li,dd')?.querySelector('th,label,span,dt')?.textContent?.trim()?.substring(0, 40) || '',
+                            options: e.tagName === 'SELECT' ? Array.from(e.options).map(o => ({ v: o.value, t: o.textContent?.trim() })).slice(0, 15) : [],
+                            value: e.value || '',
+                          }));
+
+                          const buttons = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]')).map(e => ({
+                            id: e.id, text: (e.textContent || e.value || '').trim().substring(0, 60),
+                            cls: e.className?.toString()?.substring(0, 60) || '',
+                            visible: e.offsetParent !== null,
+                            onclick: e.getAttribute('onclick')?.substring(0, 100) || '',
+                          }));
+
+                          const iframes = Array.from(document.querySelectorAll('iframe')).map(f => ({
+                            id: f.id, name: f.name, src: f.src?.substring(0, 200),
+                          }));
+
+                          return {
+                            title: document.title,
+                            url: window.location.href,
+                            inputs,
+                            allInputs: inputs.length,
+                            visibleInputs: inputs.filter(i => i.visible).length,
+                            buttons,
+                            allButtons: buttons.length,
+                            visibleButtons: buttons.filter(b => b.visible).length,
+                            iframes,
+                            bodyText: document.body?.innerText?.substring(0, 3000) || '',
+                            bodyHtml: document.body?.innerHTML?.substring(0, 3000) || '',
+                          };
+                        });
+                        if (popupDump && (popupDump.allInputs > 0 || popupDump.bodyText?.length > 50)) break;
+                      } catch (e) {
+                        log(`팝업 분석 시도 ${popRetry + 1}/3 실패: ${e.message}`);
+                      }
+                      if (popRetry < 2) await humanDelay(3000, 5000);
+                    }
+
+                    if (!popupDump) popupDump = { error: 'evaluate 3회 실패' };
 
                     log(`팝업 제목: ${popupDump.title || 'N/A'}`);
-                    log(`팝업 입력: ${popupDump.inputs?.length || 0}개`);
+                    log(`팝업 전체 입력: ${popupDump.allInputs || 0}개 (visible: ${popupDump.visibleInputs || 0}개)`);
                     for (const inp of (popupDump.inputs || [])) {
-                      log(`  [popup input] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}"`);
+                      log(`  [popup input] id=${inp.id} name=${inp.name} type=${inp.type} label="${inp.label}" visible=${inp.visible} value="${inp.value}"`);
                       if (inp.options?.length > 0) log(`    options: ${inp.options.map(o => `${o.v}=${o.t}`).join(', ')}`);
                     }
-                    log(`팝업 버튼: ${popupDump.buttons?.length || 0}개`);
-                    for (const btn of (popupDump.buttons || []).slice(0, 15)) {
-                      log(`  [popup btn] id=${btn.id} text="${btn.text}"`);
+                    log(`팝업 전체 버튼: ${popupDump.allButtons || 0}개 (visible: ${popupDump.visibleButtons || 0}개)`);
+                    for (const btn of (popupDump.buttons || []).slice(0, 20)) {
+                      log(`  [popup btn] id=${btn.id} text="${btn.text}" cls="${btn.cls}" visible=${btn.visible}`);
                     }
-                    log(`팝업 본문 (500자): ${popupDump.bodySnippet?.substring(0, 500)}`);
+                    if (popupDump.iframes?.length > 0) {
+                      log(`팝업 iframe: ${popupDump.iframes.length}개`);
+                      for (const f of popupDump.iframes) {
+                        log(`  [iframe] id=${f.id} name=${f.name} src=${f.src}`);
+                      }
+                    }
+                    log(`팝업 본문 (1000자): ${popupDump.bodyText?.substring(0, 1000)}`);
+                    if (popupDump.bodyHtml) {
+                      log(`팝업 body HTML (1500자): ${popupDump.bodyHtml?.substring(0, 1500)}`);
+                    }
 
                     loginPageDump.popupDump = popupDump;
+                    loginPageDump.popupRawHtml = popupRawHtml?.substring(0, 5000) || '';
+                    loginPageDump.popupConsole = popupConsole;
                     authStatus = 'popup_opened';
+
+                    // ★ NICE 팝업 내 본인인증 진행 시도
+                    // NICE 팝업 구조: 통신사 선택 → 이름/생년월일/전화번호 → 인증 요청
+                    if (popupDump.visibleInputs > 0 || popupDump.allInputs > 2) {
+                      log('★ NICE 팝업 본인인증 폼 발견! 입력 시도...');
+
+                      const carrierMap = {
+                        'SKT': '01', 'SK': '01', 'KT': '02', 'LG': '03', 'LGU': '03', 'LGU+': '03',
+                        'SK알뜰': '04', 'KT알뜰': '05', 'LG알뜰': '06',
+                      };
+                      const carrierCode = carrierMap[carrier] || '01';
+
+                      const niceResult = await popup.evaluate(({ nameVal, birthVal, phoneVal, carrierCode }) => {
+                        const results = { filled: {} };
+
+                        // 통신사 선택 (select 또는 radio)
+                        const carrierSelect = document.querySelector('select[name*="carrier" i], select[name*="telco" i], select[name*="agency" i], #agency, #carrier');
+                        if (carrierSelect) {
+                          carrierSelect.value = carrierCode;
+                          carrierSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                          results.filled.carrier = { method: 'select', value: carrierCode };
+                        } else {
+                          // radio 버튼 방식
+                          const radios = document.querySelectorAll('input[type="radio"][name*="carrier" i], input[type="radio"][name*="telco" i], input[type="radio"][name*="agency" i]');
+                          for (const r of radios) {
+                            if (r.value === carrierCode) {
+                              r.click();
+                              results.filled.carrier = { method: 'radio', value: carrierCode };
+                              break;
+                            }
+                          }
+                        }
+
+                        // 이름 입력
+                        const nameInput = document.querySelector('input[name*="name" i], input[name*="userName" i], input[id*="name" i], input[placeholder*="이름"], input[placeholder*="성명"]');
+                        if (nameInput) {
+                          nameInput.value = nameVal;
+                          nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+                          nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+                          results.filled.name = true;
+                        }
+
+                        // 생년월일 (YYMMDD 또는 YYYYMMDD)
+                        const birthInput = document.querySelector('input[name*="birth" i], input[name*="birthday" i], input[id*="birth" i], input[placeholder*="생년"]');
+                        if (birthInput) {
+                          birthInput.value = birthVal;
+                          birthInput.dispatchEvent(new Event('input', { bubbles: true }));
+                          birthInput.dispatchEvent(new Event('change', { bubbles: true }));
+                          results.filled.birth = true;
+                        }
+
+                        // 전화번호
+                        const phoneInput = document.querySelector('input[name*="phone" i], input[name*="cellNo" i], input[name*="mobile" i], input[id*="phone" i], input[placeholder*="전화"], input[placeholder*="번호"]');
+                        if (phoneInput) {
+                          phoneInput.value = phoneVal;
+                          phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
+                          phoneInput.dispatchEvent(new Event('change', { bubbles: true }));
+                          results.filled.phone = true;
+                        }
+
+                        // 성별 (주민번호 뒷자리 첫숫자 기반: 1=남, 2=여, 3=남(2000년대), 4=여(2000년대))
+                        // 이건 필요시 나중에 추가
+
+                        // "인증 요청", "본인확인", "인증번호 전송" 등 버튼 찾기
+                        const submitBtns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+                        const certBtn = submitBtns.find(b => {
+                          const text = (b.textContent || b.value || '').trim();
+                          return b.offsetParent !== null && (
+                            text.includes('인증 요청') || text.includes('인증요청') ||
+                            text.includes('본인확인') || text.includes('인증번호') ||
+                            text.includes('전송') || text.includes('확인')
+                          );
+                        });
+
+                        results.certBtnFound = !!certBtn;
+                        results.certBtnText = certBtn ? (certBtn.textContent || certBtn.value || '').trim().substring(0, 40) : 'NOT_FOUND';
+
+                        return results;
+                      }, {
+                        nameVal: name,
+                        birthVal: birthDate?.length === 8 ? birthDate : `19${birthDate}`,
+                        phoneVal: phoneNumber?.replace(/-/g, ''),
+                        carrierCode,
+                      }).catch(e => ({ error: e.message }));
+
+                      log(`NICE 폼 입력 결과: ${JSON.stringify(niceResult)}`);
+
+                      // 인증 요청 버튼 클릭
+                      if (niceResult.certBtnFound) {
+                        log('인증 요청 버튼 클릭 시도...');
+                        await popup.evaluate(() => {
+                          const submitBtns = Array.from(document.querySelectorAll('button, a, input[type="button"], input[type="submit"]'));
+                          const certBtn = submitBtns.find(b => {
+                            const text = (b.textContent || b.value || '').trim();
+                            return b.offsetParent !== null && (
+                              text.includes('인증 요청') || text.includes('인증요청') ||
+                              text.includes('본인확인') || text.includes('인증번호') ||
+                              text.includes('전송')
+                            );
+                          });
+                          if (certBtn) certBtn.click();
+                        }).catch(e => log(`인증 요청 버튼 클릭 실패: ${e.message}`));
+
+                        await humanDelay(3000, 5000);
+                        await stealthScreenshot(popup, `car365_nice_after_submit_${taskId.slice(0, 8)}`);
+
+                        authStatus = 'nice_auth_requested';
+                        authTriggered = true;
+                        log('✅ NICE 본인인증 요청 전송 완료!');
+                      }
+                    } else {
+                      log('NICE 팝업에 visible 입력 필드 없음 - SPA 렌더링 미완료 가능성');
+                    }
                   } else {
                     log('팝업 윈도우 미감지 (10초 대기)');
 
